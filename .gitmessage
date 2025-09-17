@@ -1,0 +1,10 @@
+# <type>(<scope>): <subject>
+# 
+# Explain WHAT and WHY, not HOW
+# Model Performance (if applicable):
+# - Accuracy: X.XX%
+# - Training time: X seconds
+# - Memory usage: X MB
+#
+# References
+# Closes #123
