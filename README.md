@@ -32,7 +32,7 @@
 - **Containerization**: Docker, Docker Compose
 
 ## Development Status
-This project is currently in active development. See [Issues](../../issues) for planned features and [Projects](../../projects) for current progress.
+Work in Progress: Data Package
 
 ## Learning Outcomes
 This project demonstrates:
