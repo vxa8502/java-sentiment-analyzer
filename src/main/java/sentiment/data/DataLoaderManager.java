@@ -4,10 +4,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
-import java.io.BufferedReader;
-import java.io.FileReader;
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -15,7 +11,8 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * Enhanced dataset loading manager with intelligent content-based detection.
+ * Simplified dataset loading manager using extension-based routing only.
+ * No complex content detection - just maps file extensions to loaders.
  */
 @Component
 public class DataLoaderManager {
@@ -24,17 +21,16 @@ public class DataLoaderManager {
 
     private final Map<String, DatasetLoader> loaderRegistry;
     private final List<DatasetLoader> availableLoaders;
-    private final DatasetTypeDetector typeDetector;
 
     public DataLoaderManager() {
-        // Initialize all available loaders - ORDER MATTERS for fallback!
+        // Initialize all available loaders
         this.availableLoaders = Arrays.asList(
-                new MovieReviewsLoader(),      // Most specific first
-                new ProductReviewsLoader(),    // Then product reviews
-                new TwitterDataLoader()        // Most generic last
+                new MovieReviewsLoader(),
+                new ProductReviewsLoader(),
+                new TwitterDataLoader()
         );
 
-        // Build registry for quick lookup by file extension
+        // Build registry for extension-based lookup
         this.loaderRegistry = new HashMap<>();
         for (DatasetLoader loader : availableLoaders) {
             for (String extension : loader.getSupportedExtensions()) {
@@ -42,14 +38,14 @@ public class DataLoaderManager {
             }
         }
 
-        this.typeDetector = new DatasetTypeDetector();
-
-        logger.info("Initialized DataLoaderManager with {} loaders supporting {} file types",
-                availableLoaders.size(), loaderRegistry.size());
+        logger.info("Initialized DataLoaderManager with {} loaders supporting {} file types: {}",
+                availableLoaders.size(),
+                loaderRegistry.size(),
+                loaderRegistry.keySet());
     }
 
     /**
-     * Smart load: automatically detect dataset type and load appropriately
+     * Load dataset using intelligent detection (filename + header analysis)
      */
     public DatasetLoadResult loadDataset(String filePath) throws DataLoadingException {
         logger.info("Loading dataset from: {}", filePath);
@@ -57,10 +53,14 @@ public class DataLoaderManager {
         // Validate file exists
         validateFilePath(filePath);
 
-        // Find appropriate loader using enhanced detection
-        DatasetLoader loader = findBestLoaderWithDetection(filePath);
+        // Find best loader using intelligent detection
+        DatasetLoader loader = findBestLoader(filePath);
         if (loader == null) {
-            throw new DataLoadingException("No loader found for file type", filePath, "Unknown");
+            String extension = getFileExtension(filePath);
+            throw new DataLoadingException(
+                    "No loader found for file: " + filePath +
+                            " (extension: " + extension + "). Supported extensions: " + getSupportedExtensions(),
+                    filePath, "Unknown");
         }
 
         logger.info("Using {} for file: {}", loader.getDatasetTypeName(), filePath);
@@ -70,7 +70,7 @@ public class DataLoaderManager {
         List<Dataset> datasets = loader.loadDataset(filePath);
         long loadTime = System.currentTimeMillis() - startTime;
 
-        // Create result with metadata
+        // Create result with basic analysis
         DatasetLoadResult result = new DatasetLoadResult(
                 datasets,
                 loader.getDatasetTypeName(),
@@ -86,65 +86,8 @@ public class DataLoaderManager {
     }
 
     /**
-     * Enhanced loader detection combining extension, content, and heuristics
+     * Load multiple datasets and combine them
      */
-    private DatasetLoader findBestLoaderWithDetection(String filePath) {
-        try {
-            // Analyze file content to determine dataset type
-            DatasetTypeDetector.DetectionResult detection = typeDetector.detectDatasetType(filePath);
-
-            // Find loader matching detected type
-            DatasetLoader detectedLoader = findLoaderByType(detection.detectedType());
-            if (detectedLoader != null && detection.confidence() > 0.4) { // Lowered threshold
-                return detectedLoader;
-            }
-
-            // If we detected something but confidence is low, still prefer it over generic fallback
-            if (detectedLoader != null && detection.confidence() > 0.2) {
-                return detectedLoader;
-            }
-
-            // Fallback to extension-based lookup
-            String extension = getFileExtension(filePath);
-            DatasetLoader extensionLoader = loaderRegistry.get(extension.toLowerCase());
-            if (extensionLoader != null && extensionLoader.canHandle(filePath)) {
-                return extensionLoader;
-            }
-
-            // Final fallback: try all loaders in priority order
-            for (DatasetLoader candidate : availableLoaders) {
-                if (candidate.canHandle(filePath)) {
-                    return candidate;
-                }
-            }
-
-        } catch (Exception e) {
-            logger.error("Error during content detection: {}", e.getMessage(), e);
-
-            // Error fallback - use extension only
-            String extension = getFileExtension(filePath);
-            DatasetLoader fallbackLoader = loaderRegistry.get(extension.toLowerCase());
-            if (fallbackLoader != null) {
-                return fallbackLoader;
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * Find loader by dataset type name
-     */
-    private DatasetLoader findLoaderByType(String datasetType) {
-        if (datasetType == null) return null;
-
-        return availableLoaders.stream()
-                .filter(loader -> loader.getDatasetTypeName().equalsIgnoreCase(datasetType))
-                .findFirst()
-                .orElse(null);
-    }
-
-    // Existing methods remain unchanged...
     public CombinedDatasetResult loadMultipleDatasets(String... filePaths) throws DataLoadingException {
         logger.info("Loading {} datasets for combination", filePaths.length);
 
@@ -161,14 +104,137 @@ public class DataLoaderManager {
             datasetCounts.merge(result.datasetType(), result.datasets().size(), Integer::sum);
         }
 
+        logger.info("Combined {} datasets: {} total samples with distribution: {}",
+                filePaths.length, allDatasets.size(), datasetCounts);
+
         return new CombinedDatasetResult(allDatasets, individualResults, datasetCounts);
     }
 
+    /**
+     * Find the best loader using simple but effective detection
+     */
+    private DatasetLoader findBestLoader(String filePath) {
+        // Step 1: Check if extension is supported at all
+        String extension = getFileExtension(filePath).toLowerCase();
+        if (!loaderRegistry.containsKey(extension)) {
+            return null; // Unsupported file type
+        }
+
+        // Step 2: Use filename-based hints for quick detection
+        String filename = getFileName(filePath).toLowerCase();
+
+        if (filename.contains("movie") || filename.contains("imdb") || filename.contains("film")) {
+            DatasetLoader movieLoader = findLoaderByType("Movie Reviews");
+            if (movieLoader != null && movieLoader.canHandle(filePath)) {
+                return movieLoader;
+            }
+        }
+
+        if (filename.contains("twitter") || filename.contains("tweet") || filename.contains("social")) {
+            DatasetLoader twitterLoader = findLoaderByType("Twitter Data");
+            if (twitterLoader != null && twitterLoader.canHandle(filePath)) {
+                return twitterLoader;
+            }
+        }
+
+        if (filename.contains("product") || filename.contains("amazon") || filename.contains("review")) {
+            DatasetLoader productLoader = findLoaderByType("Product Reviews");
+            if (productLoader != null && productLoader.canHandle(filePath)) {
+                return productLoader;
+            }
+        }
+
+        // Step 3: Try header-based detection for CSV files
+        if (extension.equals(".csv") || extension.equals(".tsv")) {
+            DatasetLoader headerDetected = detectByHeaders(filePath);
+            if (headerDetected != null) {
+                return headerDetected;
+            }
+        }
+
+        // Step 4: Fallback to first loader that can handle this extension
+        return loaderRegistry.get(extension);
+    }
+
+    /**
+     * Simple header-based detection for CSV files
+     */
+    private DatasetLoader detectByHeaders(String filePath) {
+        try {
+            String headerLine = readFirstLine(filePath);
+            if (headerLine == null || headerLine.trim().isEmpty()) {
+                return null;
+            }
+
+            String headers = headerLine.toLowerCase();
+
+            // Movie review patterns
+            if (headers.contains("movie") || headers.contains("film") || headers.contains("imdb")) {
+                return findLoaderByType("Movie Reviews");
+            }
+
+            // Twitter patterns
+            if (headers.contains("tweet") || headers.contains("twitter") || headers.contains("user")) {
+                return findLoaderByType("Twitter Data");
+            }
+
+            // Product review patterns
+            if (headers.contains("product") || headers.contains("amazon") ||
+                    headers.contains("asin") || headers.contains("verified")) {
+                return findLoaderByType("Product Reviews");
+            }
+
+        } catch (Exception e) {
+            logger.debug("Failed to read headers from {}: {}", filePath, e.getMessage());
+        }
+
+        return null;
+    }
+
+    /**
+     * Read just the first line of a file for header detection
+     */
+    private String readFirstLine(String filePath) {
+        try (var reader = Files.newBufferedReader(Paths.get(filePath))) {
+            return reader.readLine();
+        } catch (Exception e) {
+            logger.debug("Could not read first line from {}: {}", filePath, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Find loader by dataset type name
+     */
+    private DatasetLoader findLoaderByType(String datasetType) {
+        return availableLoaders.stream()
+                .filter(loader -> loader.getDatasetTypeName().equals(datasetType))
+                .findFirst()
+                .orElse(null);
+    }
+
+    /**
+     * Get just filename from full path
+     */
+    private String getFileName(String filePath) {
+        int lastSeparator = Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\'));
+        if (lastSeparator >= 0 && lastSeparator < filePath.length() - 1) {
+            return filePath.substring(lastSeparator + 1);
+        }
+        return filePath;
+    }
+
+    /**
+     * Extract file extension from path
+     */
     private String getFileExtension(String filePath) {
         int lastDot = filePath.lastIndexOf('.');
         return lastDot > 0 ? filePath.substring(lastDot) : "";
     }
 
+    /**
+     * Basic file validation
+     */
     private void validateFilePath(String filePath) throws DataLoadingException {
         if (filePath == null || filePath.trim().isEmpty()) {
             throw new DataLoadingException("File path cannot be null or empty", filePath, "Unknown");
@@ -186,21 +252,32 @@ public class DataLoaderManager {
         try {
             long fileSize = Files.size(path);
             if (fileSize > 100 * 1024 * 1024) { // 100MB
-                logger.warn("Large file detected: {} MB - loading may take time", fileSize / (1024 * 1024));
+                logger.warn("Large file detected: {} MB - loading may take time",
+                        fileSize / (1024 * 1024));
             }
+            if (fileSize == 0) {
+                throw new DataLoadingException("File is empty", filePath, "Unknown");
+            }
+        } catch (DataLoadingException e) {
+            throw e; // Re-throw our own exceptions
         } catch (Exception e) {
             logger.debug("Could not check file size: {}", e.getMessage());
         }
     }
 
+    /**
+     * Analyze loaded dataset for basic statistics
+     */
     private DatasetAnalysis analyzeDataset(List<Dataset> datasets) {
         if (datasets.isEmpty()) {
             return new DatasetAnalysis(0, Map.of(), 0, 0, 0);
         }
 
+        // Count sentiment distribution
         Map<Dataset.SentimentLabel, Long> sentimentCounts = datasets.stream()
                 .collect(Collectors.groupingBy(Dataset::getSentiment, Collectors.counting()));
 
+        // Calculate text length statistics
         IntSummaryStatistics lengthStats = datasets.stream()
                 .mapToInt(Dataset::getTextLength)
                 .summaryStatistics();
@@ -214,193 +291,40 @@ public class DataLoaderManager {
         );
     }
 
-    // Utility methods
+    // Utility Methods
+
+    /**
+     * Get all supported file extensions
+     */
     public List<String> getSupportedExtensions() {
         return new ArrayList<>(loaderRegistry.keySet());
     }
 
+    /**
+     * Get all available dataset type names
+     */
     public List<String> getAvailableDatasetTypes() {
         return availableLoaders.stream()
                 .map(DatasetLoader::getDatasetTypeName)
                 .collect(Collectors.toList());
     }
 
+    /**
+     * Check if a file can be handled by any loader
+     */
     public boolean canHandleFile(String filePath) {
-        return findBestLoaderWithDetection(filePath) != null;
-    }
-}
-
-/**
- * Content-based dataset type detector using header analysis and heuristics
- */
-class DatasetTypeDetector {
-    private static final Logger logger = LoggerFactory.getLogger(DatasetTypeDetector.class);
-
-    // Header patterns for different dataset types (case-insensitive)
-    private static final Map<String, Set<String>> HEADER_PATTERNS = Map.of(
-            "Movie Reviews", Set.of("review", "movie", "film", "imdb", "sentiment", "polarity", "label", "text"),
-            "Twitter Data", Set.of("tweet", "twitter", "user", "mention", "hashtag", "retweet", "@", "tweet_text", "target"),
-            "Product Reviews", Set.of("product", "amazon", "asin", "overall", "rating", "verified", "summary")
-    );
-
-    // Content patterns for different dataset types
-    private static final Map<String, Set<String>> CONTENT_PATTERNS = Map.of(
-            "Movie Reviews", Set.of("director", "actor", "plot", "cinema", "screenplay", "character", "scene", "episode",
-                    "acting", "ending", "cast", "series", "season", "drama", "comedy", "thriller"),
-            "Twitter Data", Set.of("@", "#", "rt ", "http://", "https://", "pic.twitter", "via @", "retweet", "follow", "dm"),
-            "Product Reviews", Set.of("bought", "purchase", "shipped", "delivery", "price", "amazon", "verified purchase",
-                    "quality", "recommend", "item arrived", "customer service", "refund")
-    );
-
-    public DetectionResult detectDatasetType(String filePath) throws IOException {
-        String extension = getFileExtension(filePath).toLowerCase();
-
-        if (extension.equals(".json") || extension.equals(".jsonl")) {
-            return detectJsonDatasetType(filePath);
-        } else if (extension.equals(".csv") || extension.equals(".tsv")) {
-            return detectCsvDatasetType(filePath);
-        }
-
-        return new DetectionResult("Unknown", 0.0, "Unsupported file extension");
-    }
-
-    private DetectionResult detectCsvDatasetType(String filePath) throws IOException {
-        try (BufferedReader reader = new BufferedReader(new FileReader(filePath, StandardCharsets.UTF_8))) {
-            // Read header line
-            String headerLine = reader.readLine();
-            if (headerLine == null || headerLine.trim().isEmpty()) {
-                return new DetectionResult("Unknown", 0.0, "Empty file or no header");
-            }
-
-            logger.debug("CSV header detected: {}", headerLine);
-
-            // Read first few data lines for content analysis
-            List<String> sampleLines = new ArrayList<>();
-            String line;
-            int count = 0;
-            while ((line = reader.readLine()) != null && count < 20) { // Read more samples
-                if (!line.trim().isEmpty()) {
-                    sampleLines.add(line.toLowerCase());
-                    count++;
-                }
-            }
-
-            logger.debug("Read {} sample lines for content analysis", sampleLines.size());
-
-            return analyzeContent(headerLine.toLowerCase(), sampleLines);
-        } catch (IOException e) {
-            logger.error("Error reading CSV file for detection: {}", e.getMessage());
-            throw e;
-        } catch (Exception e) {
-            logger.error("Unexpected error during CSV detection: {}", e.getMessage(), e);
-            return new DetectionResult("Unknown", 0.0, "Error during analysis: " + e.getMessage());
-        }
-    }
-
-    private DetectionResult detectJsonDatasetType(String filePath) throws IOException {
-        try (BufferedReader reader = new BufferedReader(new FileReader(filePath, StandardCharsets.UTF_8))) {
-            StringBuilder sample = new StringBuilder();
-            String line;
-            int count = 0;
-
-            // Read first few lines/objects
-            while ((line = reader.readLine()) != null && count < 10) {
-                sample.append(line.toLowerCase()).append(" ");
-                count++;
-            }
-
-            String content = sample.toString();
-            List<String> sampleLines = List.of(content);
-
-            // For JSON, we analyze field names and content together
-            return analyzeContent(content, sampleLines);
-        }
-    }
-
-    private DetectionResult analyzeContent(String header, List<String> sampleLines) {
-        Map<String, Double> scores = new HashMap<>();
-
-        logger.debug("Analyzing header: {}", header.length() > 200 ? header.substring(0, 200) + "..." : header);
-
-        // Score based on header patterns
-        for (Map.Entry<String, Set<String>> entry : HEADER_PATTERNS.entrySet()) {
-            String datasetType = entry.getKey();
-            Set<String> patterns = entry.getValue();
-
-            long matchCount = patterns.stream()
-                    .mapToLong(pattern -> header.contains(pattern) ? 1 : 0)
-                    .sum();
-
-            double headerScore = (double) matchCount / patterns.size();
-            scores.put(datasetType, headerScore * 0.7); // Increased header weight: 70%
-
-        }
-
-        // Score based on content patterns (analyze all sample lines)
-        for (Map.Entry<String, Set<String>> entry : CONTENT_PATTERNS.entrySet()) {
-            String datasetType = entry.getKey();
-            Set<String> patterns = entry.getValue();
-
-            double totalContentScore = 0.0;
-            int analyzedLines = Math.min(sampleLines.size(), 10); // Analyze up to 10 lines
-
-            for (int i = 0; i < analyzedLines; i++) {
-                String line = sampleLines.get(i);
-                long matchCount = patterns.stream()
-                        .mapToLong(pattern -> line.contains(pattern) ? 1 : 0)
-                        .sum();
-
-                if (matchCount > 0) {
-                    totalContentScore += (double) matchCount / patterns.size();
-                }
-            }
-
-            double avgContentScore = analyzedLines > 0 ? totalContentScore / analyzedLines : 0.0;
-            scores.put(datasetType, scores.getOrDefault(datasetType, 0.0) + avgContentScore * 0.3); // Content weight: 30%
-        }
-
-        // Find best match
-        Map.Entry<String, Double> bestMatch = scores.entrySet().stream()
-                .max(Map.Entry.comparingByValue())
-                .orElse(Map.entry("Unknown", 0.0));
-
-        // More lenient threshold for detection
-        String detectedType = bestMatch.getValue() > 0.1 ? bestMatch.getKey() : "Unknown"; // Lowered from 0.3
-        double confidence = Math.min(bestMatch.getValue(), 1.0);
-        String reasoning = generateReasoning(header, sampleLines, scores);
-
-        return new DetectionResult(detectedType, confidence, reasoning);
-    }
-
-    private String generateReasoning(String header, List<String> sampleLines, Map<String, Double> scores) {
-        StringBuilder reasoning = new StringBuilder();
-        reasoning.append("Header analysis: ").append(header.length() > 100 ? header.substring(0, 100) + "..." : header);
-        reasoning.append(". Scores: ");
-
-        scores.entrySet().stream()
-                .sorted(Map.Entry.<String, Double>comparingByValue().reversed())
-                .forEach(entry -> reasoning.append(entry.getKey()).append("=").append(String.format("%.2f", entry.getValue())).append(" "));
-
-        return reasoning.toString().trim();
-    }
-
-    private String getFileExtension(String filePath) {
-        int lastDot = filePath.lastIndexOf('.');
-        return lastDot > 0 ? filePath.substring(lastDot) : "";
+        return findBestLoader(filePath) != null;
     }
 
     /**
-     * Result of dataset type detection
+     * Get the loader that would be used for a given file path
      */
-    record DetectionResult(String detectedType, double confidence, String reasoning) {
-
-        @Override
-        public String toString() {
-            return String.format("DetectionResult{type='%s', confidence=%.2f, reasoning='%s'}",
-                    detectedType, confidence, reasoning);
-        }
+    public DatasetLoader getLoaderForFile(String filePath) {
+        return findBestLoader(filePath);
     }
 }
+
+// Result Records
 
 record DatasetLoadResult(List<Dataset> datasets, String datasetType, String filePath, long loadTimeMs,
                          DatasetAnalysis analysis) {
@@ -432,7 +356,7 @@ record DatasetAnalysis(int totalSamples, Map<Dataset.SentimentLabel, Long> senti
         long max = sentimentDistribution.values().stream().mapToLong(Long::longValue).max().orElse(0);
         long min = sentimentDistribution.values().stream().mapToLong(Long::longValue).min().orElse(0);
 
-        return (double) min / max >= 0.7;
+        return (double) min / max >= 0.7; // Consider balanced if ratio >= 0.7
     }
 
     @Override

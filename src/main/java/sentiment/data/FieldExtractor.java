@@ -5,13 +5,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
-import java.util.function.Function;
-import java.util.function.Predicate;
-import java.util.stream.Stream;
 
 /**
- * Utility class for flexible field extraction from CSV records and JSON nodes.
- * Provides robust field mapping with fallback strategies, validation, and type conversion.
+ * Simplified field extraction utility for CSV records only.
+ * Provides flexible field mapping with fallback strategies for data loading.
+ * Removed all JSON processing - focuses purely on CSV field extraction.
  */
 public class FieldExtractor {
 
@@ -33,11 +31,6 @@ public class FieldExtractor {
             "reviewerID", "reviewer_id", "asin"
     );
 
-    public static final FieldMapping TIMESTAMP_FIELDS = new FieldMapping(
-            "timestamp", "date", "time", "created_at", "reviewTime",
-            "review_time", "unixReviewTime"
-    );
-
     /**
      * Immutable field mapping configuration
      */
@@ -47,12 +40,21 @@ public class FieldExtractor {
 
         public FieldMapping(String... fieldNames) {
             this.orderedFieldNames = List.of(fieldNames);
-            this.fieldNames = Set.of(fieldNames);
+            // Create lowercase set for case-insensitive matching
+            Set<String> lowerCaseNames = new HashSet<>();
+            for (String name : fieldNames) {
+                lowerCaseNames.add(name.toLowerCase());
+            }
+            this.fieldNames = Collections.unmodifiableSet(lowerCaseNames);
         }
 
         public FieldMapping(Collection<String> fieldNames) {
             this.orderedFieldNames = new ArrayList<>(fieldNames);
-            this.fieldNames = new HashSet<>(fieldNames);
+            Set<String> lowerCaseNames = new HashSet<>();
+            for (String name : fieldNames) {
+                lowerCaseNames.add(name.toLowerCase());
+            }
+            this.fieldNames = Collections.unmodifiableSet(lowerCaseNames);
         }
 
         public Set<String> getFieldNames() {
@@ -146,85 +148,46 @@ public class FieldExtractor {
     }
 
     /**
-     * Extract string field with custom validation
+     * Extract numeric field (Double) from CSV record
      */
-    public static ExtractionResult<String> extractString(CSVRecord record, FieldMapping mapping,
-                                                         int fallbackPosition, Predicate<String> validator) {
-        ExtractionResult<String> result = extractString(record, mapping, fallbackPosition);
-
-        if (result.isPresent() && validator != null && !validator.test(result.getValue())) {
-            return ExtractionResult.empty();
-        }
-
-        return result;
-    }
-
-    /**
-     * Extract and convert field to specific type
-     */
-    public static <T> ExtractionResult<T> extractAndConvert(CSVRecord record, FieldMapping mapping,
-                                                            int fallbackPosition, Function<String, T> converter) {
-        ExtractionResult<String> stringResult = extractString(record, mapping, fallbackPosition);
-
-        if (!stringResult.isPresent()) {
-            return ExtractionResult.empty();
-        }
-
-        try {
-            T convertedValue = converter.apply(stringResult.getValue());
-            if (convertedValue != null) {
-                return stringResult.wasFoundByName()
-                        ? ExtractionResult.byName(convertedValue, stringResult.getFieldName())
-                        : ExtractionResult.byPosition(convertedValue, stringResult.getPosition());
+    public static ExtractionResult<Double> extractDouble(CSVRecord record, FieldMapping mapping,
+                                                         int fallbackPosition) {
+        // Try by field name first
+        for (String fieldName : mapping.getOrderedFieldNames()) {
+            if (record.isMapped(fieldName)) {
+                String value = record.get(fieldName);
+                if (isValidStringValue(value)) {
+                    try {
+                        double doubleValue = Double.parseDouble(value.trim());
+                        return ExtractionResult.byName(doubleValue, fieldName);
+                    } catch (NumberFormatException e) {
+                        logger.debug("Failed to parse double from field '{}': {}", fieldName, value);
+                    }
+                }
             }
-        } catch (Exception e) {
-            logger.debug("Failed to convert field value '{}': {}", stringResult.getValue(), e.getMessage());
+        }
+
+        // Fall back to position
+        if (fallbackPosition >= 0 && fallbackPosition < record.size()) {
+            String value = record.get(fallbackPosition);
+            if (isValidStringValue(value)) {
+                try {
+                    double doubleValue = Double.parseDouble(value.trim());
+                    return ExtractionResult.byPosition(doubleValue, fallbackPosition);
+                } catch (NumberFormatException e) {
+                    logger.debug("Failed to parse double from position {}: {}", fallbackPosition, value);
+                }
+            }
         }
 
         return ExtractionResult.empty();
     }
 
     /**
-     * Extract numeric field (Double)
+     * Extract numeric field (Double) using only field mapping (no fallback)
      */
-    public static ExtractionResult<Double> extractDouble(CSVRecord record, FieldMapping mapping,
-                                                         int fallbackPosition) {
-        return extractAndConvert(record, mapping, fallbackPosition, value -> {
-            try {
-                return Double.parseDouble(value);
-            } catch (NumberFormatException e) {
-                return null;
-            }
-        });
-    }
-
-    /**
-     * Extract numeric field (Integer)
-     */
-    public static ExtractionResult<Integer> extractInteger(CSVRecord record, FieldMapping mapping,
-                                                           int fallbackPosition) {
-        return extractAndConvert(record, mapping, fallbackPosition, value -> {
-            try {
-                return Integer.parseInt(value);
-            } catch (NumberFormatException e) {
-                return null;
-            }
-        });
-    }
-
-    /**
-     * Extract boolean field with flexible parsing
-     */
-    public static ExtractionResult<Boolean> extractBoolean(CSVRecord record, FieldMapping mapping,
-                                                           int fallbackPosition) {
-        return extractAndConvert(record, mapping, fallbackPosition, value -> {
-            String normalized = value.toLowerCase().trim();
-            return switch (normalized) {
-                case "true", "1", "yes", "y" -> true;
-                case "false", "0", "no", "n" -> false;
-                default -> null;
-            };
-        });
+    public static ExtractionResult<Double> extractDouble(CSVRecord record, FieldMapping mapping) {
+        return extractDouble(record, mapping, -1);
     }
 
     /**
@@ -242,108 +205,6 @@ public class FieldExtractor {
         return mapping.getOrderedFieldNames().stream()
                 .filter(record::isMapped)
                 .collect(java.util.stream.Collectors.toList());
-    }
-
-    /**
-     * Extract multiple fields using different mappings
-     */
-    public static class MultiFieldExtractor {
-        private final CSVRecord record;
-        private final Map<String, ExtractionResult<?>> results = new HashMap<>();
-
-        public MultiFieldExtractor(CSVRecord record) {
-            this.record = record;
-        }
-
-        public MultiFieldExtractor extract(String key, FieldMapping mapping, int fallbackPosition) {
-            results.put(key, extractString(record, mapping, fallbackPosition));
-            return this;
-        }
-
-        public MultiFieldExtractor extract(String key, FieldMapping mapping) {
-            results.put(key, extractString(record, mapping));
-            return this;
-        }
-
-        public MultiFieldExtractor extractDouble(String key, FieldMapping mapping, int fallbackPosition) {
-            results.put(key, FieldExtractor.extractDouble(record, mapping, fallbackPosition));
-            return this;
-        }
-
-        @SuppressWarnings("unchecked")
-        public <T> ExtractionResult<T> get(String key) {
-            return (ExtractionResult<T>) results.get(key);
-        }
-
-        public String getString(String key) {
-            ExtractionResult<String> result = get(key);
-            return result != null ? result.getValue() : null;
-        }
-
-        public Double getDouble(String key) {
-            ExtractionResult<Double> result = get(key);
-            return result != null ? result.getValue() : null;
-        }
-
-        public boolean hasAll(String... keys) {
-            return Stream.of(keys).allMatch(key -> {
-                ExtractionResult<?> result = results.get(key);
-                return result != null && result.isPresent();
-            });
-        }
-
-        public Map<String, ExtractionResult<?>> getAllResults() {
-            return new HashMap<>(results);
-        }
-    }
-
-    /**
-     * Create a multi-field extractor for complex extraction scenarios
-     */
-    public static MultiFieldExtractor forRecord(CSVRecord record) {
-        return new MultiFieldExtractor(record);
-    }
-
-    // JSON extraction methods (for ProductReviewsLoader)
-
-    /**
-     * Extract string field from Jackson JsonNode using field mapping
-     */
-    public static ExtractionResult<String> extractString(com.fasterxml.jackson.databind.JsonNode node,
-                                                         FieldMapping mapping) {
-        for (String fieldName : mapping.getOrderedFieldNames()) {
-            com.fasterxml.jackson.databind.JsonNode fieldNode = node.get(fieldName);
-            if (fieldNode != null && !fieldNode.isNull() && fieldNode.isTextual()) {
-                String value = fieldNode.asText();
-                if (isValidStringValue(value)) {
-                    return ExtractionResult.byName(value.trim(), fieldName);
-                }
-            }
-        }
-        return ExtractionResult.empty();
-    }
-
-    /**
-     * Extract numeric field from Jackson JsonNode
-     */
-    public static ExtractionResult<Double> extractDouble(com.fasterxml.jackson.databind.JsonNode node,
-                                                         FieldMapping mapping) {
-        for (String fieldName : mapping.getOrderedFieldNames()) {
-            com.fasterxml.jackson.databind.JsonNode fieldNode = node.get(fieldName);
-            if (fieldNode != null && !fieldNode.isNull()) {
-                try {
-                    if (fieldNode.isNumber()) {
-                        return ExtractionResult.byName(fieldNode.asDouble(), fieldName);
-                    } else if (fieldNode.isTextual()) {
-                        double value = Double.parseDouble(fieldNode.asText());
-                        return ExtractionResult.byName(value, fieldName);
-                    }
-                } catch (NumberFormatException e) {
-                    logger.debug("Invalid numeric format in field '{}': {}", fieldName, fieldNode.asText());
-                }
-            }
-        }
-        return ExtractionResult.empty();
     }
 
     // Utility methods
@@ -377,36 +238,5 @@ public class FieldExtractor {
         }
 
         return coverage;
-    }
-
-    /**
-     * Generate field extraction report for debugging
-     */
-    public static String generateExtractionReport(CSVRecord record,
-                                                  Map<String, FieldMapping> mappings) {
-        StringBuilder report = new StringBuilder();
-        report.append("Field Extraction Report for Record ").append(record.getRecordNumber()).append(":\n");
-
-        for (Map.Entry<String, FieldMapping> entry : mappings.entrySet()) {
-            String category = entry.getKey();
-            FieldMapping mapping = entry.getValue();
-
-            ExtractionResult<String> result = extractString(record, mapping);
-
-            report.append("  ").append(category).append(": ");
-            if (result.isPresent()) {
-                report.append("Found '").append(result.getValue()).append("'");
-                if (result.wasFoundByName()) {
-                    report.append(" (by name: ").append(result.getFieldName()).append(")");
-                } else {
-                    report.append(" (by position: ").append(result.getPosition()).append(")");
-                }
-            } else {
-                report.append("Not found");
-            }
-            report.append("\n");
-        }
-
-        return report.toString();
     }
 }

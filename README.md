@@ -34,6 +34,10 @@
 ## Development Status
 Work in Progress: Data Package
 
+### Recent Refactor 
+The Data Loader package was streamlined to reduce unnecessary abstraction and complexity.
+This shift embraces a “raw data in → smart models out” philosophy, ensuring that data preparation remains minimal and that downstream models handle quality control.
+
 ## Learning Outcomes
 This project demonstrates:
 - Cross-language ML adaptability (Python → Java)

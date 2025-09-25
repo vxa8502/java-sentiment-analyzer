@@ -1,115 +1,66 @@
 package sentiment.data;
 
 import org.apache.commons.csv.CSVRecord;
-
 import java.time.LocalDateTime;
-import java.util.*;
+import java.util.List;
 
 /**
- * Movie Reviews Dataset Loader implementing proper three-layer validation
- * while using FieldExtractor for flexible field mapping.
- * Layer 1: Raw Input Validation
- * Layer 2: Processing Validation
- * Layer 3: Model Input Validation
+ * Movie Reviews Dataset Loader - returns completely raw, unprocessed data.
+ * Only performs basic structural validation to ensure data can be loaded.
  */
 class MovieReviewsLoader extends CsvLoaderBase {
 
     private static final String DATASET_TYPE = "Movie Reviews";
     private static final String[] SUPPORTED_EXTENSIONS = {".csv"};
 
+    // Field mappings for flexible extraction
     private static final FieldExtractor.FieldMapping MOVIE_TEXT_FIELDS =
-            FieldExtractor.TEXT_FIELDS.withAdditional( "movie_review", "film_review");
+            FieldExtractor.TEXT_FIELDS.withAdditional("movie_review", "film_review");
     private static final FieldExtractor.FieldMapping MOVIE_SENTIMENT_FIELDS =
             FieldExtractor.SENTIMENT_FIELDS;
 
     @Override
-    protected Dataset processRecord(CSVRecord record, DatasetLoadingStats stats,
-                                    List<String> headers) {
+    protected Dataset processRecord(CSVRecord record, DatasetLoadingStats stats, List<String> headers) {
 
         int recordNumber = (int) record.getRecordNumber();
 
-        // Extract fields using FieldExtractor (flexible mapping)
+        // Extract fields using FieldExtractor
         FieldExtractor.ExtractionResult<String> textResult =
                 FieldExtractor.extractString(record, MOVIE_TEXT_FIELDS, 0);
         FieldExtractor.ExtractionResult<String> sentimentResult =
                 FieldExtractor.extractString(record, MOVIE_SENTIMENT_FIELDS, 1);
 
-        // Extract raw values for validation
         String reviewText = textResult.isPresent() ? textResult.getValue() : null;
         String sentimentLabel = sentimentResult.isPresent() ? sentimentResult.getValue() : null;
 
-        // LAYER 1: Raw Input Validation
+        // Structural validation - check if fields exist and are parseable
         DatasetValidationUtils.ValidationResult textValidation =
                 DatasetValidationUtils.validateRawText(reviewText, DATASET_TYPE, recordNumber, stats);
         if (!textValidation.isValid()) {
-            return null; // Stats already incremented by validation
+            return null; // Field missing or empty
         }
 
         DatasetValidationUtils.ValidationResult sentimentValidation =
                 DatasetValidationUtils.validateRawSentiment(sentimentLabel, DATASET_TYPE, recordNumber, stats);
         if (!sentimentValidation.isValid()) {
-            return null; // Stats already incremented by validation
+            return null; // Sentiment not parseable
         }
 
-        String validatedText = textValidation.getText();
-        Dataset.SentimentLabel validatedSentiment = sentimentValidation.getSentiment();
+        // Get the raw data (only whitespace trimmed for parsing safety)
+        String rawText = textValidation.getText(); // Only trimmed, no other changes
+        Dataset.SentimentLabel parsedSentiment = sentimentValidation.getSentiment();
 
-        // LAYER 2: Processing Validation (Text Cleaning)
-        String cleanedText = TextCleaningUtils.cleanMovieReviewText(validatedText);
-
-        DatasetValidationUtils.ValidationResult processingValidation =
-                DatasetValidationUtils.validateProcessedText(
-                        cleanedText, validatedText, DATASET_TYPE, recordNumber, stats);
-        if (!processingValidation.isValid()) {
-            return null; // Processing destroyed too much content or failed
-        }
-
-        String processedText = processingValidation.getText();
-
-        // Quality Control Check (spans multiple layers)
-        DatasetValidationUtils.ValidationResult qualityResult =
-                DatasetValidationUtils.performQualityControl(
-                        processedText, DATASET_TYPE, recordNumber, stats);
-        if (!qualityResult.isValid()) {
-            return null; // Failed quality control (spam, fake review, etc.)
-        }
-
-        // LAYER 3: Model Input Validation
-        DatasetValidationUtils.ValidationResult modelValidation =
-                DatasetValidationUtils.validateModelInput(
-                        processedText, validatedSentiment, DATASET_TYPE, recordNumber, stats);
-        if (!modelValidation.isValid()) {
-            return null; // Insufficient features or invalid for model
-        }
-
-        // If we get here, all validation layers passed
-        Dataset finalDataset = modelValidation.getDataset();
-
-        // Enhance with Movie Reviews-specific metadata
-        return enhanceWithMovieMetadata(finalDataset, sentimentLabel, textResult, sentimentResult);
-    }
-
-    /**
-     * Add Movie Reviews-specific metadata
-     */
-    private Dataset enhanceWithMovieMetadata(Dataset dataset, String originalLabel,
-                                             FieldExtractor.ExtractionResult<String> textResult,
-                                             FieldExtractor.ExtractionResult<String> sentimentResult) {
-        return new Dataset.Builder(dataset.getText(), dataset.getSentiment())
+        // Create Dataset with completely original text - no transformation whatsoever
+        return new Dataset.Builder(rawText, parsedSentiment)
                 .source("movie_reviews")
-                .originalLabel(originalLabel)
+                .originalLabel(sentimentLabel)
                 .timestamp(LocalDateTime.now())
                 .build();
     }
 
     @Override
-    protected boolean shouldValidateHeaders() {
-        return true;
-    }
-
-    @Override
     protected double getMaxErrorRate() {
-        return 0.3; // Allow up to 30% error rate for movie reviews (stricter than social media)
+        return 0.3; // Allow up to 30% error rate for movie reviews
     }
 
     @Override

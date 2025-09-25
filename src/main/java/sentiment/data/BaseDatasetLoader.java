@@ -11,7 +11,7 @@ public abstract class BaseDatasetLoader implements DatasetLoader {
     public final List<Dataset> loadDataset(String filePath) throws DataLoadingException {
         logger.info("Loading {} from: {}", getDatasetTypeName(), filePath);
 
-        // Validate file - using utility directly
+        // Validate file can be read
         DatasetValidationUtils.validateFilePath(filePath, getDatasetTypeName());
 
         // Create statistics tracker
@@ -20,12 +20,11 @@ public abstract class BaseDatasetLoader implements DatasetLoader {
         // Perform actual loading (implemented by subclasses)
         List<Dataset> datasets = doLoadDataset(filePath, stats);
 
-        // Validate final result - using utility directly
+        // Validate final result
         DatasetValidationUtils.validateFinalDataset(datasets, stats, filePath, getDatasetTypeName());
 
-        // Log layered summary and analyze
-        stats.logLayeredSummary(logger, filePath, getDatasetTypeName());
-        DatasetValidationUtils.analyzeSentimentDistribution(datasets, getDatasetTypeName());
+        // Log summary
+        stats.logSummary(logger, filePath, getDatasetTypeName());
 
         return datasets;
     }

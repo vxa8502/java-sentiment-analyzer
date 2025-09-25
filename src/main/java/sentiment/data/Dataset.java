@@ -166,9 +166,8 @@ public class Dataset {
             this.originalLabel = sentimentLabel; // Store original for reference
         }
 
-        public Builder id(String id) {
+        public void id(String id) {
             this.id = id;
-            return this;
         }
 
         public Builder confidence(double confidence) {

@@ -3,28 +3,21 @@ package sentiment.data;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVRecord;
 import org.apache.commons.csv.QuoteMode;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.time.LocalDateTime;
-import java.util.*;
+import java.util.List;
 
 /**
- * Twitter/Social Media Dataset Loader implementing proper three-layer validation
- * Layer 1: Raw Input Validation
- * Layer 2: Processing Validation
- * Layer 3: Model Input Validation
+ * Twitter/Social Media Dataset Loader - returns completely raw, unprocessed data.
+ * Only performs basic structural validation to ensure data can be loaded.
+ * Handles both standard Twitter sentiment format (sentiment140) and flexible CSV layouts.
  */
 class TwitterDataLoader extends CsvLoaderBase {
-
-    private static final Logger logger = LoggerFactory.getLogger(TwitterDataLoader.class);
 
     private static final String DATASET_TYPE = "Twitter Data";
     private static final String[] SUPPORTED_EXTENSIONS = {".tsv", ".csv"};
 
     @Override
-    protected Dataset processRecord(CSVRecord record, DatasetLoadingStats stats,
-                                    List<String> headers) {
+    protected Dataset processRecord(CSVRecord record, DatasetLoadingStats stats, List<String> headers) {
 
         int recordNumber = (int) record.getRecordNumber();
 
@@ -32,8 +25,9 @@ class TwitterDataLoader extends CsvLoaderBase {
         String sentimentLabel = null;
         String tweetId = null;
 
-        if (record.size() >= 6) {
-            // Standard Twitter format: sentiment, id, date, query, user, text
+        // Handle standard Twitter sentiment format (6 columns: sentiment, id, date, query, user, text)
+        if (record.size() >= 6 && (headers.isEmpty() || !record.isMapped("text"))) {
+            // Standard Twitter format without headers: sentiment, id, date, query, user, text
             sentimentLabel = record.get(0);  // polarity (0 or 4)
             tweetId = record.get(1);         // tweet id
             tweetText = record.get(5);       // tweet text
@@ -44,100 +38,60 @@ class TwitterDataLoader extends CsvLoaderBase {
             } else if ("4".equals(sentimentLabel)) {
                 sentimentLabel = "positive";
             }
-
         } else {
-            // Fall back to your existing field extraction
-            tweetId = extractField(record, "tweet_id", "id", "post_id", "message_id");
-            tweetText = extractFieldWithFallback(record,
-                    tweetId != null ? 1 : 0, "tweet_text", "text", "content", "message", "post", "tweet");
-            sentimentLabel = extractFieldWithFallback(record,
-                    tweetId != null ? 2 : 1, "sentiment", "label", "polarity", "class", "emotion", "target");
+            // Use FieldExtractor for flexible field extraction
+            FieldExtractor.ExtractionResult<String> idResult =
+                    FieldExtractor.extractString(record, FieldExtractor.ID_FIELDS);
+            FieldExtractor.ExtractionResult<String> textResult =
+                    FieldExtractor.extractString(record,
+                            FieldExtractor.TEXT_FIELDS.withAdditional("tweet_text", "tweet"), 0);
+            FieldExtractor.ExtractionResult<String> sentimentResult =
+                    FieldExtractor.extractString(record,
+                            FieldExtractor.SENTIMENT_FIELDS.withAdditional("target"), 1);
+
+            tweetId = idResult.isPresent() ? idResult.getValue() : null;
+            tweetText = textResult.isPresent() ? textResult.getValue() : null;
+            sentimentLabel = sentimentResult.isPresent() ? sentimentResult.getValue() : null;
         }
 
+        // Structural validation - check if fields exist and are parseable
         DatasetValidationUtils.ValidationResult textValidation =
                 DatasetValidationUtils.validateRawText(tweetText, DATASET_TYPE, recordNumber, stats);
         if (!textValidation.isValid()) {
-            return null; // Stats already incremented by validation
+            return null; // Field missing or empty
         }
 
         DatasetValidationUtils.ValidationResult sentimentValidation =
                 DatasetValidationUtils.validateRawSentiment(sentimentLabel, DATASET_TYPE, recordNumber, stats);
         if (!sentimentValidation.isValid()) {
-            return null; // Stats already incremented by validation
+            return null; // Sentiment not parseable
         }
 
-        String validatedText = textValidation.getText();
-        Dataset.SentimentLabel validatedSentiment = sentimentValidation.getSentiment();
+        // Get the raw data (only whitespace trimmed for parsing safety)
+        String rawText = textValidation.getText(); // Only trimmed, no other changes
+        Dataset.SentimentLabel parsedSentiment = sentimentValidation.getSentiment();
 
-        String cleanedText = TextCleaningUtils.cleanTweetText(validatedText);
-
-        DatasetValidationUtils.ValidationResult processingValidation =
-                DatasetValidationUtils.validateProcessedText(
-                        cleanedText, validatedText, DATASET_TYPE, recordNumber, stats);
-        if (!processingValidation.isValid()) {
-            return null; // Processing destroyed too much content or failed
-        }
-
-        String processedText = processingValidation.getText();
-
-        DatasetValidationUtils.ValidationResult qualityResult =
-                DatasetValidationUtils.performQualityControl(
-                        processedText, DATASET_TYPE, recordNumber, stats);
-        if (!qualityResult.isValid()) {
-            return null; // Failed quality control (spam, fake review, etc.)
-        }
-
-        DatasetValidationUtils.ValidationResult modelValidation =
-                DatasetValidationUtils.validateModelInput(
-                        processedText, validatedSentiment, DATASET_TYPE, recordNumber, stats);
-        if (!modelValidation.isValid()) {
-            return null; // Insufficient features or invalid for model
-        }
-
-        // If we get here, all validation layers passed
-        Dataset finalDataset = modelValidation.getDataset();
-
-        // Enhance with Twitter-specific metadata
-        return enhanceWithTwitterMetadata(finalDataset, tweetId, sentimentLabel);
-    }
-
-    /**
-     * Add Twitter-specific metadata to the dataset
-     */
-    private Dataset enhanceWithTwitterMetadata(Dataset dataset, String tweetId, String originalLabel) {
-        // Create new dataset with enhanced metadata using builder pattern
-        Dataset.Builder builder = new Dataset.Builder(dataset.getText(), dataset.getSentiment())
+        // Create Dataset with completely original text - no transformation whatsoever
+        Dataset.Builder builder = new Dataset.Builder(rawText, parsedSentiment)
                 .source("twitter")
-                .originalLabel(originalLabel)
+                .originalLabel(sentimentLabel)
                 .timestamp(LocalDateTime.now());
 
-        if (tweetId != null && !tweetId.isEmpty()) {
-            builder.id(tweetId);
+        // Add tweet ID if available
+        if (tweetId != null && !tweetId.trim().isEmpty()) {
+            builder.id(tweetId.trim());
         }
 
         return builder.build();
     }
 
-    /**
-     * Extract field with fallback to positional access
-     */
-    protected String extractFieldWithFallback(CSVRecord record, int fallbackPosition, String... fieldNames) {
-        String value = extractField(record, fieldNames);
-        if (value == null && fallbackPosition >= 0 && fallbackPosition < record.size()) {
-            value = record.get(fallbackPosition);
-            if (value != null && !value.trim().isEmpty()) {
-                return value.trim();
-            }
-        }
-        return value;
-    }
-
     @Override
-    protected CSVFormat createCommaDelimitedFormat() {
+    protected CSVFormat createCsvFormat() {
+        // Configure CSV format to handle Twitter data quirks
         return CSVFormat.Builder.create()
                 .setDelimiter(',')
                 .setHeader()
-                .setSkipHeaderRecord(false)
+                .setSkipHeaderRecord(false)  // Twitter data might not have headers
                 .setIgnoreEmptyLines(true)
                 .setTrim(true)
                 .setQuote('"')
@@ -149,13 +103,8 @@ class TwitterDataLoader extends CsvLoaderBase {
     }
 
     @Override
-    protected boolean shouldValidateHeaders() {
-        return true;
-    }
-
-    @Override
     protected double getMaxErrorRate() {
-        return 0.5; // Allow up to 50% error rate for social media data
+        return 0.5; // Allow up to 50% error rate for social media data (noisy format)
     }
 
     @Override
