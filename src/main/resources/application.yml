@@ -109,6 +109,11 @@ sentiment:
     # Cross-validation folds for hyperparameter tuning
     cv-folds: 5
 
+    # Class imbalance threshold (ratio) for enabling class weighting
+    # If max_class_count / min_class_count > threshold, class weighting is enabled
+    # Default: 3.0 (e.g., 3:1 ratio triggers weighting)
+    class-imbalance-threshold: 3.0
+
   # Model comparison settings
   comparison:
     # Algorithms to compare: svm, naive_bayes, random_forest, logistic

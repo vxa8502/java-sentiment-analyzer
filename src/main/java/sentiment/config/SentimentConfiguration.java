@@ -65,6 +65,9 @@ public class SentimentConfiguration {
     @Value("${sentiment.models.require-pretrained:false}")
     private boolean requirePretrained;
 
+    @Value("${sentiment.svm.class-imbalance-threshold:3.0}")
+    private double classImbalanceThreshold;
+
     /**
      * Creates SVMModelPersistence bean for model save/load operations.
      */
@@ -104,6 +107,7 @@ public class SentimentConfiguration {
 
         try {
             SVMClassifier classifier = new SVMClassifier(textPreprocessor, wekaInstancesConverter);
+            classifier.setClassImbalanceThreshold(classImbalanceThreshold);
             SVMModelPersistence persistence = svmModelPersistence();
 
             if (preferPretrained) {
@@ -178,7 +182,9 @@ public class SentimentConfiguration {
 
             // Return an untrained classifier rather than failing startup
             logger.warn("Returning untrained classifier - API will return 503 until model is trained");
-            return new SVMClassifier(textPreprocessor, wekaInstancesConverter);
+            SVMClassifier fallbackClassifier = new SVMClassifier(textPreprocessor, wekaInstancesConverter);
+            fallbackClassifier.setClassImbalanceThreshold(classImbalanceThreshold);
+            return fallbackClassifier;
         }
     }
 

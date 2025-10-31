@@ -16,12 +16,12 @@ import java.util.List;
 /**
  * REST API controller for sentiment analysis operations.
  * Endpoints:
- * - POST /api/sentiment/analyze - Analyze single text
- * - POST /api/sentiment/batch - Batch analysis
- * - GET /api/health - Health check
+ * - POST /api/v1/sentiment/analyze - Analyze single text
+ * - POST /api/v1/sentiment/batch - Batch analysis
+ * - GET /api/v1/health - Health check
  */
 @RestController
-@RequestMapping("/api")
+@RequestMapping("/api/v1")
 @org.springframework.context.annotation.Profile("!training")
 public class SentimentController {
 
@@ -39,7 +39,7 @@ public class SentimentController {
     /**
      * Analyzes sentiment for a single text input.
      * Example request:
-     * POST /api/sentiment/analyze
+     * POST /api/v1/sentiment/analyze
      * {
      *   "text": "This movie was absolutely amazing!",
      *   "confidenceThreshold": 0.7
@@ -80,7 +80,7 @@ public class SentimentController {
      * - Order is preserved using indexed parallel streams
      *
      * Example request:
-     * POST /api/sentiment/batch
+     * POST /api/v1/sentiment/batch
      * {
      *   "texts": [
      *     "Great product!",
@@ -177,7 +177,7 @@ public class SentimentController {
                 return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                         .body(SentimentResponse.error(
                             "Model initialization in progress. Please retry in 30 seconds. " +
-                            "Check /api/health for status.", text));
+                            "Check /api/v1/health for status.", text));
             }
 
             // Get prediction and confidence

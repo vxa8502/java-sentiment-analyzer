@@ -6,6 +6,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.charset.StandardCharsets;
+import java.nio.charset.CharsetEncoder;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -16,6 +17,9 @@ import java.util.stream.Collectors;
  */
 public class DatasetValidationUtils {
     private static final Logger logger = LoggerFactory.getLogger(DatasetValidationUtils.class);
+
+    // Reusable encoder to avoid memory exhaustion
+    private static final CharsetEncoder UTF8_ENCODER = StandardCharsets.UTF_8.newEncoder();
 
     // Safety limits for memory protection
     public static final int MAX_TEXT_LENGTH = 50000; // Safety limit for memory
@@ -72,10 +76,12 @@ public class DatasetValidationUtils {
         }
 
         // Check for encoding issues that would prevent processing
-        if (!StandardCharsets.UTF_8.newEncoder().canEncode(trimmedText)) {
-            stats.incrementParseErrors();
-            logger.debug("Invalid encoding in {} record {}", datasetType, recordNumber);
-            return ValidationResult.invalid("INVALID_ENCODING", recordNumber);
+        synchronized (UTF8_ENCODER) {
+            if (!UTF8_ENCODER.canEncode(trimmedText)) {
+                stats.incrementParseErrors();
+                logger.debug("Invalid encoding in {} record {}", datasetType, recordNumber);
+                return ValidationResult.invalid("INVALID_ENCODING", recordNumber);
+            }
         }
 
         // Return the trimmed text - minimal cleaning for data integrity only

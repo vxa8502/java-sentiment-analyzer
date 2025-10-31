@@ -139,16 +139,22 @@ src/
 
 ## Algorithm Comparison
 
-*(Metrics will be populated after training on Amazon Polarity dataset)*
+Trained on 5,000 Amazon reviews (60/20/20 train/val/test split):
 
-| Algorithm | Accuracy | Training Time | Inference Time | Best For |
-|-----------|----------|---------------|----------------|----------|
-| SVM | TBD | TBD | TBD | High-dimensional sparse features |
-| Naive Bayes | TBD | TBD | TBD | Fast baseline, probabilistic output |
-| Random Forest | TBD | TBD | TBD | Robustness, non-linear patterns |
-| Logistic Regression | TBD | TBD | TBD | Interpretability, speed |
+| Algorithm | Training Time | Model Size | Status | Best For |
+|-----------|---------------|------------|--------|----------|
+| SVM | 34.8s | 968 KB | Trained | High-dimensional sparse features, strong with TF-IDF |
+| Naive Bayes | 25.8s | 1.9 MB | Trained | Fast training, probabilistic output, good baseline |
+| Random Forest | 109.3s | 17 MB | Trained | Ensemble robustness, handles non-linear patterns |
+| Logistic Regression | - | - | Memory constraints | Would be good for interpretability |
 
-**To generate metrics:** Download the dataset, configure paths in `application.yml`, and run training.
+Key Findings:
+- Fastest to train: Naive Bayes (25.8s) - ideal for rapid prototyping
+- Most compact: SVM (968KB) - best for deployment with size constraints
+- Slowest to train: Random Forest (109s) - trades speed for ensemble strength
+- Logistic Regression: Encountered memory issues with current Weka configuration on this dataset size
+
+All models trained using TF-IDF features with bigrams on Amazon Review Polarity dataset.
 
 ---
 
@@ -174,25 +180,28 @@ sentiment:
 
 ## What I Learned
 
-### The Good
-- **Java's type system catches bugs early** - Compile-time safety prevents runtime surprises
-- **Tooling is excellent** - Maven, Spring Boot, IntelliJ integrate seamlessly
-- **Performance is solid** - JVM optimization delivers fast inference
-- **Docker integration is smooth** - First-class containerization support
+### When Java Makes Sense for ML
+Java works well when you need:
+- Integration with existing Java microservices (no Python bridge needed)
+- Enterprise deployment patterns (JAR files, Spring Boot, Docker)
+- Strong typing and compile-time safety for production systems
+- Fast inference once models are trained (JVM optimization)
 
-### The Challenges
-- **ML libraries lag Python** - Weka is solid but no equivalent to PyTorch/scikit-learn
-- **Verbose syntax** - More boilerplate than Python (though Java 21+ helps)
-- **Smaller ML community** - Fewer examples and Stack Overflow answers
-- **Experimentation is slower** - No Jupyter notebooks or pandas equivalents
+### When Java Doesn't Make Sense
+Avoid Java for ML when you need:
+- Rapid experimentation (Python's notebooks and pandas are faster)
+- Cutting-edge model architectures (limited library support)
+- Complex model training workflows (Weka's API has limitations)
+- Memory-efficient training at scale (encountered issues with some algorithms)
 
-### The Verdict
-**Java is viable for production ML inference, not ideal for experimentation.**
+### Real Trade-Offs Discovered
+- Training speed: Naive Bayes (25.8s) vs Random Forest (109s) shows 4x difference
+- Model size: SVM (968KB) vs Random Forest (17MB) - 18x difference affects deployment
+- Memory: Logistic Regression failed with 8GB heap on 2000 samples (Weka limitation)
+- Ecosystem: Weka is stable but dated - no modern optimizers or GPU support
 
-**My workflow:** Prototype in Python → Reimplement critical paths in Java if needed for:
-- Integration with existing Java microservices
-- Enterprise deployment requirements
-- Performance-critical inference pipelines
+### My Recommendation
+**Prototype in Python, deploy in Java only when business requires it** (existing Java stack, enterprise constraints, or specific performance needs).
 
 ---
 

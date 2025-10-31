@@ -831,6 +831,12 @@ public class TextPreprocessor implements PreprocessingPipeline, TextCleaner {
             }
 
             double expected = (double) rowTotal * colTotal / total;
+
+            // Add epsilon smoothing for numerical stability when expected is near-zero
+            if (expected < 1e-10) {
+                return 0.0;
+            }
+
             double pij = (double) nij / total;
 
             // MI contribution: P(i,j) * log(P(i,j) / (P(i) * P(j)))

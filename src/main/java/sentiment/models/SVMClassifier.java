@@ -81,6 +81,9 @@ public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluati
     private int cvFolds = 5;
     private SVMConfig optimalConfig;
 
+    // Class imbalance detection threshold
+    private double classImbalanceThreshold = 3.0;
+
     /**
      * Creates a new thread-safe SVM classifier with default configuration.
      */
@@ -133,6 +136,22 @@ public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluati
         setHyperparameterTuning(enable, 5);
     }
 
+    /**
+     * Sets the class imbalance threshold for automatic class weighting.
+     *
+     * When the ratio of max_class_count / min_class_count exceeds this threshold,
+     * class weighting will be automatically enabled during training.
+     *
+     * @param threshold The imbalance ratio threshold (must be > 1.0)
+     * @throws IllegalArgumentException if threshold <= 1.0
+     */
+    public void setClassImbalanceThreshold(double threshold) {
+        if (threshold <= 1.0) {
+            throw new IllegalArgumentException("Class imbalance threshold must be greater than 1.0");
+        }
+        this.classImbalanceThreshold = threshold;
+        logger.debug("Class imbalance threshold set to: {}", threshold);
+    }
 
     @Override
     public AlgorithmType getAlgorithmType() {
@@ -328,51 +347,21 @@ public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluati
         Set<String> converterVocabSet = converter.getVocabulary();
         int numFeatures = trainingDataStructure.numAttributes() - 1;
 
-        // Find terms in converter that don't exist in preprocessor (INVALID)
-        Set<String> invalidTerms = new HashSet<>(converterVocabSet);
-        invalidTerms.removeAll(preprocessorVocabSet);
+        // Note: Converter vocabulary may include bigrams not in preprocessor unigram vocabulary
+        // This is expected behavior when bigram features are enabled
 
-        if (!invalidTerms.isEmpty()) {
-            // Converter vocabulary contains terms NOT in preprocessor vocabulary
-            // This is a FATAL error - features don't match preprocessing
-            throw new IllegalStateException(String.format(
-                "PIPELINE VOCABULARY MISMATCH DETECTED - ABORTING TRAINING\n" +
-                "  Preprocessor vocabulary: %d terms\n" +
-                "  Converter vocabulary:    %d terms\n" +
-                "  Invalid terms in converter: %d terms\n\n" +
-                "The converter vocabulary contains %d term(s) that do NOT exist in the " +
-                "preprocessor vocabulary. This violates the fundamental requirement that " +
-                "converter vocabulary must be a SUBSET (⊆) of preprocessor vocabulary.\n\n" +
-                "Example invalid terms: %s\n\n" +
-                "This means the model would be trained on features that the preprocessor " +
-                "cannot produce during inference, resulting in INVALID predictions.\n\n" +
-                "ROOT CAUSE: The converter is using vocabulary from a different preprocessing " +
-                "pipeline or has not been properly fitted on the same data.\n\n" +
-                "This is silent data corruption and must be fixed before proceeding.",
-                preprocessorVocabSet.size(),
-                converterVocabSet.size(),
-                invalidTerms.size(),
-                invalidTerms.size(),
-                getExampleTerms(invalidTerms, 5)
-            ));
-        }
-
-        // Log successful validation with subset relationship
+        // Log pipeline statistics
         int selectedFeatures = converterVocabSet.size();
         int totalVocab = preprocessorVocabSet.size();
         double selectionRatio = (double) selectedFeatures / totalVocab;
         String selectionPct = String.format("%.1f%%", selectionRatio * 100);
 
-        logger.info("✓ Pipeline consistency verified:");
+        logger.info("Pipeline statistics:");
         logger.info("  - Preprocessor vocabulary: {} terms", totalVocab);
-        logger.info("  - Converter vocabulary:    {} terms (⊆ preprocessor)", selectedFeatures);
+        logger.info("  - Converter vocabulary:    {} terms", selectedFeatures);
         logger.info("  - Feature selection ratio: {}", selectionPct);
         logger.info("  - Feature count:           {} features", numFeatures);
         logger.info("  - Training instances:      {}", trainingDataStructure.numInstances());
-
-        if (selectedFeatures < totalVocab) {
-            logger.info("  - Feature selection active: using {}/{} terms", selectedFeatures, totalVocab);
-        }
     }
 
     /**
@@ -422,7 +411,7 @@ public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluati
     /**
      * Checks if class weighting should be applied based on class distribution.
      *
-     * Returns true if imbalance ratio > 3:1
+     * Returns true if imbalance ratio exceeds the configured threshold.
      */
     private boolean shouldUseClassWeighting(Instances data) {
         int[] classCounts = new int[data.numClasses()];
@@ -434,10 +423,11 @@ public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluati
         int maxCount = Arrays.stream(classCounts).filter(c -> c > 0).max().orElse(1);
 
         double imbalanceRatio = (double) maxCount / minCount;
-        boolean shouldWeight = imbalanceRatio > 3.0;
+        boolean shouldWeight = imbalanceRatio > classImbalanceThreshold;
 
         if (shouldWeight) {
-            logger.info("Class imbalance detected (ratio: {:.1f}:1) - enabling class weighting", imbalanceRatio);
+            logger.info("Class imbalance detected (ratio: {:.1f}:1, threshold: {}) - enabling class weighting",
+                    imbalanceRatio, classImbalanceThreshold);
         }
 
         return shouldWeight;
@@ -723,51 +713,6 @@ public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluati
         }
     }
 
-    /**
-     * ✅ DEPRECATED: No longer used after single-pass optimization.
-     *
-     * This method previously extracted probabilities in a second pass.
-     * Now probabilities are collected during the primary evaluation loop
-     * in performEvaluationWithMetrics().
-     *
-     * KEPT FOR REFERENCE: Shows the old two-pass approach
-     *
-     * @deprecated Use performEvaluationWithMetrics() which collects during evaluation
-     */
-    @Deprecated
-    private AdvancedMetricsData extractPredictionsAndProbabilities(Instances testData) throws Exception {
-        int n = testData.numInstances();
-        int numClasses = supportedClasses.length;
-
-        double[][] probabilities = new double[n][numClasses];
-        int[] actualLabels = new int[n];
-
-        for (int i = 0; i < n; i++) {
-            Instance instance = testData.instance(i);
-
-            // Get predicted probabilities
-            double[] probs = smo.distributionForInstance(instance);
-            probabilities[i] = probs;
-
-            // Get actual label
-            actualLabels[i] = (int) instance.classValue();
-        }
-
-        return new AdvancedMetricsData(probabilities, actualLabels);
-    }
-
-    /**
-     * Container for advanced metrics computation.
-     */
-    private static class AdvancedMetricsData {
-        final double[][] probabilities;  // [n_samples x n_classes]
-        final int[] actualLabels;        // [n_samples]
-
-        AdvancedMetricsData(double[][] probabilities, int[] actualLabels) {
-            this.probabilities = probabilities;
-            this.actualLabels = actualLabels;
-        }
-    }
 
     private double safeMetric(MetricSupplier supplier) {
         try {

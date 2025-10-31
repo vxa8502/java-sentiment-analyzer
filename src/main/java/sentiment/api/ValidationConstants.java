@@ -47,12 +47,12 @@ public final class ValidationConstants {
     /**
      * Maximum number of texts in a batch request.
      *
-     * Rationale: 1000 texts per batch balances:
+     * Rationale: 100 texts per batch balances:
      * - Throughput: Process multiple texts efficiently
      * - Resource usage: Don't overwhelm the system
      * - Response time: Keep batch processing under reasonable limits
      */
-    public static final int MAX_BATCH_SIZE = 1000;
+    public static final int MAX_BATCH_SIZE = 100;
 
     /**
      * Minimum number of texts in a batch request.
