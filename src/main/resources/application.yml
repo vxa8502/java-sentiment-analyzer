@@ -1,0 +1,369 @@
+server:
+  port: 8080
+
+logging:
+  level:
+    sentiment: DEBUG
+    root: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+  file:
+    name: logs/sentiment-analyzer.log
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: when_authorized
+    prometheus:
+      enabled: true
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+    tags:
+      application: sentiment-analyzer
+
+# Main sentiment analyzer configuration
+sentiment:
+  # Model configuration
+  model-type: svm
+  confidence-threshold: 0.7
+
+  # Data paths - Docker-friendly defaults (use environment variables to override)
+  data-path: "${SENTIMENT_DATA_PATH:/app/data}"
+  models-path: "${SENTIMENT_MODELS_PATH:/app/models}"
+
+  # Pre-trained model paths (set to load specific models at startup)
+  # Models can be generated using sentiment.training.ModelTrainingMain
+  models:
+    # Path to pre-trained SVM model (default model used by the application)
+    svm-model-path: "${SENTIMENT_SVM_MODEL:/app/models/svm-model.ser}"
+
+    # Paths to other pre-trained models (for model comparison endpoint)
+    naive-bayes-model-path: "${SENTIMENT_NB_MODEL:/app/models/naive_bayes-model.ser}"
+    random-forest-model-path: "${SENTIMENT_RF_MODEL:/app/models/random_forest-model.ser}"
+    logistic-model-path: "${SENTIMENT_LR_MODEL:/app/models/logistic_regression-model.ser}"
+
+    # Load pre-trained model if available (skips training at startup)
+    prefer-pretrained: true
+
+    # Fail startup if no model is available (false = train minimal model as fallback)
+    require-pretrained: false
+
+  # Text preprocessing configuration
+  preprocessing:
+    # Minimum word length to include in tokenization
+    min-word-length: 2
+
+    # Maximum number of features to extract for TF-IDF
+    max-features: 5000
+
+    # Enable TF-IDF transformation for feature extraction
+    use-tfidf: true
+
+    # Enable bigram features (unigrams + bigrams)
+    use-bigrams: true
+
+    # Minimum term frequency for a word to be included
+    min-term-frequency: 2
+
+  # Feature extraction configuration (for TFIDFFeatureExtractor)
+  features:
+    max-features: 5000
+    min-term-freq: 1  # Allow single-occurrence terms to prevent vocabulary=0
+    use-tfidf: true
+    use-bigrams: true
+
+  # Weka conversion configuration (for WekaInstancesConverter)
+  weka:
+    max-features: 5000
+    min-term-freq: 1  # Allow single-occurrence terms to prevent vocabulary=0
+    use-tfidf: true
+    use-bigrams: true
+
+    # Enable advanced text cleaning (URLs, mentions, hashtags)
+    enable-advanced-cleaning: true
+
+    # Cache preprocessed features for performance
+    cache-features: true
+
+    # Batch size for processing large datasets
+    batch-size: 1000
+
+  # SVM specific configuration
+  svm:
+    # Kernel type: linear, polynomial, rbf, sigmoid
+    kernel-type: linear
+
+    # C parameter for regularization
+    c-parameter: 1.0
+
+    # Enable probability estimates
+    enable-probability: true
+
+    # Cross-validation folds for hyperparameter tuning
+    cv-folds: 5
+
+  # Model comparison settings
+  comparison:
+    # Algorithms to compare: svm, naive_bayes, random_forest, logistic
+    algorithms:
+      - svm
+      - naive_bayes
+      - random_forest
+
+    # Enable detailed evaluation metrics
+    detailed-metrics: true
+
+    # Generate confusion matrices
+    generate-confusion-matrix: true
+
+    # Export results to files
+    export-results: true
+
+  # Model versioning configuration (David's systems approach)
+  versioning:
+    # Directory where versioned models are stored
+    models-directory: "${SENTIMENT_MODELS_DIR:/app/models}"
+
+    # Automatically discover and register models on startup
+    auto-discover: true
+
+    # Default version to activate on startup (leave empty to use latest)
+    default-version: "${SENTIMENT_DEFAULT_VERSION:}"
+
+    # Enable A/B testing infrastructure
+    ab-testing-enabled: true
+
+    # Percentage of traffic to route to shadow version (for A/B tests)
+    shadow-traffic-percentage: 10
+
+    # Enable automatic rollback on high error rate
+    auto-rollback-enabled: false
+
+    # Error rate threshold for automatic rollback (e.g., 0.05 = 5%)
+    rollback-error-threshold: 0.05
+
+    # Number of predictions to evaluate before rollback decision
+    rollback-evaluation-window: 1000
+
+  # API configuration
+  api:
+    # Maximum batch size for batch predictions
+    max-batch-size: 100
+
+    # Enable request/response logging
+    enable-logging: true
+
+    # Rate limiting (requests per minute)
+    rate-limit: 1000
+
+    # Input validation settings
+    # NOTE: These values are defined in sentiment.api.ValidationConstants
+    # To customize, modify the constants in code or override via environment variables
+    validation:
+      # Maximum text length for single and batch requests (characters)
+      # Default: 10000 (prevents memory exhaustion and excessive processing)
+      max-text-length: 10000
+
+      # Minimum text length (characters)
+      # Default: 1 (allows short but valid inputs like "Good" or "Bad")
+      min-text-length: 1
+
+      # Maximum number of texts in batch requests
+      # Default: 1000 (balances throughput and resource usage)
+      max-batch-size: 1000
+
+      # Minimum number of texts in batch requests
+      # Default: 1
+      min-batch-size: 1
+
+  # Data loading configuration
+  data:
+    # Training data configuration - Docker-friendly path
+    # NOTE: Training data is now externalized. Place Reviews.csv in /app/data/datasets/ directory
+    training-file: "${SENTIMENT_TRAINING_FILE:/app/data/datasets/Reviews.csv}"
+    max-training-samples: 10000  # Limit training data for faster startup
+
+    # Supported file formats
+    supported-formats:
+      - csv
+      - json
+      - txt
+
+    # Maximum file size in MB
+    max-file-size-mb: 2000
+
+    # Default encoding for text files
+    default-encoding: UTF-8
+
+    # Sample size for dataset analysis
+    analysis-sample-size: 1000
+
+    # Enable data validation
+    validate-data: true
+
+    # Memory and statistical limits for dataset loading
+    # These limits prevent OOM errors and ensure statistical validity
+    limits:
+      # Maximum datasets to load from a single file (default: 100,000)
+      # Estimated memory: ~100MB assuming 1KB per text sample
+      max-datasets-per-file: 100000
+
+      # Maximum combined datasets across multiple files (default: 500,000)
+      # Estimated memory: ~500MB assuming 1KB per text sample
+      max-combined-datasets: 500000
+
+      # Maximum file size in MB before warning/rejection (default: 500)
+      max-file-size-mb: 2000
+
+      # Percentage threshold (50-100) to trigger warnings before hitting hard limits (default: 80)
+      # When reaching this percentage, warnings are logged
+      warn-threshold-percent: 80
+
+      # Whether to enforce limits strictly (throw exception) or just warn (default: true)
+      # true = throw DataLoadingException when limit exceeded
+      # false = log warning but continue processing
+      strict-enforcement: false
+
+      # Estimated number of features for statistical validation (default: 5000)
+      # Used to calculate minimum required samples for statistical power
+      # Should match sentiment.features.max-features or sentiment.preprocessing.max-features
+      estimated-features: 5000
+
+# Spring profiles configuration
+spring:
+  profiles:
+    active: development
+
+  # JSON serialization settings
+  jackson:
+    default-property-inclusion: non_null
+    serialization:
+      write-dates-as-timestamps: false
+    deserialization:
+      fail-on-unknown-properties: false
+
+# Resilience4j Configuration
+resilience4j:
+  ratelimiter:
+    instances:
+      # Rate limiter for sentiment analysis endpoints
+      sentimentApi:
+        limit-for-period: 10         # Number of requests allowed per period
+        limit-refresh-period: 1m     # Time period (1 minute)
+        timeout-duration: 0ms        # Don't wait, fail immediately if limit exceeded
+        register-health-indicator: true
+        allow-health-indicator-to-fail: true
+        event-consumer-buffer-size: 100
+
+      # Rate limiter for batch endpoints (lower limit due to higher load)
+      batchApi:
+        limit-for-period: 5
+        limit-refresh-period: 1m
+        timeout-duration: 0ms
+        register-health-indicator: true
+        allow-health-indicator-to-fail: true
+        event-consumer-buffer-size: 100
+
+      # Rate limiter for model comparison (very resource intensive)
+      comparisonApi:
+        limit-for-period: 2
+        limit-refresh-period: 5m
+        timeout-duration: 0ms
+        register-health-indicator: true
+        allow-health-indicator-to-fail: true
+        event-consumer-buffer-size: 50
+
+# Development profile specific settings
+---
+spring:
+  config:
+    activate:
+      on-profile: development
+
+logging:
+  level:
+    sentiment: DEBUG
+    org.springframework: INFO
+    weka: WARN
+
+sentiment:
+  preprocessing:
+    max-features: 1000  # Smaller for faster development
+    batch-size: 100
+  api:
+    rate-limit: 10000   # Higher limit for development
+
+resilience4j:
+  ratelimiter:
+    instances:
+      sentimentApi:
+        limit-for-period: 100  # Higher limit for development
+        limit-refresh-period: 1m
+      batchApi:
+        limit-for-period: 50
+        limit-refresh-period: 1m
+      comparisonApi:
+        limit-for-period: 10
+        limit-refresh-period: 5m
+
+# Production profile specific settings
+---
+spring:
+  config:
+    activate:
+      on-profile: production
+
+logging:
+  level:
+    sentiment: INFO
+    root: WARN
+
+sentiment:
+  preprocessing:
+    max-features: 10000  # More features for better accuracy
+    batch-size: 5000     # Larger batches for efficiency
+    cache-features: true
+  api:
+    rate-limit: 100      # Conservative limit for production
+    enable-logging: false # Disable verbose logging
+
+resilience4j:
+  ratelimiter:
+    instances:
+      sentimentApi:
+        limit-for-period: 60  # Conservative limit for production
+        limit-refresh-period: 1m
+      batchApi:
+        limit-for-period: 10
+        limit-refresh-period: 1m
+      comparisonApi:
+        limit-for-period: 5
+        limit-refresh-period: 10m
+
+# Test profile specific settings
+---
+spring:
+  config:
+    activate:
+      on-profile: test
+
+logging:
+  level:
+    sentiment: WARN
+    org.springframework: WARN
+    weka: ERROR
+
+sentiment:
+  preprocessing:
+    max-features: 100    # Minimal features for fast tests
+    batch-size: 10
+    cache-features: false
+  data:
+    max-file-size-mb: 1  # Small files for tests

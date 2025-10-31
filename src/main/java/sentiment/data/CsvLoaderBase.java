@@ -24,7 +24,21 @@ public abstract class CsvLoaderBase extends BaseDatasetLoader {
 
     @Override
     protected List<Dataset> doLoadDataset(String filePath, DatasetLoadingStats stats) throws DataLoadingException {
+        return doLoadDatasetInternal(filePath, stats, -1);
+    }
 
+    @Override
+    protected List<Dataset> doLoadDatasetSample(String filePath, int sampleSize,
+                                                 DatasetLoadingStats stats) throws DataLoadingException {
+        return doLoadDatasetInternal(filePath, stats, sampleSize);
+    }
+
+    /**
+     * Internal method that handles both full loading and sampling
+     * @param maxRows Maximum number of rows to process (-1 for unlimited)
+     */
+    private List<Dataset> doLoadDatasetInternal(String filePath, DatasetLoadingStats stats,
+                                                 int maxRows) throws DataLoadingException {
         try (BufferedReader reader = new BufferedReader(new FileReader(filePath, StandardCharsets.UTF_8))) {
             CSVFormat format = createCsvFormat();
 
@@ -32,7 +46,7 @@ public abstract class CsvLoaderBase extends BaseDatasetLoader {
                 List<String> headers = parser.getHeaderNames();
                 logger.debug("Processing CSV with headers: {}", headers);
 
-                return processRecordsWithErrorRecovery(parser, headers, stats, filePath);
+                return processRecordsWithErrorRecovery(parser, headers, stats, filePath, maxRows);
             }
 
         } catch (IOException e) {
@@ -42,17 +56,26 @@ public abstract class CsvLoaderBase extends BaseDatasetLoader {
 
     /**
      * Process CSV records with error recovery - integrated error handling logic
+     * @param maxRows Maximum number of rows to process (-1 for unlimited)
      */
     private List<Dataset> processRecordsWithErrorRecovery(CSVParser parser, List<String> headers,
-                                                          DatasetLoadingStats stats, String filePath) throws DataLoadingException {
+                                                          DatasetLoadingStats stats, String filePath,
+                                                          int maxRows) throws DataLoadingException {
         List<Dataset> datasets = new ArrayList<>();
         int consecutiveErrors = 0;
         int maxConsecutiveErrors = 100;
         int recordCount = 0;
+        boolean isSampling = maxRows > 0;
 
         Iterator<CSVRecord> iterator = parser.iterator();
 
         while (true) {
+            // Check if we've reached the sample limit
+            if (isSampling && recordCount >= maxRows) {
+                logger.debug("Reached sample limit of {} rows", maxRows);
+                break;
+            }
+
             CSVRecord record;
 
             try {
@@ -99,18 +122,18 @@ public abstract class CsvLoaderBase extends BaseDatasetLoader {
                 // Error already tracked by processRecord implementation
             }
 
-            // Progress logging
-            if (recordCount % 50000 == 0) {
+            // Progress logging (skip during sampling)
+            if (!isSampling && recordCount % 50000 == 0) {
                 logger.info("Processed {} records, {} successful so far", recordCount, stats.getSuccessfulRecords());
             }
 
-            // Check error rate periodically
-            if (recordCount > 100 && recordCount % 1000 == 0) {
+            // Check error rate periodically (skip during sampling to avoid false failures)
+            if (!isSampling && recordCount > 100 && recordCount % 1000 == 0) {
                 checkErrorRate(stats, filePath);
             }
         }
 
-        logger.info("Final parsing: {} total records, {} successful", recordCount, stats.getSuccessfulRecords());
+        logger.debug("Final parsing: {} total records, {} successful", recordCount, stats.getSuccessfulRecords());
         return datasets;
     }
 
