@@ -460,22 +460,3 @@ This is a learning project and portfolio piece, but feedback is welcome!
 [MIT License](LICENSE) - feel free to use this project for learning and portfolio purposes.
 
 ---
-
-## Acknowledgments
-
-- **Dataset**: Amazon Customer Reviews (via Kaggle)
-- **Weka Team**: University of Waikato for the ML library
-- **Spring Team**: For the excellent framework ecosystem
-
----
-
-## Contact
-
-**Victoria Alabi**
-- GitHub: [@victoriaalabi](https://github.com/victoriaalabi)
-- LinkedIn: [victoria-alabi](https://linkedin.com/in/victoria-alabi)
-- Portfolio: [your-portfolio-url]
-
----
-
-**Built with curiosity, Java 21, and a passion for production ML systems.**
