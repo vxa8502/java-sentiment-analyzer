@@ -1,1 +1,11 @@
-data/
+  # Large dataset files at ROOT only (not src code!)
+  /data/
+  *.csv
+  *.parquet
+
+  # Build artifacts
+  target/
+  *.class
+  *.jar
+  EOF
+
