@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>PipelineState.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Java Sentiment Analysis</a> &gt; <a href="index.source.html" class="el_package">sentiment</a> &gt; <span class="el_source">PipelineState.java</span></div><h1>PipelineState.java</h1><pre class="source lang-java linenums">package sentiment;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Unified lifecycle state for all pipeline components (preprocessing, models, etc.).
+ * Eliminates duplication between FilterState and ClassifierState.
+ *
+ * Provides STRICT state management with enforced transitions.
+ *
+ * CRITICAL: All state changes MUST go through validateTransition()
+ * to enforce the state machine.
+ *
+ * STATE MACHINE:
+ * UNINITIALIZED --train()/fit()--&gt; TRAINING --success--&gt; READY
+ *      ^                              |                    |
+ *      |                           failure              reset()
+ *      |                              |                    |
+ *      +--------&lt;-----------------ERROR---------&lt;---------+
+ */
+<span class="fc" id="L22">public enum PipelineState {</span>
+    /**
+     * Initial state - component has not been configured or trained
+     */
+<span class="fc" id="L26">    UNINITIALIZED(&quot;Component not initialized&quot;),</span>
+
+    /**
+     * Transient state - training is in progress
+     */
+<span class="fc" id="L31">    TRAINING(&quot;Training in progress&quot;),</span>
+
+    /**
+     * Ready state - component is trained and ready for inference
+     */
+<span class="fc" id="L36">    READY(&quot;Trained and ready&quot;),</span>
+
+    /**
+     * Error state - training failed
+     */
+<span class="fc" id="L41">    ERROR(&quot;Training failed&quot;);</span>
+
+    private final String description;
+
+<span class="fc" id="L45">    PipelineState(String description) {</span>
+<span class="fc" id="L46">        this.description = description;</span>
+<span class="fc" id="L47">    }</span>
+
+    public String getDescription() {
+<span class="nc" id="L50">        return description;</span>
+    }
+
+    /**
+     * Check if component is ready for inference
+     */
+    public boolean isReady() {
+<span class="nc bnc" id="L57" title="All 2 branches missed.">        return this == READY;</span>
+    }
+
+    /**
+     * Check if component can accept training
+     */
+    public boolean canStartTraining() {
+<span class="nc bnc" id="L64" title="All 4 branches missed.">        return this == UNINITIALIZED || this == ERROR;</span>
+    }
+
+    /**
+     * Check if state is in error
+     */
+    public boolean isError() {
+<span class="nc bnc" id="L71" title="All 2 branches missed.">        return this == ERROR;</span>
+    }
+
+    /**
+     * Check if transition to new state is valid.
+     *
+     * Valid transitions:
+     * - UNINITIALIZED → TRAINING, ERROR
+     * - TRAINING → READY, ERROR
+     * - READY → UNINITIALIZED, ERROR (for reset)
+     * - ERROR → UNINITIALIZED (for recovery)
+     */
+    public boolean canTransitionTo(PipelineState newState) {
+<span class="pc bpc" id="L84" title="2 of 4 branches missed.">        return switch (this) {</span>
+<span class="pc bpc" id="L85" title="3 of 4 branches missed.">            case UNINITIALIZED -&gt; newState == TRAINING || newState == ERROR;</span>
+<span class="pc bpc" id="L86" title="3 of 4 branches missed.">            case TRAINING -&gt; newState == READY || newState == ERROR;</span>
+<span class="nc bnc" id="L87" title="All 4 branches missed.">            case READY -&gt; newState == UNINITIALIZED || newState == ERROR;</span>
+<span class="nc bnc" id="L88" title="All 2 branches missed.">            case ERROR -&gt; newState == UNINITIALIZED;</span>
+        };
+    }
+
+    /**
+     * ENFORCED state transition validation.
+     * Throws IllegalStateException if transition is not allowed.
+     *
+     * Use this method for ALL state transitions to enforce the state machine.
+     *
+     * @param newState Target state
+     * @throws IllegalStateException if transition is invalid
+     */
+    public void validateTransition(PipelineState newState) {
+<span class="pc bpc" id="L102" title="1 of 2 branches missed.">        if (!canTransitionTo(newState)) {</span>
+<span class="nc" id="L103">            throw new IllegalStateException(</span>
+<span class="nc" id="L104">                    String.format(&quot;Invalid state transition: %s -&gt; %s. Valid transitions from %s: %s&quot;,</span>
+<span class="nc" id="L105">                            this, newState, this, getValidTransitions())</span>
+            );
+        }
+<span class="fc" id="L108">    }</span>
+
+    /**
+     * Get list of valid target states from current state.
+     * Derives valid transitions programmatically from canTransitionTo().
+     */
+    private String getValidTransitions() {
+<span class="nc" id="L115">        List&lt;String&gt; validTransitions = new ArrayList&lt;&gt;();</span>
+
+<span class="nc bnc" id="L117" title="All 2 branches missed.">        for (PipelineState targetState : values()) {</span>
+<span class="nc bnc" id="L118" title="All 2 branches missed.">            if (canTransitionTo(targetState)) {</span>
+<span class="nc" id="L119">                validTransitions.add(targetState.name());</span>
+            }
+        }
+
+<span class="nc" id="L123">        return String.join(&quot;, &quot;, validTransitions);</span>
+    }
+
+    @Override
+    public String toString() {
+<span class="fc" id="L128">        return name() + &quot;: &quot; + description;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

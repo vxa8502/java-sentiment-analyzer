@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ModelNotTrainedException.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Java Sentiment Analysis</a> &gt; <a href="index.source.html" class="el_package">sentiment.models.exceptions</a> &gt; <span class="el_source">ModelNotTrainedException.java</span></div><h1>ModelNotTrainedException.java</h1><pre class="source lang-java linenums">package sentiment.models.exceptions;
+
+import sentiment.models.AlgorithmType;
+
+/**
+ * Exception thrown when attempting to use an untrained classifier.
+ * Provides clear guidance on required training steps.
+ *
+ * ✅ ENHANCED: Type-safe algorithm identification
+ */
+public class ModelNotTrainedException extends SentimentClassifierException {
+
+    private final String attemptedOperation;
+    private final String[] requiredSteps;
+
+    public ModelNotTrainedException(AlgorithmType algorithmType, String attemptedOperation) {
+<span class="nc" id="L17">        super(algorithmType, &quot;model state validation&quot;, true,</span>
+<span class="nc" id="L18">                String.format(&quot;Cannot perform '%s' - model has not been trained&quot;, attemptedOperation),</span>
+                &quot;Classifier requires training before use&quot;, null);
+<span class="nc" id="L20">        this.attemptedOperation = attemptedOperation;</span>
+<span class="nc" id="L21">        this.requiredSteps = new String[]{</span>
+                &quot;1. Prepare training data using WekaInstancesConverter.convertToInstances()&quot;,
+                &quot;2. Call classifier.train(trainingData)&quot;,
+                &quot;3. Verify training completed successfully&quot;,
+                &quot;4. Then perform &quot; + attemptedOperation
+        };
+<span class="nc" id="L27">    }</span>
+
+<span class="nc" id="L29">    public String getAttemptedOperation() { return attemptedOperation; }</span>
+<span class="nc" id="L30">    public String[] getRequiredSteps() { return requiredSteps.clone(); }</span>
+
+
+    public String getTrainingGuidance() {
+<span class="nc" id="L34">        String nl = System.lineSeparator();</span>
+<span class="nc" id="L35">        StringBuilder guidance = new StringBuilder();</span>
+<span class="nc" id="L36">        guidance.append(&quot;Required steps to train the classifier:&quot;).append(nl);</span>
+<span class="nc bnc" id="L37" title="All 2 branches missed.">        for (String step : requiredSteps) {</span>
+<span class="nc" id="L38">            guidance.append(&quot;  &quot;).append(step).append(nl);</span>
+        }
+<span class="nc" id="L40">        return guidance.toString();</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

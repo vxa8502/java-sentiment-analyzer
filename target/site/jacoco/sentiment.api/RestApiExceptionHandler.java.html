@@ -1,0 +1,178 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>RestApiExceptionHandler.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Java Sentiment Analysis</a> &gt; <a href="index.source.html" class="el_package">sentiment.api</a> &gt; <span class="el_source">RestApiExceptionHandler.java</span></div><h1>RestApiExceptionHandler.java</h1><pre class="source lang-java linenums">package sentiment.api;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.validation.FieldError;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.annotation.ControllerAdvice;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import sentiment.models.exceptions.SentimentClassifierException;
+
+import java.util.HashMap;
+import java.util.Map;
+
+/**
+ * Global exception handler for REST API endpoints.
+ *
+ * Catches exceptions thrown by controllers and converts them to
+ * appropriate HTTP responses with proper status codes and error messages.
+ *
+ * &lt;p&gt;&lt;b&gt;Design Pattern:&lt;/b&gt; Centralized error response builder to eliminate duplication
+ * across exception handlers.
+ */
+@ControllerAdvice
+<span class="nc" id="L27">public class RestApiExceptionHandler {</span>
+
+<span class="nc" id="L29">    private static final Logger logger = LoggerFactory.getLogger(RestApiExceptionHandler.class);</span>
+
+    // ==================== HELPER METHODS ====================
+
+    /**
+     * Create a standardized ErrorResponse with automatic timestamp.
+     *
+     * @param error Error title/type
+     * @param message Detailed error message
+     * @param status HTTP status
+     * @return ErrorResponse object
+     */
+    private ErrorResponse buildErrorResponse(String error, String message, HttpStatus status) {
+<span class="nc" id="L42">        return new ErrorResponse(error, message, status.value());</span>
+    }
+
+    /**
+     * Log error at appropriate level and create ResponseEntity.
+     *
+     * &lt;p&gt;Uses different log levels based on HTTP status:
+     * &lt;ul&gt;
+     *   &lt;li&gt;4xx (client errors): INFO level&lt;/li&gt;
+     *   &lt;li&gt;5xx (server errors): ERROR level&lt;/li&gt;
+     * &lt;/ul&gt;
+     *
+     * @param logPrefix Log message prefix (e.g., &quot;Model not trained&quot;)
+     * @param ex The exception being handled
+     * @param errorTitle Error title for response
+     * @param errorMessage Error message for response
+     * @param status HTTP status
+     * @return ResponseEntity with ErrorResponse body
+     */
+    private ResponseEntity&lt;ErrorResponse&gt; logAndBuildResponse(
+            String logPrefix,
+            Exception ex,
+            String errorTitle,
+            String errorMessage,
+            HttpStatus status) {
+
+        // Log at appropriate level based on status code
+<span class="nc bnc" id="L69" title="All 2 branches missed.">        if (status.is4xxClientError()) {</span>
+<span class="nc" id="L70">            logger.info(&quot;{}: {}&quot;, logPrefix, ex.getMessage());</span>
+        } else {
+<span class="nc" id="L72">            logger.error(&quot;{}: {}&quot;, logPrefix, ex.getMessage(), ex);</span>
+        }
+
+<span class="nc" id="L75">        ErrorResponse response = buildErrorResponse(errorTitle, errorMessage, status);</span>
+<span class="nc" id="L76">        return ResponseEntity.status(status).body(response);</span>
+    }
+
+    /**
+     * Convenience overload that uses exception message as error message.
+     */
+    private ResponseEntity&lt;ErrorResponse&gt; logAndBuildResponse(
+            String logPrefix,
+            Exception ex,
+            String errorTitle,
+            HttpStatus status) {
+<span class="nc" id="L87">        return logAndBuildResponse(logPrefix, ex, errorTitle, ex.getMessage(), status);</span>
+    }
+
+    // ==================== EXCEPTION HANDLERS ====================
+
+    /**
+     * Handles validation errors from @Valid annotations.
+     */
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ResponseEntity&lt;ErrorResponse&gt; handleValidationExceptions(
+            MethodArgumentNotValidException ex) {
+
+<span class="nc" id="L100">        Map&lt;String, String&gt; errors = new HashMap&lt;&gt;();</span>
+<span class="nc" id="L101">        ex.getBindingResult().getAllErrors().forEach(error -&gt; {</span>
+<span class="nc" id="L102">            String fieldName = ((FieldError) error).getField();</span>
+<span class="nc" id="L103">            String errorMessage = error.getDefaultMessage();</span>
+<span class="nc" id="L104">            errors.put(fieldName, errorMessage);</span>
+<span class="nc" id="L105">        });</span>
+
+<span class="nc" id="L107">        logger.info(&quot;Validation failed: {}&quot;, errors);</span>
+
+<span class="nc" id="L109">        ErrorResponse response = new ErrorResponse(</span>
+                &quot;Validation failed&quot;,
+                errors,
+<span class="nc" id="L112">                HttpStatus.BAD_REQUEST.value()</span>
+        );
+
+<span class="nc" id="L115">        return ResponseEntity.badRequest().body(response);</span>
+    }
+
+    /**
+     * Handles general sentiment classifier exceptions.
+     */
+    @ExceptionHandler(SentimentClassifierException.class)
+    @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
+    public ResponseEntity&lt;ErrorResponse&gt; handleSentimentClassifierException(
+            SentimentClassifierException ex) {
+<span class="nc" id="L125">        return logAndBuildResponse(</span>
+                &quot;Sentiment classifier error&quot;,
+                ex,
+                &quot;Classifier error&quot;,
+                HttpStatus.INTERNAL_SERVER_ERROR
+        );
+    }
+
+    /**
+     * Handles illegal argument exceptions.
+     */
+    @ExceptionHandler(IllegalArgumentException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ResponseEntity&lt;ErrorResponse&gt; handleIllegalArgument(
+            IllegalArgumentException ex) {
+<span class="nc" id="L140">        return logAndBuildResponse(</span>
+                &quot;Invalid argument&quot;,
+                ex,
+                &quot;Invalid input&quot;,
+                HttpStatus.BAD_REQUEST
+        );
+    }
+
+    /**
+     * Handles illegal state exceptions.
+     */
+    @ExceptionHandler(IllegalStateException.class)
+    @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
+    public ResponseEntity&lt;ErrorResponse&gt; handleIllegalState(
+            IllegalStateException ex) {
+<span class="nc" id="L155">        return logAndBuildResponse(</span>
+                &quot;Invalid state&quot;,
+                ex,
+                &quot;Service unavailable&quot;,
+                HttpStatus.SERVICE_UNAVAILABLE
+        );
+    }
+
+    /**
+     * Catches all other unhandled exceptions.
+     */
+    @ExceptionHandler(Exception.class)
+    @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
+    public ResponseEntity&lt;ErrorResponse&gt; handleGenericException(Exception ex) {
+<span class="nc" id="L169">        return logAndBuildResponse(</span>
+                &quot;Unexpected error occurred&quot;,
+                ex,
+                &quot;Internal server error&quot;,
+                &quot;An unexpected error occurred. Please try again later.&quot;,
+                HttpStatus.INTERNAL_SERVER_ERROR
+        );
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

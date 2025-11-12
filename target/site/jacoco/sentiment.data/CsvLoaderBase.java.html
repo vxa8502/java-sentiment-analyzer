@@ -1,0 +1,342 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>CsvLoaderBase.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Java Sentiment Analysis</a> &gt; <a href="index.source.html" class="el_package">sentiment.data</a> &gt; <span class="el_source">CsvLoaderBase.java</span></div><h1>CsvLoaderBase.java</h1><pre class="source lang-java linenums">package sentiment.data;
+
+import org.apache.commons.csv.CSVFormat;
+import org.apache.commons.csv.CSVParser;
+import org.apache.commons.csv.CSVRecord;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.BufferedReader;
+import java.io.FileReader;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
+
+/**
+ * Simplified CSV loader base class - only parsing and basic structural validation.
+ * No text cleaning or content validation - just load raw data from files.
+ *
+ * This class combines the template method pattern from the former BaseDatasetLoader
+ * with CSV-specific parsing logic.
+ */
+<span class="fc" id="L24">public abstract class CsvLoaderBase implements DatasetLoader {</span>
+
+<span class="fc" id="L26">    protected final Logger logger = LoggerFactory.getLogger(getClass());</span>
+
+    // ==================== PUBLIC INTERFACE METHODS ====================
+
+    @Override
+    public final List&lt;Dataset&gt; loadDataset(String filePath) throws DataLoadingException {
+<span class="fc" id="L32">        logger.info(&quot;Loading {} from: {}&quot;, getDatasetTypeName(), filePath);</span>
+
+        // Validate file can be read
+<span class="fc" id="L35">        DatasetValidationUtils.validateFilePath(filePath, getDatasetTypeName());</span>
+
+        // Create statistics tracker
+<span class="fc" id="L38">        DatasetLoadingStats stats = new DatasetLoadingStats();</span>
+
+        // Perform actual loading (implemented by this class)
+<span class="fc" id="L41">        List&lt;Dataset&gt; datasets = doLoadDataset(filePath, stats);</span>
+
+        // Validate final result
+<span class="fc" id="L44">        DatasetValidationUtils.validateFinalDataset(datasets, stats, filePath, getDatasetTypeName());</span>
+
+        // Log summary
+<span class="fc" id="L47">        stats.logSummary(logger, filePath, getDatasetTypeName());</span>
+
+<span class="fc" id="L49">        return datasets;</span>
+    }
+
+    @Override
+    public CompatibilityTestResult testCompatibility(String filePath, int sampleSize) {
+        // Validate basic file access
+        try {
+<span class="fc" id="L56">            DatasetValidationUtils.validateFilePath(filePath, getDatasetTypeName());</span>
+<span class="nc" id="L57">        } catch (DataLoadingException e) {</span>
+<span class="nc" id="L58">            return CompatibilityTestResult.failure(getDatasetTypeName(),</span>
+<span class="nc" id="L59">                &quot;Cannot access file: &quot; + e.getMessage());</span>
+<span class="fc" id="L60">        }</span>
+
+        // Check file extension
+<span class="pc bpc" id="L63" title="1 of 2 branches missed.">        if (!canHandle(filePath)) {</span>
+<span class="nc" id="L64">            return CompatibilityTestResult.failure(getDatasetTypeName(),</span>
+                &quot;Unsupported file extension&quot;);
+        }
+
+        // Create statistics tracker for sampling
+<span class="fc" id="L69">        DatasetLoadingStats stats = new DatasetLoadingStats();</span>
+
+        try {
+            // Attempt to load a sample of the file
+<span class="fc" id="L73">            List&lt;Dataset&gt; sample = doLoadDatasetSample(filePath, sampleSize, stats);</span>
+
+            // Calculate results
+<span class="fc" id="L76">            int sampledRows = stats.getTotalRecords();</span>
+<span class="fc" id="L77">            int successfulRows = stats.getSuccessfulRecords();</span>
+<span class="fc" id="L78">            int failedRows = sampledRows - successfulRows;</span>
+
+            // If we couldn't parse anything, it's a complete failure
+<span class="fc bfc" id="L81" title="All 2 branches covered.">            if (sampledRows == 0) {</span>
+<span class="fc" id="L82">                return CompatibilityTestResult.failure(getDatasetTypeName(),</span>
+                    &quot;Could not parse any records from file&quot;);
+            }
+
+<span class="fc" id="L86">            return CompatibilityTestResult.success(</span>
+<span class="fc" id="L87">                getDatasetTypeName(),</span>
+                sampledRows,
+                successfulRows,
+                failedRows
+            );
+
+<span class="nc" id="L93">        } catch (Exception e) {</span>
+<span class="nc" id="L94">            return CompatibilityTestResult.failure(getDatasetTypeName(),</span>
+<span class="nc" id="L95">                &quot;Error during sampling: &quot; + e.getMessage());</span>
+        }
+    }
+
+    // ==================== INTERNAL LOADING METHODS ====================
+
+    protected List&lt;Dataset&gt; doLoadDataset(String filePath, DatasetLoadingStats stats) throws DataLoadingException {
+<span class="fc" id="L102">        return doLoadDatasetInternal(filePath, stats, -1);</span>
+    }
+
+    protected List&lt;Dataset&gt; doLoadDatasetSample(String filePath, int sampleSize,
+                                                 DatasetLoadingStats stats) throws DataLoadingException {
+<span class="fc" id="L107">        return doLoadDatasetInternal(filePath, stats, sampleSize);</span>
+    }
+
+    /**
+     * Internal method that handles both full loading and sampling
+     * @param maxRows Maximum number of rows to process (-1 for unlimited)
+     */
+    private List&lt;Dataset&gt; doLoadDatasetInternal(String filePath, DatasetLoadingStats stats,
+                                                 int maxRows) throws DataLoadingException {
+<span class="fc" id="L116">        try (BufferedReader reader = new BufferedReader(new FileReader(filePath, StandardCharsets.UTF_8))) {</span>
+<span class="fc" id="L117">            CSVFormat format = createCsvFormat();</span>
+
+<span class="fc" id="L119">            try (CSVParser parser = format.parse(reader)) {</span>
+<span class="fc" id="L120">                List&lt;String&gt; headers = parser.getHeaderNames();</span>
+<span class="fc" id="L121">                logger.debug(&quot;Processing CSV with headers: {}&quot;, headers);</span>
+
+<span class="fc" id="L123">                return processRecordsWithErrorRecovery(parser, headers, stats, filePath, maxRows);</span>
+            }
+
+<span class="nc" id="L126">        } catch (IOException e) {</span>
+<span class="nc" id="L127">            throw new DataLoadingException(&quot;Failed to read CSV file&quot;, filePath, getDatasetTypeName(), e);</span>
+        }
+    }
+
+    /**
+     * Process CSV records with error recovery - integrated error handling logic
+     * @param maxRows Maximum number of rows to process (-1 for unlimited)
+     */
+    private List&lt;Dataset&gt; processRecordsWithErrorRecovery(CSVParser parser, List&lt;String&gt; headers,
+                                                          DatasetLoadingStats stats, String filePath,
+                                                          int maxRows) throws DataLoadingException {
+<span class="fc" id="L138">        List&lt;Dataset&gt; datasets = new ArrayList&lt;&gt;();</span>
+<span class="fc" id="L139">        int consecutiveErrors = 0;</span>
+<span class="fc" id="L140">        int maxConsecutiveErrors = 100;</span>
+<span class="fc" id="L141">        int recordCount = 0;</span>
+<span class="fc bfc" id="L142" title="All 2 branches covered.">        boolean isSampling = maxRows &gt; 0;</span>
+
+<span class="fc" id="L144">        Iterator&lt;CSVRecord&gt; iterator = parser.iterator();</span>
+
+        while (true) {
+            // Check if we've reached the sample limit
+<span class="fc bfc" id="L148" title="All 4 branches covered.">            if (isSampling &amp;&amp; recordCount &gt;= maxRows) {</span>
+<span class="fc" id="L149">                logger.debug(&quot;Reached sample limit of {} rows&quot;, maxRows);</span>
+<span class="fc" id="L150">                break;</span>
+            }
+
+            CSVRecord record;
+
+            try {
+<span class="fc bfc" id="L156" title="All 2 branches covered.">                if (!iterator.hasNext()) {</span>
+<span class="fc" id="L157">                    break;</span>
+                }
+
+<span class="fc" id="L160">                record = iterator.next();</span>
+<span class="fc" id="L161">                recordCount++;</span>
+<span class="fc" id="L162">                consecutiveErrors = 0;</span>
+
+<span class="nc" id="L164">            } catch (RuntimeException e) {</span>
+<span class="nc" id="L165">                consecutiveErrors++;</span>
+<span class="nc" id="L166">                stats.incrementParseErrors();</span>
+
+<span class="nc" id="L168">                logger.warn(&quot;Skipping malformed CSV line around record {}: {}&quot;, recordCount, e.getMessage());</span>
+
+<span class="nc bnc" id="L170" title="All 2 branches missed.">                if (consecutiveErrors &gt;= maxConsecutiveErrors) {</span>
+<span class="nc" id="L171">                    throw new DataLoadingException(</span>
+<span class="nc" id="L172">                            String.format(&quot;Hit %d consecutive parsing errors - file may be corrupted&quot;, consecutiveErrors),</span>
+<span class="nc" id="L173">                            filePath, getDatasetTypeName());</span>
+                }
+<span class="nc" id="L175">                continue;</span>
+<span class="fc" id="L176">            }</span>
+
+            // Process the record
+<span class="fc" id="L179">            stats.incrementTotal();</span>
+
+            try {
+<span class="fc" id="L182">                Dataset dataset = processRecord(record, stats, headers);</span>
+
+<span class="fc bfc" id="L184" title="All 2 branches covered.">                if (dataset != null) {</span>
+<span class="fc" id="L185">                    datasets.add(dataset);</span>
+<span class="fc" id="L186">                    stats.incrementSuccessful();</span>
+
+                    // Log first successful record
+<span class="fc bfc" id="L189" title="All 2 branches covered.">                    if (datasets.size() == 1) {</span>
+<span class="fc" id="L190">                        logger.info(&quot;First successful record: {}&quot;, dataset);</span>
+                    }
+                }
+
+<span class="nc" id="L194">            } catch (Exception e) {</span>
+<span class="nc" id="L195">                logger.debug(&quot;Error processing record {}: {}&quot;, recordCount, e.getMessage());</span>
+                // Error already tracked by processRecord implementation
+<span class="fc" id="L197">            }</span>
+
+            // Progress logging (skip during sampling)
+<span class="pc bpc" id="L200" title="1 of 4 branches missed.">            if (!isSampling &amp;&amp; recordCount % 50000 == 0) {</span>
+<span class="nc" id="L201">                logger.info(&quot;Processed {} records, {} successful so far&quot;, recordCount, stats.getSuccessfulRecords());</span>
+            }
+
+            // Check error rate periodically (skip during sampling to avoid false failures)
+<span class="fc bfc" id="L205" title="All 6 branches covered.">            if (!isSampling &amp;&amp; recordCount &gt; 100 &amp;&amp; recordCount % 1000 == 0) {</span>
+<span class="fc" id="L206">                checkErrorRate(stats, filePath);</span>
+            }
+<span class="fc" id="L208">        }</span>
+
+<span class="fc" id="L210">        logger.debug(&quot;Final parsing: {} total records, {} successful&quot;, recordCount, stats.getSuccessfulRecords());</span>
+<span class="fc" id="L211">        return datasets;</span>
+    }
+
+    /**
+     * Check if error rate exceeds acceptable threshold
+     */
+    private void checkErrorRate(DatasetLoadingStats stats, String filePath) throws DataLoadingException {
+<span class="fc" id="L218">        double currentErrorRate = 1.0 - stats.getSuccessRate();</span>
+<span class="pc bpc" id="L219" title="1 of 2 branches missed.">        if (currentErrorRate &gt; getMaxErrorRate()) {</span>
+<span class="nc" id="L220">            throw new DataLoadingException(</span>
+<span class="nc" id="L221">                    String.format(&quot;Error rate %.1f%% exceeds maximum %.1f%% after %d records&quot;,</span>
+<span class="nc" id="L222">                            currentErrorRate * 100, getMaxErrorRate() * 100, stats.getTotalRecords()),</span>
+<span class="nc" id="L223">                    filePath, getDatasetTypeName());</span>
+        }
+<span class="fc" id="L225">    }</span>
+
+    /**
+     * Abstract method for processing individual CSV records.
+     * Should only do basic structural validation and create Dataset with original text.
+     */
+    protected abstract Dataset processRecord(CSVRecord record, DatasetLoadingStats stats,
+                                             List&lt;String&gt; headers) throws Exception;
+
+    /**
+     * Create CSV format for parsing - can be overridden by subclasses
+     */
+    protected CSVFormat createCsvFormat() {
+<span class="fc" id="L238">        return CSVFormat.Builder.create()</span>
+<span class="fc" id="L239">                .setDelimiter(',')</span>
+<span class="fc" id="L240">                .setHeader()</span>
+<span class="fc" id="L241">                .setSkipHeaderRecord(true)</span>
+<span class="fc" id="L242">                .setIgnoreEmptyLines(true)</span>
+<span class="fc" id="L243">                .setTrim(true)</span>
+<span class="fc" id="L244">                .setQuote('&quot;')</span>
+<span class="fc" id="L245">                .setEscape('\\')</span>
+<span class="fc" id="L246">                .setAllowMissingColumnNames(true)</span>
+<span class="fc" id="L247">                .setIgnoreHeaderCase(true)</span>
+<span class="fc" id="L248">                .build();</span>
+    }
+
+    /**
+     * Simple field extraction helper
+     */
+    protected String extractField(CSVRecord record, String... fieldNames) {
+<span class="nc bnc" id="L255" title="All 2 branches missed.">        for (String fieldName : fieldNames) {</span>
+<span class="nc bnc" id="L256" title="All 2 branches missed.">            if (record.isMapped(fieldName)) {</span>
+<span class="nc" id="L257">                String value = record.get(fieldName);</span>
+<span class="nc bnc" id="L258" title="All 4 branches missed.">                if (value != null &amp;&amp; !value.trim().isEmpty()) {</span>
+<span class="nc" id="L259">                    return value.trim();</span>
+                }
+            }
+        }
+<span class="nc" id="L263">        return null;</span>
+    }
+
+    /**
+     * Extract field with positional fallback
+     */
+    protected String extractFieldWithFallback(CSVRecord record, int fallbackPosition, String... fieldNames) {
+<span class="nc" id="L270">        String value = extractField(record, fieldNames);</span>
+<span class="nc bnc" id="L271" title="All 6 branches missed.">        if (value == null &amp;&amp; fallbackPosition &gt;= 0 &amp;&amp; fallbackPosition &lt; record.size()) {</span>
+<span class="nc" id="L272">            value = record.get(fallbackPosition);</span>
+<span class="nc bnc" id="L273" title="All 4 branches missed.">            if (value != null &amp;&amp; !value.trim().isEmpty()) {</span>
+<span class="nc" id="L274">                return value.trim();</span>
+            }
+        }
+<span class="nc" id="L277">        return value;</span>
+    }
+
+    // ==================== HELPER METHODS ====================
+
+    /**
+     * Common pattern: validate text + sentiment, then build Dataset.
+     * Returns null if validation fails (with stats automatically updated).
+     *
+     * This eliminates the repetitive validate → build pattern across loaders.
+     */
+    protected Dataset validateAndBuild(
+            String rawText,
+            String rawSentiment,
+            int recordNumber,
+            DatasetLoadingStats stats,
+            String source,
+            String datasetType) {
+
+        // Validate text
+<span class="fc" id="L297">        DatasetValidationUtils.ValidationResult textValidation =</span>
+<span class="fc" id="L298">                DatasetValidationUtils.validateRawText(rawText, datasetType, recordNumber, stats);</span>
+<span class="pc bpc" id="L299" title="1 of 2 branches missed.">        if (!textValidation.isValid()) {</span>
+<span class="nc" id="L300">            return null;</span>
+        }
+
+        // Validate sentiment
+<span class="fc" id="L304">        DatasetValidationUtils.ValidationResult sentimentValidation =</span>
+<span class="fc" id="L305">                DatasetValidationUtils.validateRawSentiment(rawSentiment, datasetType, recordNumber, stats);</span>
+<span class="pc bpc" id="L306" title="1 of 2 branches missed.">        if (!sentimentValidation.isValid()) {</span>
+<span class="nc" id="L307">            return null;</span>
+        }
+
+        // Build and return Dataset
+<span class="fc" id="L311">        String validatedText = textValidation.getText();</span>
+<span class="fc" id="L312">        Dataset.SentimentLabel validatedSentiment = sentimentValidation.getSentiment();</span>
+
+<span class="fc" id="L314">        return new Dataset.Builder(validatedText, validatedSentiment)</span>
+<span class="fc" id="L315">                .source(source)</span>
+<span class="fc" id="L316">                .originalLabel(rawSentiment)</span>
+<span class="fc" id="L317">                .timestamp(java.time.LocalDateTime.now())</span>
+<span class="fc" id="L318">                .build();</span>
+    }
+
+    /**
+     * Common helper to build Dataset from validated fields.
+     * Use this when you've already validated the fields separately.
+     */
+    protected Dataset buildStandardDataset(
+            String validatedText,
+            Dataset.SentimentLabel validatedSentiment,
+            String source,
+            String originalLabel) {
+<span class="nc" id="L330">        return new Dataset.Builder(validatedText, validatedSentiment)</span>
+<span class="nc" id="L331">                .source(source)</span>
+<span class="nc" id="L332">                .originalLabel(originalLabel)</span>
+<span class="nc" id="L333">                .timestamp(java.time.LocalDateTime.now())</span>
+<span class="nc" id="L334">                .build();</span>
+    }
+
+    /**
+     * Get maximum acceptable error rate for this loader type
+     */
+    protected abstract double getMaxErrorRate();
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

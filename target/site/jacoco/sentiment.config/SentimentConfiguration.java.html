@@ -1,0 +1,396 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>SentimentConfiguration.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Java Sentiment Analysis</a> &gt; <a href="index.source.html" class="el_package">sentiment.config</a> &gt; <span class="el_source">SentimentConfiguration.java</span></div><h1>SentimentConfiguration.java</h1><pre class="source lang-java linenums">package sentiment.config;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import sentiment.data.Dataset;
+import sentiment.data.DatasetLoaderRegistry;
+import sentiment.data.DatasetLoadResult;
+import sentiment.models.SVMClassifier;
+import sentiment.models.WekaModelPersistence;
+import sentiment.models.SentimentClassifier;
+import sentiment.preprocessing.TextPreprocessor;
+import sentiment.preprocessing.WekaInstancesConverter;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Random;
+
+/**
+ * Spring configuration for sentiment analysis components.
+ *
+ * Provides beans for:
+ * - SentimentClassifier (trained and ready for use)
+ * - Configuration properties
+ *
+ * NOTE: This configuration is disabled during training (profile=training)
+ * to prevent conflicts with the model training process.
+ */
+@Configuration
+@org.springframework.context.annotation.Profile(&quot;!training&quot;)
+<span class="nc" id="L40">public class SentimentConfiguration {</span>
+
+<span class="nc" id="L42">    private static final Logger logger = LoggerFactory.getLogger(SentimentConfiguration.class);</span>
+
+    @Autowired
+    private TextPreprocessor textPreprocessor;
+
+    @Autowired
+    private WekaInstancesConverter wekaInstancesConverter;
+
+    @Autowired
+    private DatasetLoaderRegistry dataLoaderManager;
+
+    @Value(&quot;${sentiment.data.training-file:./data/datasets/Reviews.csv}&quot;)
+    private String trainingDataPath;
+
+    @Value(&quot;${sentiment.data.max-training-samples:10000}&quot;)
+    private int maxTrainingSamples;
+
+    @Value(&quot;${sentiment.models.svm-model-path:./models/svm-model.ser}&quot;)
+    private String svmModelPath;
+
+    @Value(&quot;${sentiment.models.prefer-pretrained:true}&quot;)
+    private boolean preferPretrained;
+
+    @Value(&quot;${sentiment.models.require-pretrained:false}&quot;)
+    private boolean requirePretrained;
+
+    @Value(&quot;${sentiment.svm.class-imbalance-threshold:3.0}&quot;)
+    private double classImbalanceThreshold;
+
+    /**
+     * Creates WekaModelPersistence bean for model save/load operations.
+     */
+    @Bean
+    public WekaModelPersistence&lt;SVMClassifier&gt; wekaModelPersistence() {
+<span class="nc" id="L76">        return new WekaModelPersistence&lt;&gt;();</span>
+    }
+
+    /**
+     * Creates and trains the sentiment classifier bean.
+     *
+     * This bean is eagerly initialized on application startup to ensure
+     * the model is ready before accepting requests.
+     *
+     * UPDATED BEHAVIOR (Pre-trained Model Support):
+     * ==============================================
+     * 1. If prefer-pretrained=true and model exists, loads it (FAST STARTUP)
+     * 2. If prefer-pretrained=true but no model exists:
+     *    a. If require-pretrained=true, fails startup with clear error
+     *    b. If require-pretrained=false, trains minimal fallback model (SLOW)
+     * 3. If prefer-pretrained=false, always trains new model
+     *
+     * Production recommendation:
+     * - Set prefer-pretrained=true and require-pretrained=true
+     * - Pre-train models using sentiment.training.ModelTrainingCLI
+     * - This ensures predictable startup time and prevents training in production
+     *
+     * Development recommendation:
+     * - Set prefer-pretrained=true and require-pretrained=false
+     * - This allows fallback training if models aren't pre-trained
+     */
+    @Bean
+    public SentimentClassifier sentimentClassifier() {
+<span class="nc" id="L104">        logger.info(&quot;Initializing sentiment classifier bean...&quot;);</span>
+<span class="nc" id="L105">        logger.info(&quot;Configuration: prefer-pretrained={}, require-pretrained={}&quot;,</span>
+<span class="nc" id="L106">                preferPretrained, requirePretrained);</span>
+
+        try {
+<span class="nc" id="L109">            SVMClassifier classifier = new SVMClassifier(textPreprocessor, wekaInstancesConverter);</span>
+<span class="nc" id="L110">            classifier.setClassImbalanceThreshold(classImbalanceThreshold);</span>
+<span class="nc" id="L111">            WekaModelPersistence&lt;SVMClassifier&gt; persistence = wekaModelPersistence();</span>
+
+<span class="nc bnc" id="L113" title="All 2 branches missed.">            if (preferPretrained) {</span>
+                // Try to load pre-trained model
+<span class="nc" id="L115">                Path modelPath = Paths.get(svmModelPath);</span>
+
+<span class="nc bnc" id="L117" title="All 4 branches missed.">                if (Files.exists(modelPath) &amp;&amp; Files.isReadable(modelPath)) {</span>
+<span class="nc" id="L118">                    logger.info(&quot;Found pre-trained model at {}&quot;, svmModelPath);</span>
+
+                    try {
+                        // Validate model before loading
+<span class="nc bnc" id="L122" title="All 2 branches missed.">                        if (persistence.isValidModel(modelPath)) {</span>
+<span class="nc" id="L123">                            logger.info(&quot;Model validation passed. Loading model...&quot;);</span>
+<span class="nc" id="L124">                            persistence.loadModel(classifier, modelPath);</span>
+
+                            // Log model metadata
+<span class="nc" id="L127">                            WekaModelPersistence.ModelMetadata metadata = persistence.getModelMetadata(modelPath);</span>
+<span class="nc" id="L128">                            logger.info(&quot;✅ Pre-trained model loaded successfully: {}&quot;, metadata);</span>
+<span class="nc" id="L129">                            logger.info(&quot;Startup model loading completed - FAST PATH (no training)&quot;);</span>
+
+<span class="nc" id="L131">                            return classifier;</span>
+                        } else {
+<span class="nc" id="L133">                            logger.warn(&quot;Model file exists but validation failed at: {}&quot;, modelPath);</span>
+<span class="nc" id="L134">                            throw new IOException(&quot;Model validation failed&quot;);</span>
+                        }
+<span class="nc" id="L136">                    } catch (IOException | ClassNotFoundException e) {</span>
+<span class="nc" id="L137">                        logger.error(&quot;Failed to load pre-trained model from {}: {}&quot;,</span>
+<span class="nc" id="L138">                                svmModelPath, e.getMessage());</span>
+
+<span class="nc bnc" id="L140" title="All 2 branches missed.">                        if (requirePretrained) {</span>
+<span class="nc" id="L141">                            throw new IllegalStateException(</span>
+                                    &quot;Pre-trained model required but failed to load from: &quot; + svmModelPath +
+                                    &quot;\nTo fix: Run sentiment.training.ModelTrainingCLI to generate models, &quot; +
+                                    &quot;or set sentiment.models.require-pretrained=false&quot;, e);
+                        } else {
+<span class="nc" id="L146">                            logger.warn(&quot;Falling back to training a new model (SLOW PATH)...&quot;);</span>
+                        }
+<span class="nc" id="L148">                    }</span>
+                } else {
+<span class="nc" id="L150">                    logger.info(&quot;No pre-trained model found at {}&quot;, svmModelPath);</span>
+
+<span class="nc bnc" id="L152" title="All 2 branches missed.">                    if (requirePretrained) {</span>
+<span class="nc" id="L153">                        throw new IllegalStateException(</span>
+                                &quot;Pre-trained model required but not found at: &quot; + svmModelPath +
+                                &quot;\n\nTo fix this error:&quot; +
+                                &quot;\n1. Run the model training tool:&quot; +
+                                &quot;\n   mvn exec:java -Dexec.mainClass=\&quot;sentiment.training.ModelTrainingCLI\&quot;&quot; +
+                                &quot;\n\n2. Or set sentiment.models.require-pretrained=false to allow fallback training&quot; +
+                                &quot;\n\n3. Or provide a valid model path via SENTIMENT_SVM_MODEL environment variable&quot;);
+                    } else {
+<span class="nc" id="L161">                        logger.warn(&quot;Falling back to training a new model (SLOW PATH)...&quot;);</span>
+                    }
+                }
+            }
+
+            // Fallback: Train new model from scratch
+<span class="nc" id="L167">            logger.info(&quot;Training new model from scratch (this will take time)...&quot;);</span>
+<span class="nc" id="L168">            trainMinimalModel(classifier);</span>
+
+<span class="nc" id="L170">            logger.info(&quot;Sentiment classifier bean initialized successfully&quot;);</span>
+<span class="nc" id="L171">            return classifier;</span>
+
+<span class="nc" id="L173">        } catch (IllegalStateException e) {</span>
+            // Re-throw configuration errors
+<span class="nc" id="L175">            throw e;</span>
+<span class="nc" id="L176">        } catch (Exception e) {</span>
+<span class="nc" id="L177">            logger.error(&quot;Failed to initialize sentiment classifier&quot;, e);</span>
+
+<span class="nc bnc" id="L179" title="All 2 branches missed.">            if (requirePretrained) {</span>
+<span class="nc" id="L180">                throw new IllegalStateException(&quot;Failed to initialize required pre-trained model&quot;, e);</span>
+            }
+
+            // Return an untrained classifier rather than failing startup
+<span class="nc" id="L184">            logger.warn(&quot;Returning untrained classifier - API will return 503 until model is trained&quot;);</span>
+<span class="nc" id="L185">            SVMClassifier fallbackClassifier = new SVMClassifier(textPreprocessor, wekaInstancesConverter);</span>
+<span class="nc" id="L186">            fallbackClassifier.setClassImbalanceThreshold(classImbalanceThreshold);</span>
+<span class="nc" id="L187">            return fallbackClassifier;</span>
+        }
+    }
+
+    /**
+     * Resolves a resource path that may be prefixed with &quot;classpath:&quot; or be a regular file path.
+     *
+     * @param path The path to resolve (e.g., &quot;classpath:datasets/Reviews.csv&quot; or &quot;/absolute/path/file.csv&quot;)
+     * @return File object if path is valid, null otherwise
+     */
+    private java.io.File resolveResourcePath(String path) {
+<span class="nc bnc" id="L198" title="All 4 branches missed.">        if (path == null || path.trim().isEmpty()) {</span>
+<span class="nc" id="L199">            return null;</span>
+        }
+
+        try {
+<span class="nc bnc" id="L203" title="All 2 branches missed.">            if (path.startsWith(&quot;classpath:&quot;)) {</span>
+                // Strip classpath: prefix and load from classpath
+<span class="nc" id="L205">                String resourcePath = path.substring(&quot;classpath:&quot;.length());</span>
+<span class="nc" id="L206">                var resource = getClass().getClassLoader().getResource(resourcePath);</span>
+<span class="nc bnc" id="L207" title="All 2 branches missed.">                if (resource != null) {</span>
+<span class="nc" id="L208">                    return new java.io.File(resource.toURI());</span>
+                }
+<span class="nc" id="L210">                logger.debug(&quot;Classpath resource not found: {}&quot;, resourcePath);</span>
+<span class="nc" id="L211">                return null;</span>
+            } else {
+                // Treat as regular file path
+<span class="nc" id="L214">                return new java.io.File(path);</span>
+            }
+<span class="nc" id="L216">        } catch (Exception e) {</span>
+<span class="nc" id="L217">            logger.debug(&quot;Could not resolve resource path {}: {}&quot;, path, e.getMessage());</span>
+<span class="nc" id="L218">            return null;</span>
+        }
+    }
+
+    /**
+     * Trains model using the configured dataset file.
+     * Loads data using DatasetLoaderRegistry with intelligent detection.
+     */
+    private void trainMinimalModel(SVMClassifier classifier) throws Exception {
+<span class="nc" id="L227">        logger.info(&quot;Loading training data from: {}&quot;, trainingDataPath);</span>
+
+        try {
+            // Resolve the path (handles classpath: prefix)
+<span class="nc" id="L231">            String resolvedPath = trainingDataPath;</span>
+<span class="nc bnc" id="L232" title="All 2 branches missed.">            if (trainingDataPath.startsWith(&quot;classpath:&quot;)) {</span>
+<span class="nc" id="L233">                java.io.File file = resolveResourcePath(trainingDataPath);</span>
+<span class="nc bnc" id="L234" title="All 4 branches missed.">                if (file != null &amp;&amp; file.exists()) {</span>
+<span class="nc" id="L235">                    resolvedPath = file.getAbsolutePath();</span>
+<span class="nc" id="L236">                    logger.debug(&quot;Resolved classpath resource to: {}&quot;, resolvedPath);</span>
+                } else {
+<span class="nc" id="L238">                    logger.warn(&quot;Could not resolve classpath resource: {}&quot;, trainingDataPath);</span>
+<span class="nc" id="L239">                    throw new Exception(&quot;Training data file not found: &quot; + trainingDataPath);</span>
+                }
+            }
+
+            // Load dataset using the DatasetLoaderRegistry
+<span class="nc" id="L244">            DatasetLoadResult loadResult = dataLoaderManager.loadDataset(resolvedPath);</span>
+<span class="nc" id="L245">            List&lt;Dataset&gt; allData = loadResult.datasets();</span>
+
+<span class="nc" id="L247">            logger.info(&quot;Loaded {} reviews from {} (took {}ms)&quot;,</span>
+<span class="nc" id="L248">                    allData.size(),</span>
+<span class="nc" id="L249">                    loadResult.datasetType(),</span>
+<span class="nc" id="L250">                    loadResult.loadTimeMs());</span>
+
+            // Limit training data for faster startup (with randomization to avoid bias)
+            List&lt;Dataset&gt; trainingData;
+<span class="nc bnc" id="L254" title="All 2 branches missed.">            if (allData.size() &gt; maxTrainingSamples) {</span>
+<span class="nc" id="L255">                List&lt;Dataset&gt; shuffled = new ArrayList&lt;&gt;(allData);</span>
+<span class="nc" id="L256">                Collections.shuffle(shuffled, new java.util.Random(42)); // Fixed seed for reproducibility</span>
+<span class="nc" id="L257">                trainingData = shuffled.subList(0, maxTrainingSamples);</span>
+<span class="nc" id="L258">                logger.info(&quot;Randomly sampled {} training samples from {} total&quot;,</span>
+<span class="nc" id="L259">                        maxTrainingSamples, allData.size());</span>
+<span class="nc" id="L260">            } else {</span>
+<span class="nc" id="L261">                trainingData = allData;</span>
+            }
+
+            // Log dataset statistics
+<span class="nc bnc" id="L265" title="All 2 branches missed.">            long positive = trainingData.stream().filter(d -&gt; d.getSentiment() == Dataset.SentimentLabel.POSITIVE).count();</span>
+<span class="nc bnc" id="L266" title="All 2 branches missed.">            long negative = trainingData.stream().filter(d -&gt; d.getSentiment() == Dataset.SentimentLabel.NEGATIVE).count();</span>
+<span class="nc bnc" id="L267" title="All 2 branches missed.">            long neutral = trainingData.stream().filter(d -&gt; d.getSentiment() == Dataset.SentimentLabel.NEUTRAL).count();</span>
+
+<span class="nc" id="L269">            logger.info(&quot;Dataset distribution: positive={}, negative={}, neutral={}&quot;, positive, negative, neutral);</span>
+
+            // Train the classifier
+<span class="nc" id="L272">            classifier.train(trainingData);</span>
+<span class="nc" id="L273">            logger.info(&quot;Model training completed on {} samples&quot;, trainingData.size());</span>
+
+<span class="nc" id="L275">        } catch (Exception e) {</span>
+<span class="nc" id="L276">            logger.error(&quot;Failed to load training data from {}: {}&quot;, trainingDataPath, e.getMessage());</span>
+<span class="nc" id="L277">            logger.warn(&quot;Falling back to minimal hardcoded training data&quot;);</span>
+
+            // Fallback to minimal training data if file loading fails
+<span class="nc" id="L280">            List&lt;Dataset&gt; minimalTrainingData = List.of(</span>
+                new Dataset(&quot;This is absolutely amazing and wonderful!&quot;, &quot;positive&quot;),
+                new Dataset(&quot;I love this product, it's fantastic!&quot;, &quot;positive&quot;),
+                new Dataset(&quot;Great quality and excellent service!&quot;, &quot;positive&quot;),
+                new Dataset(&quot;Best purchase I've ever made!&quot;, &quot;positive&quot;),
+                new Dataset(&quot;Highly recommend this to everyone!&quot;, &quot;positive&quot;),
+                new Dataset(&quot;This is terrible and horrible!&quot;, &quot;negative&quot;),
+                new Dataset(&quot;I hate this product, it's awful!&quot;, &quot;negative&quot;),
+                new Dataset(&quot;Worst experience ever, very disappointed!&quot;, &quot;negative&quot;),
+                new Dataset(&quot;Complete waste of money and time!&quot;, &quot;negative&quot;),
+                new Dataset(&quot;Would not recommend to anyone!&quot;, &quot;negative&quot;)
+            );
+
+<span class="nc" id="L293">            classifier.train(minimalTrainingData);</span>
+<span class="nc" id="L294">            logger.info(&quot;Minimal fallback model training completed&quot;);</span>
+<span class="nc" id="L295">        }</span>
+<span class="nc" id="L296">    }</span>
+
+    /**
+     * Configuration properties for sentiment analysis.
+     * Binds to sentiment.* properties in application.yml
+     */
+    @ConfigurationProperties(prefix = &quot;sentiment&quot;)
+<span class="nc" id="L303">    public static class SentimentProperties {</span>
+<span class="nc" id="L304">        private ModelConfig model = new ModelConfig();</span>
+<span class="nc" id="L305">        private PerformanceConfig performance = new PerformanceConfig();</span>
+
+        public ModelConfig getModel() {
+<span class="nc" id="L308">            return model;</span>
+        }
+
+        public void setModel(ModelConfig model) {
+<span class="nc" id="L312">            this.model = model;</span>
+<span class="nc" id="L313">        }</span>
+
+        public PerformanceConfig getPerformance() {
+<span class="nc" id="L316">            return performance;</span>
+        }
+
+        public void setPerformance(PerformanceConfig performance) {
+<span class="nc" id="L320">            this.performance = performance;</span>
+<span class="nc" id="L321">        }</span>
+
+<span class="nc" id="L323">        public static class ModelConfig {</span>
+<span class="nc" id="L324">            private String algorithm = &quot;svm&quot;;</span>
+<span class="nc" id="L325">            private double confidenceThreshold = 0.7;</span>
+<span class="nc" id="L326">            private PreprocessingConfig preprocessing = new PreprocessingConfig();</span>
+
+            public String getAlgorithm() {
+<span class="nc" id="L329">                return algorithm;</span>
+            }
+
+            public void setAlgorithm(String algorithm) {
+<span class="nc" id="L333">                this.algorithm = algorithm;</span>
+<span class="nc" id="L334">            }</span>
+
+            public double getConfidenceThreshold() {
+<span class="nc" id="L337">                return confidenceThreshold;</span>
+            }
+
+            public void setConfidenceThreshold(double confidenceThreshold) {
+<span class="nc" id="L341">                this.confidenceThreshold = confidenceThreshold;</span>
+<span class="nc" id="L342">            }</span>
+
+            public PreprocessingConfig getPreprocessing() {
+<span class="nc" id="L345">                return preprocessing;</span>
+            }
+
+            public void setPreprocessing(PreprocessingConfig preprocessing) {
+<span class="nc" id="L349">                this.preprocessing = preprocessing;</span>
+<span class="nc" id="L350">            }</span>
+
+<span class="nc" id="L352">            public static class PreprocessingConfig {</span>
+<span class="nc" id="L353">                private boolean removeStopwords = true;</span>
+<span class="nc" id="L354">                private boolean stemming = true;</span>
+
+                public boolean isRemoveStopwords() {
+<span class="nc" id="L357">                    return removeStopwords;</span>
+                }
+
+                public void setRemoveStopwords(boolean removeStopwords) {
+<span class="nc" id="L361">                    this.removeStopwords = removeStopwords;</span>
+<span class="nc" id="L362">                }</span>
+
+                public boolean isStemming() {
+<span class="nc" id="L365">                    return stemming;</span>
+                }
+
+                public void setStemming(boolean stemming) {
+<span class="nc" id="L369">                    this.stemming = stemming;</span>
+<span class="nc" id="L370">                }</span>
+            }
+        }
+
+<span class="nc" id="L374">        public static class PerformanceConfig {</span>
+<span class="nc" id="L375">            private boolean cachePredictions = false;</span>
+<span class="nc" id="L376">            private int maxBatchSize = 1000;</span>
+
+            public boolean isCachePredictions() {
+<span class="nc" id="L379">                return cachePredictions;</span>
+            }
+
+            public void setCachePredictions(boolean cachePredictions) {
+<span class="nc" id="L383">                this.cachePredictions = cachePredictions;</span>
+<span class="nc" id="L384">            }</span>
+
+            public int getMaxBatchSize() {
+<span class="nc" id="L387">                return maxBatchSize;</span>
+            }
+
+            public void setMaxBatchSize(int maxBatchSize) {
+<span class="nc" id="L391">                this.maxBatchSize = maxBatchSize;</span>
+<span class="nc" id="L392">            }</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

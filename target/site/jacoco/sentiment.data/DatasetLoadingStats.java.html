@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>DatasetLoadingStats.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Java Sentiment Analysis</a> &gt; <a href="index.source.html" class="el_package">sentiment.data</a> &gt; <span class="el_source">DatasetLoadingStats.java</span></div><h1>DatasetLoadingStats.java</h1><pre class="source lang-java linenums">package sentiment.data;
+
+import org.slf4j.Logger;
+
+/**
+ * Simplified statistics class for tracking basic data loading issues only.
+ * Tracks only fundamental parsing and validation errors.
+ */
+<span class="fc" id="L9">public class DatasetLoadingStats {</span>
+
+    // Core statistics
+<span class="fc" id="L12">    private int totalRecords = 0;</span>
+<span class="fc" id="L13">    private int successfulRecords = 0;</span>
+
+    // Basic validation errors
+<span class="fc" id="L16">    private int nullOrEmptyText = 0;</span>
+<span class="fc" id="L17">    private int invalidSentimentFormat = 0;</span>
+<span class="fc" id="L18">    private int parseErrors = 0;</span>
+
+    // Core Statistics
+<span class="fc" id="L21">    public void incrementTotal() { totalRecords++; }</span>
+<span class="fc" id="L22">    public void incrementSuccessful() { successfulRecords++; }</span>
+
+    // Basic Validation Errors
+<span class="nc" id="L25">    public void incrementNullOrEmptyText() { nullOrEmptyText++; }</span>
+<span class="nc" id="L26">    public void incrementInvalidSentimentFormat() { invalidSentimentFormat++; }</span>
+<span class="fc" id="L27">    public void incrementParseErrors() { parseErrors++; }</span>
+
+    // Getters
+<span class="fc" id="L30">    public int getTotalRecords() { return totalRecords; }</span>
+<span class="fc" id="L31">    public int getSuccessfulRecords() { return successfulRecords; }</span>
+<span class="nc" id="L32">    public int getNullOrEmptyText() { return nullOrEmptyText; }</span>
+<span class="nc" id="L33">    public int getInvalidSentimentFormat() { return invalidSentimentFormat; }</span>
+<span class="nc" id="L34">    public int getParseErrors() { return parseErrors; }</span>
+
+    // Calculated Metrics
+    public double getSuccessRate() {
+<span class="pc bpc" id="L38" title="1 of 2 branches missed.">        return totalRecords &gt; 0 ? (double) successfulRecords / totalRecords : 0.0;</span>
+    }
+
+    public int getTotalErrors() {
+<span class="fc" id="L42">        return nullOrEmptyText + invalidSentimentFormat + parseErrors;</span>
+    }
+
+    public double getErrorRate() {
+<span class="nc bnc" id="L46" title="All 2 branches missed.">        return totalRecords &gt; 0 ? (double) getTotalErrors() / totalRecords : 0.0;</span>
+    }
+
+    // Logging Helpers
+    public void logSummary(Logger logger, String filePath, String datasetType) {
+<span class="fc" id="L51">        logger.info(&quot;=== {} Loading Summary: {} ===&quot;, datasetType, getFileName(filePath));</span>
+<span class="fc" id="L52">        logger.info(&quot;Total records attempted: {}&quot;, totalRecords);</span>
+<span class="fc" id="L53">        String successRatePercent = String.format(&quot;%.2f%%&quot;, getSuccessRate() * 100);</span>
+<span class="fc" id="L54">        logger.info(&quot;Successfully loaded: {} {}&quot;,</span>
+<span class="fc" id="L55">                successfulRecords, successRatePercent);</span>
+
+<span class="pc bpc" id="L57" title="1 of 2 branches missed.">        if (getTotalErrors() &gt; 0) {</span>
+<span class="nc" id="L58">            logger.info(&quot;--- Loading Issues ({}) ---&quot;, getTotalErrors());</span>
+<span class="nc" id="L59">            logNonZero(logger, &quot;  Null/Empty text&quot;, nullOrEmptyText);</span>
+<span class="nc" id="L60">            logNonZero(logger, &quot;  Invalid sentiment format&quot;, invalidSentimentFormat);</span>
+<span class="nc" id="L61">            logNonZero(logger, &quot;  Parse errors&quot;, parseErrors);</span>
+        }
+<span class="fc" id="L63">    }</span>
+
+    private void logNonZero(Logger logger, String label, int count) {
+<span class="nc bnc" id="L66" title="All 2 branches missed.">        if (count &gt; 0) {</span>
+<span class="nc" id="L67">            logger.info(&quot;{}: {}&quot;, label, count);</span>
+        }
+<span class="nc" id="L69">    }</span>
+
+    private String getFileName(String filePath) {
+<span class="pc bpc" id="L72" title="2 of 4 branches missed.">        if (filePath == null || filePath.isEmpty()) {</span>
+<span class="nc" id="L73">            return &quot;unknown file&quot;;</span>
+        }
+
+<span class="fc" id="L76">        int lastSeparator = Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\'));</span>
+<span class="pc bpc" id="L77" title="2 of 4 branches missed.">        if (lastSeparator &gt;= 0 &amp;&amp; lastSeparator &lt; filePath.length() - 1) {</span>
+<span class="fc" id="L78">            return filePath.substring(lastSeparator + 1);</span>
+        }
+
+<span class="nc" id="L81">        return filePath;</span>
+    }
+
+    @Override
+    public String toString() {
+<span class="nc" id="L86">        return String.format(&quot;DatasetLoadingStats{total=%d, successful=%d, successRate=%.1f%%, errors=%d}&quot;,</span>
+<span class="nc" id="L87">                totalRecords, successfulRecords, getSuccessRate() * 100, getTotalErrors());</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

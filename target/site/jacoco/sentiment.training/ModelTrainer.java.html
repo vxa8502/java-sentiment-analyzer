@@ -1,0 +1,383 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ModelTrainer.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Java Sentiment Analysis</a> &gt; <a href="index.source.html" class="el_package">sentiment.training</a> &gt; <span class="el_source">ModelTrainer.java</span></div><h1>ModelTrainer.java</h1><pre class="source lang-java linenums">package sentiment.training;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
+import sentiment.data.Dataset;
+import sentiment.data.DatasetLoaderRegistry;
+import sentiment.data.DatasetLoadResult;
+import sentiment.evaluation.StratifiedDataSplitter;
+import sentiment.models.*;
+import sentiment.preprocessing.TextPreprocessor;
+import sentiment.preprocessing.WekaInstancesConverter;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+
+/**
+ * Utility class for training and serializing sentiment analysis models offline.
+ *
+ * PURPOSE:
+ * ========
+ * This class enables pre-training models before application startup, eliminating
+ * the need for training during server initialization. This approach:
+ * - Reduces startup time dramatically (seconds instead of minutes)
+ * - Enables model versioning and A/B testing
+ * - Separates training concerns from serving concerns
+ * - Allows training on larger datasets without impacting production
+ *
+ * USAGE:
+ * ======
+ * 1. Standalone: Run ModelTrainingCLI.main() to train all models
+ * 2. Programmatic: Use this class in your own training pipelines
+ * 3. CI/CD: Integrate into build process for automated model updates
+ *
+ * EXAMPLE:
+ * ========
+ * // With Spring (recommended):
+ * @Autowired
+ * ModelTrainer trainer;
+ *
+ * // Programmatic usage:
+ * trainer.trainAndSave(
+ *     &quot;./data/datasets/Reviews.csv&quot;,
+ *     &quot;./models/svm-model.ser&quot;,
+ *     AlgorithmType.SVM,
+ *     10000
+ * );
+ */
+@Component
+public class ModelTrainer {
+
+<span class="nc" id="L58">    private static final Logger logger = LoggerFactory.getLogger(ModelTrainer.class);</span>
+
+    private final DatasetLoaderRegistry dataLoaderManager;
+    private final TextPreprocessor textPreprocessor;
+    private final WekaInstancesConverter wekaInstancesConverter;
+
+    /**
+     * Creates a ModelTrainer with Spring-injected components.
+     */
+    @Autowired
+    public ModelTrainer(DatasetLoaderRegistry dataLoaderManager,
+                        TextPreprocessor textPreprocessor,
+<span class="nc" id="L70">                        WekaInstancesConverter wekaInstancesConverter) {</span>
+<span class="nc" id="L71">        this.dataLoaderManager = dataLoaderManager;</span>
+<span class="nc" id="L72">        this.textPreprocessor = textPreprocessor;</span>
+<span class="nc" id="L73">        this.wekaInstancesConverter = wekaInstancesConverter;</span>
+
+<span class="nc" id="L75">        logger.info(&quot;ModelTrainer initialized with Spring-managed components&quot;);</span>
+<span class="nc" id="L76">    }</span>
+
+    /**
+     * Trains a model and saves it to disk.
+     *
+     * This is the main entry point for offline model training.
+     *
+     * @param dataPath Path to training data (CSV, JSON, etc.)
+     * @param outputPath Path where trained model should be saved
+     * @param algorithmType Type of classifier to train
+     * @param maxSamples Maximum number of training samples (0 = use all)
+     * @return Training statistics
+     * @throws Exception if training or saving fails
+     */
+    public TrainingResult trainAndSave(String dataPath, String outputPath,
+                                        AlgorithmType algorithmType, int maxSamples)
+            throws Exception {
+
+        // CRITICAL: Reset preprocessing components before each training
+        // This is necessary because they're Spring singletons that retain state
+<span class="nc" id="L96">        logger.info(&quot;Resetting preprocessing components before training {}&quot;, algorithmType);</span>
+<span class="nc" id="L97">        resetPreprocessingComponents();</span>
+
+<span class="nc" id="L99">        logger.info(&quot;=== Starting Model Training ===&quot;);</span>
+<span class="nc" id="L100">        logger.info(&quot;Algorithm: {}&quot;, algorithmType.getDisplayName());</span>
+<span class="nc" id="L101">        logger.info(&quot;Data path: {}&quot;, dataPath);</span>
+<span class="nc" id="L102">        logger.info(&quot;Output path: {}&quot;, outputPath);</span>
+<span class="nc bnc" id="L103" title="All 2 branches missed.">        logger.info(&quot;Max samples: {}&quot;, maxSamples &gt; 0 ? maxSamples : &quot;all&quot;);</span>
+
+<span class="nc" id="L105">        long startTime = System.currentTimeMillis();</span>
+
+        // Step 1: Load all data
+<span class="nc" id="L108">        logger.info(&quot;Step 1/5: Loading data...&quot;);</span>
+<span class="nc" id="L109">        List&lt;Dataset&gt; allData = loadTrainingData(dataPath, maxSamples);</span>
+<span class="nc" id="L110">        long loadTime = System.currentTimeMillis() - startTime;</span>
+<span class="nc" id="L111">        logger.info(&quot;✅ Loaded {} samples in {}ms&quot;, allData.size(), loadTime);</span>
+
+        // Step 2: Perform stratified train/validation/test split (60/20/20)
+<span class="nc" id="L114">        logger.info(&quot;Step 2/5: Performing stratified 60/20/20 train/val/test split...&quot;);</span>
+<span class="nc" id="L115">        StratifiedDataSplitter.DataSplit split = StratifiedDataSplitter.stratifiedSplit(</span>
+                allData,
+                0.6,  // 60% train
+                0.2,  // 20% validation
+                0.2,  // 20% test
+                42    // Fixed seed for reproducibility
+        );
+<span class="nc" id="L122">        logger.info(&quot;✅ Split complete: train={}, val={}, test={}&quot;,</span>
+<span class="nc" id="L123">                split.train.size(), split.validation.size(), split.test.size());</span>
+
+        // Step 3: Create and train classifier (ONLY on train set)
+<span class="nc" id="L126">        logger.info(&quot;Step 3/5: Training {} classifier on TRAIN SET ONLY...&quot;, algorithmType.getDisplayName());</span>
+<span class="nc" id="L127">        long trainStartTime = System.currentTimeMillis();</span>
+<span class="nc" id="L128">        SentimentClassifier classifier = createClassifier(algorithmType);</span>
+<span class="nc" id="L129">        classifier.train(split.train);  // ✅ Train ONLY on training set</span>
+<span class="nc" id="L130">        long trainTime = System.currentTimeMillis() - trainStartTime;</span>
+<span class="nc" id="L131">        logger.info(&quot;✅ Training completed in {}ms ({:.2f}s)&quot;,</span>
+<span class="nc" id="L132">                trainTime, trainTime / 1000.0);</span>
+
+        // Step 4: Validate trained model (on train set for sanity check)
+<span class="nc" id="L135">        logger.info(&quot;Step 4/5: Validating trained model...&quot;);</span>
+<span class="nc" id="L136">        validateModel(classifier, split.train);</span>
+<span class="nc" id="L137">        logger.info(&quot;✅ Model validation passed&quot;);</span>
+
+        // Step 5: Save model to disk
+<span class="nc" id="L140">        logger.info(&quot;Step 5/5: Saving model to {}...&quot;, outputPath);</span>
+<span class="nc" id="L141">        long saveStartTime = System.currentTimeMillis();</span>
+<span class="nc" id="L142">        saveModel(classifier, outputPath, algorithmType);</span>
+<span class="nc" id="L143">        long saveTime = System.currentTimeMillis() - saveStartTime;</span>
+<span class="nc" id="L144">        logger.info(&quot;✅ Model saved in {}ms&quot;, saveTime);</span>
+
+<span class="nc" id="L146">        long totalTime = System.currentTimeMillis() - startTime;</span>
+
+<span class="nc" id="L148">        TrainingResult result = new TrainingResult(</span>
+                algorithmType,
+<span class="nc" id="L150">                split.train.size(),</span>
+<span class="nc" id="L151">                split.validation.size(),</span>
+<span class="nc" id="L152">                split.test.size(),</span>
+                outputPath,
+                trainTime,
+                totalTime,
+<span class="nc" id="L156">                classifier.isTrained(),</span>
+                split
+        );
+
+<span class="nc" id="L160">        logger.info(&quot;=== Training Complete ===&quot;);</span>
+<span class="nc" id="L161">        logger.info(&quot;{}&quot;, result);</span>
+
+<span class="nc" id="L163">        return result;</span>
+    }
+
+    /**
+     * Trains multiple models in parallel and saves them.
+     *
+     * @param dataPath Path to training data
+     * @param outputDir Directory where models should be saved
+     * @param algorithms List of algorithm types to train
+     * @param maxSamples Maximum training samples per model
+     * @return List of training results
+     */
+    public List&lt;TrainingResult&gt; trainMultipleModels(String dataPath, String outputDir,
+                                                     List&lt;AlgorithmType&gt; algorithms,
+                                                     int maxSamples) throws Exception {
+
+<span class="nc" id="L179">        logger.info(&quot;Training {} models from {}&quot;, algorithms.size(), dataPath);</span>
+
+        // Create output directory if needed
+<span class="nc" id="L182">        Files.createDirectories(Paths.get(outputDir));</span>
+
+<span class="nc" id="L184">        List&lt;TrainingResult&gt; results = new ArrayList&lt;&gt;();</span>
+
+<span class="nc bnc" id="L186" title="All 2 branches missed.">        for (AlgorithmType algorithm : algorithms) {</span>
+<span class="nc" id="L187">            String outputPath = Paths.get(outputDir,</span>
+<span class="nc" id="L188">                    algorithm.name().toLowerCase() + &quot;-model.ser&quot;).toString();</span>
+
+            try {
+<span class="nc" id="L191">                TrainingResult result = trainAndSave(dataPath, outputPath, algorithm, maxSamples);</span>
+<span class="nc" id="L192">                results.add(result);</span>
+<span class="nc" id="L193">            } catch (Exception e) {</span>
+<span class="nc" id="L194">                logger.error(&quot;Failed to train {} model: {}&quot;, algorithm, e.getMessage(), e);</span>
+<span class="nc" id="L195">                results.add(TrainingResult.failed(algorithm, e.getMessage()));</span>
+<span class="nc" id="L196">            }</span>
+<span class="nc" id="L197">        }</span>
+
+<span class="nc" id="L199">        return results;</span>
+    }
+
+    // ==================== PRIVATE HELPERS ====================
+
+    /**
+     * Reset preprocessing components to allow training multiple models sequentially.
+     * This is necessary because Spring beans are singletons and retain state.
+     */
+    private void resetPreprocessingComponents() {
+        try {
+<span class="nc" id="L210">            textPreprocessor.reset();</span>
+<span class="nc" id="L211">            wekaInstancesConverter.reset();</span>
+<span class="nc" id="L212">            logger.debug(&quot;Successfully reset preprocessing components&quot;);</span>
+<span class="nc" id="L213">        } catch (Exception e) {</span>
+<span class="nc" id="L214">            logger.warn(&quot;Failed to reset preprocessing components: {}&quot;, e.getMessage());</span>
+<span class="nc" id="L215">        }</span>
+<span class="nc" id="L216">    }</span>
+
+    private List&lt;Dataset&gt; loadTrainingData(String dataPath, int maxSamples) throws Exception {
+<span class="nc" id="L219">        DatasetLoadResult loadResult = dataLoaderManager.loadDataset(dataPath);</span>
+<span class="nc" id="L220">        List&lt;Dataset&gt; allData = loadResult.datasets();</span>
+
+<span class="nc" id="L222">        logger.info(&quot;Loaded {} total samples from {} ({}ms)&quot;,</span>
+<span class="nc" id="L223">                allData.size(), loadResult.datasetType(), loadResult.loadTimeMs());</span>
+
+        // Log class distribution
+<span class="nc bnc" id="L226" title="All 2 branches missed.">        long positive = allData.stream().filter(d -&gt; d.getSentiment() == Dataset.SentimentLabel.POSITIVE).count();</span>
+<span class="nc bnc" id="L227" title="All 2 branches missed.">        long negative = allData.stream().filter(d -&gt; d.getSentiment() == Dataset.SentimentLabel.NEGATIVE).count();</span>
+<span class="nc bnc" id="L228" title="All 2 branches missed.">        long neutral = allData.stream().filter(d -&gt; d.getSentiment() == Dataset.SentimentLabel.NEUTRAL).count();</span>
+<span class="nc" id="L229">        logger.info(&quot;Distribution: positive={}, negative={}, neutral={}&quot;, positive, negative, neutral);</span>
+
+        // Shuffle for better training
+<span class="nc" id="L232">        List&lt;Dataset&gt; shuffled = new ArrayList&lt;&gt;(allData);</span>
+<span class="nc" id="L233">        Collections.shuffle(shuffled);</span>
+
+        // Limit samples if requested
+<span class="nc bnc" id="L236" title="All 4 branches missed.">        if (maxSamples &gt; 0 &amp;&amp; shuffled.size() &gt; maxSamples) {</span>
+<span class="nc" id="L237">            logger.info(&quot;Limiting to {} samples (from {})&quot;, maxSamples, shuffled.size());</span>
+<span class="nc" id="L238">            return shuffled.subList(0, maxSamples);</span>
+        }
+
+<span class="nc" id="L241">        return shuffled;</span>
+    }
+
+    private SentimentClassifier createClassifier(AlgorithmType algorithmType) {
+<span class="nc bnc" id="L245" title="All 6 branches missed.">        return switch (algorithmType) {</span>
+<span class="nc" id="L246">            case SVM -&gt; new SVMClassifier(textPreprocessor, wekaInstancesConverter);</span>
+<span class="nc" id="L247">            case NAIVE_BAYES -&gt; new NaiveBayesClassifier(textPreprocessor, wekaInstancesConverter);</span>
+<span class="nc" id="L248">            case RANDOM_FOREST -&gt; new RandomForestClassifier(textPreprocessor, wekaInstancesConverter);</span>
+<span class="nc" id="L249">            case LOGISTIC_REGRESSION -&gt; new LogisticRegressionClassifier(textPreprocessor, wekaInstancesConverter);</span>
+<span class="nc" id="L250">            case NEURAL_NETWORK -&gt; throw new UnsupportedOperationException(</span>
+                &quot;Neural Network classifier not yet implemented. Use SVM, Naive Bayes, Random Forest, or Logistic Regression.&quot;);
+<span class="nc" id="L252">            case UNKNOWN -&gt; throw new IllegalArgumentException(</span>
+                &quot;Cannot create classifier for UNKNOWN algorithm type&quot;);
+        };
+    }
+
+    private void validateModel(SentimentClassifier classifier, List&lt;Dataset&gt; trainingData) throws Exception {
+<span class="nc bnc" id="L258" title="All 2 branches missed.">        if (!classifier.isTrained()) {</span>
+<span class="nc" id="L259">            throw new IllegalStateException(&quot;Classifier reports as not trained after training!&quot;);</span>
+        }
+
+        // Test with a few samples
+<span class="nc" id="L263">        int samplesToTest = Math.min(5, trainingData.size());</span>
+<span class="nc" id="L264">        logger.debug(&quot;Testing model with {} samples...&quot;, samplesToTest);</span>
+
+<span class="nc bnc" id="L266" title="All 2 branches missed.">        for (int i = 0; i &lt; samplesToTest; i++) {</span>
+<span class="nc" id="L267">            Dataset sample = trainingData.get(i);</span>
+<span class="nc" id="L268">            String prediction = classifier.classify(sample.getText());</span>
+<span class="nc" id="L269">            double[] probs = classifier.getClassificationProbabilities(sample.getText());</span>
+
+<span class="nc" id="L271">            logger.debug(&quot;Sample {}: actual={}, predicted={}, confidence={:.3f}&quot;,</span>
+<span class="nc" id="L272">                    i + 1, sample.getSentiment(), prediction, getMaxProb(probs));</span>
+        }
+<span class="nc" id="L274">    }</span>
+
+    private double getMaxProb(double[] probs) {
+<span class="nc" id="L277">        double max = 0.0;</span>
+<span class="nc bnc" id="L278" title="All 2 branches missed.">        for (double prob : probs) {</span>
+<span class="nc bnc" id="L279" title="All 2 branches missed.">            if (prob &gt; max) max = prob;</span>
+        }
+<span class="nc" id="L281">        return max;</span>
+    }
+
+    @SuppressWarnings(&quot;unchecked&quot;)
+    private void saveModel(SentimentClassifier classifier, String outputPath,
+                           AlgorithmType algorithmType) throws IOException {
+
+<span class="nc" id="L288">        Path modelPath = Paths.get(outputPath);</span>
+<span class="nc" id="L289">        Files.createDirectories(modelPath.getParent());</span>
+
+        // Use appropriate persistence mechanism based on classifier type
+<span class="nc bnc" id="L292" title="All 2 branches missed.">        if (classifier instanceof ClassifierTrainingTemplate) {</span>
+            // All Weka-based classifiers (including SVM) use generic persistence
+<span class="nc" id="L294">            WekaModelPersistence&lt;ClassifierTrainingTemplate&lt;?&gt;&gt; persistence = new WekaModelPersistence&lt;&gt;();</span>
+<span class="nc" id="L295">            persistence.saveModel((ClassifierTrainingTemplate&lt;?&gt;) classifier, modelPath);</span>
+<span class="nc bnc" id="L296" title="All 2 branches missed.">        } else if (classifier instanceof ClassifierPersistence persistable) {</span>
+            // Fallback for custom persistence implementations
+<span class="nc" id="L298">            persistable.saveModel(modelPath);</span>
+        } else {
+<span class="nc" id="L300">            throw new UnsupportedOperationException(</span>
+                    &quot;Classifier type &quot; + algorithmType + &quot; does not support persistence&quot;);
+        }
+
+<span class="nc" id="L304">        long fileSize = Files.size(modelPath);</span>
+<span class="nc" id="L305">        logger.info(&quot;Model file size: {} bytes ({} KB)&quot;, fileSize, fileSize / 1024);</span>
+<span class="nc" id="L306">    }</span>
+
+    // ==================== RESULT CLASSES ====================
+
+    /**
+     * Training result metadata.
+     */
+    public static class TrainingResult {
+        private final AlgorithmType algorithm;
+        private final int trainSampleCount;
+        private final int valSampleCount;
+        private final int testSampleCount;
+        private final String outputPath;
+        private final long trainingTimeMs;
+        private final long totalTimeMs;
+        private final boolean success;
+        private final String errorMessage;
+        private final StratifiedDataSplitter.DataSplit dataSplit;  // Store split for later evaluation
+
+        public TrainingResult(AlgorithmType algorithm, int trainSampleCount, int valSampleCount,
+                              int testSampleCount, String outputPath,
+                              long trainingTimeMs, long totalTimeMs, boolean success,
+                              StratifiedDataSplitter.DataSplit dataSplit) {
+<span class="nc" id="L329">            this(algorithm, trainSampleCount, valSampleCount, testSampleCount, outputPath,</span>
+                    trainingTimeMs, totalTimeMs, success, null, dataSplit);
+<span class="nc" id="L331">        }</span>
+
+        private TrainingResult(AlgorithmType algorithm, int trainSampleCount, int valSampleCount,
+                               int testSampleCount, String outputPath,
+                               long trainingTimeMs, long totalTimeMs, boolean success,
+<span class="nc" id="L336">                               String errorMessage, StratifiedDataSplitter.DataSplit dataSplit) {</span>
+<span class="nc" id="L337">            this.algorithm = algorithm;</span>
+<span class="nc" id="L338">            this.trainSampleCount = trainSampleCount;</span>
+<span class="nc" id="L339">            this.valSampleCount = valSampleCount;</span>
+<span class="nc" id="L340">            this.testSampleCount = testSampleCount;</span>
+<span class="nc" id="L341">            this.outputPath = outputPath;</span>
+<span class="nc" id="L342">            this.trainingTimeMs = trainingTimeMs;</span>
+<span class="nc" id="L343">            this.totalTimeMs = totalTimeMs;</span>
+<span class="nc" id="L344">            this.success = success;</span>
+<span class="nc" id="L345">            this.errorMessage = errorMessage;</span>
+<span class="nc" id="L346">            this.dataSplit = dataSplit;</span>
+<span class="nc" id="L347">        }</span>
+
+        public static TrainingResult failed(AlgorithmType algorithm, String errorMessage) {
+<span class="nc" id="L350">            return new TrainingResult(algorithm, 0, 0, 0, null, 0, 0, false, errorMessage, null);</span>
+        }
+
+<span class="nc" id="L353">        public AlgorithmType getAlgorithm() { return algorithm; }</span>
+<span class="nc" id="L354">        public int getTrainSampleCount() { return trainSampleCount; }</span>
+<span class="nc" id="L355">        public int getValSampleCount() { return valSampleCount; }</span>
+<span class="nc" id="L356">        public int getTestSampleCount() { return testSampleCount; }</span>
+<span class="nc" id="L357">        public int getTotalSampleCount() { return trainSampleCount + valSampleCount + testSampleCount; }</span>
+<span class="nc" id="L358">        public String getOutputPath() { return outputPath; }</span>
+<span class="nc" id="L359">        public long getTrainingTimeMs() { return trainingTimeMs; }</span>
+<span class="nc" id="L360">        public long getTotalTimeMs() { return totalTimeMs; }</span>
+<span class="nc" id="L361">        public boolean isSuccess() { return success; }</span>
+<span class="nc" id="L362">        public String getErrorMessage() { return errorMessage; }</span>
+<span class="nc" id="L363">        public StratifiedDataSplitter.DataSplit getDataSplit() { return dataSplit; }</span>
+
+        @Override
+        public String toString() {
+<span class="nc bnc" id="L367" title="All 2 branches missed.">            if (!success) {</span>
+<span class="nc" id="L368">                return String.format(&quot;TrainingResult{algorithm=%s, success=false, error='%s'}&quot;,</span>
+<span class="nc" id="L369">                        algorithm.getDisplayName(), errorMessage);</span>
+            }
+
+<span class="nc" id="L372">            return String.format(</span>
+                    &quot;TrainingResult{algorithm=%s, train=%d, val=%d, test=%d (total=%d), &quot; +
+                    &quot;trainTime=%dms (%.2fs), totalTime=%dms (%.2fs), output='%s'}&quot;,
+<span class="nc" id="L375">                    algorithm.getDisplayName(), trainSampleCount, valSampleCount, testSampleCount,</span>
+<span class="nc" id="L376">                    getTotalSampleCount(),</span>
+<span class="nc" id="L377">                    trainingTimeMs, trainingTimeMs / 1000.0,</span>
+<span class="nc" id="L378">                    totalTimeMs, totalTimeMs / 1000.0,</span>
+                    outputPath);
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

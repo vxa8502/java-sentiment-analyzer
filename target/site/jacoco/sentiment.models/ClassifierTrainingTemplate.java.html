@@ -1,0 +1,882 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ClassifierTrainingTemplate.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Java Sentiment Analysis</a> &gt; <a href="index.source.html" class="el_package">sentiment.models</a> &gt; <span class="el_source">ClassifierTrainingTemplate.java</span></div><h1>ClassifierTrainingTemplate.java</h1><pre class="source lang-java linenums">package sentiment.models;
+
+import org.slf4j.Logger;
+import sentiment.data.Dataset;
+import sentiment.PipelineState;
+import sentiment.preprocessing.TextPreprocessor;
+import sentiment.preprocessing.WekaInstancesConverter;
+import sentiment.util.ValidationUtils;
+import weka.classifiers.Evaluation;
+import weka.core.Instance;
+import weka.core.Instances;
+
+import javax.annotation.PreDestroy;
+import java.util.*;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
+
+/**
+ * Template base class for classifier training with explicit train/predict workflow.
+ *
+ * ✅ UPDATED: Now uses unified PipelineState instead of ClassifierState
+ *
+ * DESIGN PATTERN: Template Method + Strategy
+ * ==========================================
+ * This class implements the INVARIANT parts of classifier training:
+ * - Thread-safe state management (ReadWriteLock)
+ * - State machine enforcement (UNINITIALIZED -&gt; TRAINING -&gt; READY)
+ * - Training phase protection (write lock)
+ * - Inference phase concurrency (read lock)
+ *
+ * Subclasses implement the VARIANT parts:
+ * - Specific algorithm configuration (SVM, Naive Bayes, etc.)
+ * - Classifier training logic (doTrain)
+ * - Classification methods (classify, getClassificationProbabilities)
+ * - Resource cleanup (doClearResources)
+ *
+ * Optional interfaces for subclasses:
+ * - Implement ClassifierEvaluator if supporting evaluation
+ * - Implement ClassifierPersistence if supporting save/load
+ *
+ * THREAD SAFETY GUARANTEE:
+ * ========================
+ * After train() completes successfully:
+ * ✅ Multiple threads can call inference methods concurrently
+ * ✅ No synchronization overhead during inference (ReadWriteLock.readLock)
+ * ✅ State mutations only during training (ReadWriteLock.writeLock)
+ *
+ * USAGE PATTERN:
+ * ==============
+ * 1. Application startup: classifier.train(trainingData) - ONCE
+ * 2. Request handling: classifier.classify(text) - MANY times, concurrently
+ * 3. Application shutdown: classifier.cleanup() - automatic via @PreDestroy
+ *
+ * STATE MACHINE:
+ * ==============
+ * UNINITIALIZED --train()--&gt; TRAINING --success--&gt; READY
+ *      ^                        |                    |
+ *      |                     failure              reset()
+ *      |                        |                    |
+ *      +--------&lt;------------ERROR---------&lt;---------+
+ *
+ * @param &lt;T&gt; Type of training result (optional, can be Void)
+ */
+<span class="fc" id="L64">public abstract class ClassifierTrainingTemplate&lt;T&gt; implements SentimentClassifier {</span>
+
+    // Thread-safe state management
+<span class="fc" id="L67">    protected final ReadWriteLock stateLock = new ReentrantReadWriteLock();</span>
+<span class="fc" id="L68">    protected volatile PipelineState classifierState = PipelineState.UNINITIALIZED;</span>
+
+    // Performance tracking
+<span class="fc" id="L71">    protected long lastTrainingTimeMs = 0;</span>
+
+    // ==================== WEKA-SPECIFIC SHARED STATE ====================
+    // Subclasses that use Weka should populate these fields during training
+
+    /**
+     * Training data structure (empty instances with schema only).
+     * Used for feature count and instance validation.
+     */
+    protected Instances trainingDataStructure;
+
+    /**
+     * Supported class labels (e.g., [&quot;positive&quot;, &quot;negative&quot;, &quot;neutral&quot;]).
+     * Populated during training from Weka class attribute.
+     */
+    protected String[] supportedClasses;
+
+    /**
+     * Feature converter (Weka-specific).
+     * Subclasses should set this if they use WekaInstancesConverter.
+     */
+    protected WekaInstancesConverter converter;
+
+    // ==================== TEMPLATE METHOD: TRAINING PHASE ====================
+
+    /**
+     * TRAINING PHASE: Train the classifier on training data.
+     *
+     * This method is NOT thread-safe and should be called ONCE during initialization.
+     * After successful completion, inference methods become thread-safe.
+     *
+     * TEMPLATE METHOD PATTERN:
+     * 1. Validate input (common)
+     * 2. Acquire write lock (common)
+     * 3. Validate state machine (common)
+     * 4. Transition to TRAINING (common)
+     * 5. **Call doTrain() - SUBCLASS IMPLEMENTS THIS**
+     * 6. Transition to READY (common)
+     * 7. Release write lock (common)
+     *
+     * @param trainingData Training datasets
+     * @throws IllegalStateException if already training or in error state
+     * @throws IllegalArgumentException if trainingData is null/empty
+     */
+    @Override
+    public final void train(List&lt;Dataset&gt; trainingData) throws Exception {
+<span class="fc" id="L117">        validateTrainInput(trainingData);</span>
+
+<span class="fc" id="L119">        stateLock.writeLock().lock(); // ⚠️ EXCLUSIVE ACCESS</span>
+        try {
+<span class="fc" id="L121">            validateStateBeforeTraining();</span>
+
+<span class="fc" id="L123">            getLogger().info(&quot;Starting TRAINING phase on {} samples. State: {} -&gt; TRAINING&quot;,</span>
+<span class="fc" id="L124">                    trainingData.size(), classifierState);</span>
+<span class="fc" id="L125">            long startTime = System.currentTimeMillis();</span>
+
+            // ENFORCED transition: current -&gt; TRAINING
+<span class="fc" id="L128">            transitionToState(PipelineState.TRAINING);</span>
+
+            try {
+                // ★ SUBCLASS HOOK: Implement specific classifier training logic
+<span class="fc" id="L132">                T result = doTrain(trainingData);</span>
+
+                // ENFORCED transition: TRAINING -&gt; READY (success)
+<span class="fc" id="L135">                transitionToState(PipelineState.READY);</span>
+
+<span class="fc" id="L137">                this.lastTrainingTimeMs = System.currentTimeMillis() - startTime;</span>
+<span class="fc" id="L138">                getLogger().info(&quot;TRAINING completed successfully in {}ms. State: TRAINING -&gt; READY. &quot; +</span>
+<span class="fc" id="L139">                        &quot;NOW THREAD-SAFE for concurrent inference.&quot;, lastTrainingTimeMs);</span>
+
+<span class="nc" id="L141">            } catch (Exception e) {</span>
+                // ENFORCED transition: TRAINING -&gt; ERROR (failure)
+<span class="nc" id="L143">                transitionToState(PipelineState.ERROR);</span>
+<span class="nc" id="L144">                getLogger().error(&quot;TRAINING failed. State: TRAINING -&gt; ERROR&quot;, e);</span>
+<span class="nc" id="L145">                throw new Exception(&quot;Failed to train classifier: &quot; + e.getMessage(), e);</span>
+<span class="fc" id="L146">            }</span>
+
+        } finally {
+<span class="fc" id="L149">            stateLock.writeLock().unlock(); // ✅ Always release</span>
+        }
+<span class="fc" id="L151">    }</span>
+
+    // ==================== TEMPLATE METHOD: INFERENCE PHASE ====================
+
+    /**
+     * Execute inference task with thread-safe read lock.
+     *
+     * USAGE IN SUBCLASS:
+     * &lt;pre&gt;
+     * public String classify(String text) {
+     *     return executeInference(() -&gt; {
+     *         // Your classification logic here
+     *         Instance instance = convertTextToInstance(text);
+     *         double result = classifier.classifyInstance(instance);
+     *         return mapToLabel(result);
+     *     });
+     * }
+     * &lt;/pre&gt;
+     *
+     * @param task Lambda containing inference logic
+     * @return Result of inference task
+     */
+    protected final &lt;R&gt; R executeInference(InferenceTask&lt;R&gt; task) throws Exception {
+<span class="fc" id="L174">        stateLock.readLock().lock(); // ⚠️ CONCURRENT READS ALLOWED</span>
+        try {
+<span class="fc" id="L176">            validateReadyForInference();</span>
+<span class="fc" id="L177">            return task.execute();</span>
+
+<span class="nc" id="L179">        } catch (IllegalStateException e) {</span>
+<span class="nc" id="L180">            throw e; // Re-throw state errors</span>
+<span class="fc" id="L181">        } catch (Exception e) {</span>
+<span class="fc" id="L182">            getLogger().error(&quot;Inference failed in state {}&quot;, classifierState, e);</span>
+<span class="fc" id="L183">            throw new Exception(&quot;Failed to execute inference: &quot; + e.getMessage(), e);</span>
+        } finally {
+<span class="fc" id="L185">            stateLock.readLock().unlock(); // ✅ Always release</span>
+        }
+    }
+
+    /**
+     * Functional interface for inference tasks.
+     * Allows lambdas that throw checked exceptions.
+     */
+    @FunctionalInterface
+    protected interface InferenceTask&lt;R&gt; {
+        R execute() throws Exception;
+    }
+
+    // ==================== ABSTRACT METHODS FOR SUBCLASSES ====================
+
+    /**
+     * Subclass implements specific classifier training logic.
+     *
+     * CALLED WITHIN: train() method, protected by write lock
+     * THREAD SAFETY: NOT required - exclusive access guaranteed
+     *
+     * IMPLEMENTATION GUIDELINES:
+     * 1. Configure algorithm parameters
+     * 2. Build/train the classifier
+     * 3. Store trained model state
+     * 4. Generate training statistics
+     *
+     * @param trainingData Training datasets
+     * @return Training result (can be null if no result needed)
+     * @throws Exception if training fails (will transition to ERROR state)
+     */
+    protected abstract T doTrain(List&lt;Dataset&gt; trainingData) throws Exception;
+
+    /**
+     * Subclass implements resource cleanup logic.
+     *
+     * CALLED WITHIN: reset() method, protected by write lock
+     * THREAD SAFETY: NOT required - exclusive access guaranteed
+     *
+     * IMPLEMENTATION GUIDELINES:
+     * 1. Set classifier references to null
+     * 2. Clear cached data structures
+     * 3. Release any held resources
+     */
+    protected abstract void doClearResources();
+
+    /**
+     * Subclass provides its logger instance.
+     * Required for consistent logging across template and subclass.
+     */
+    protected abstract Logger getLogger();
+
+    /**
+     * Subclass returns the underlying Weka classifier instance.
+     * This is used by the consolidated inference methods in the base class.
+     *
+     * @return The Weka classifier (e.g., NaiveBayes, SMO, Logistic, RandomForest)
+     */
+    protected abstract weka.classifiers.Classifier getWekaClassifierInstance();
+
+    /**
+     * Subclass sets the underlying Weka classifier instance.
+     * Used by persistence utilities to restore a saved model.
+     *
+     * @param classifier The Weka classifier to set
+     */
+    protected abstract void setWekaClassifierInstance(weka.classifiers.Classifier classifier);
+
+    /**
+     * Subclass returns the text preprocessor instance.
+     * Required for pipeline operations and WekaClassifier interface.
+     *
+     * @return The text preprocessor
+     */
+    public abstract TextPreprocessor getPreprocessor();
+
+    // ==================== STATE MANAGEMENT ====================
+
+    /**
+     * ENFORCED state transition with validation.
+     * All state changes MUST go through this method.
+     */
+    private void transitionToState(PipelineState newState) {
+<span class="fc" id="L268">        PipelineState oldState = classifierState;</span>
+<span class="fc" id="L269">        oldState.validateTransition(newState); // Throws if invalid</span>
+<span class="fc" id="L270">        classifierState = newState;</span>
+<span class="fc" id="L271">        getLogger().debug(&quot;State transition: {} -&gt; {}&quot;, oldState, newState);</span>
+<span class="fc" id="L272">    }</span>
+
+    /**
+     * Validate classifier is ready for inference.
+     *
+     * @throws IllegalStateException if not in READY state
+     */
+    protected void validateReadyForInference() {
+<span class="pc bpc" id="L280" title="1 of 2 branches missed.">        if (classifierState != PipelineState.READY) {</span>
+<span class="nc" id="L281">            throw new IllegalStateException(</span>
+                    &quot;Cannot perform inference - not trained. Current state: &quot; + classifierState +
+                            &quot;. Call train() with training data first.&quot;);
+        }
+<span class="fc" id="L285">    }</span>
+
+    /**
+     * Validate state allows training to start.
+     */
+    private void validateStateBeforeTraining() {
+<span class="pc bpc" id="L291" title="1 of 2 branches missed.">        if (classifierState == PipelineState.TRAINING) {</span>
+<span class="nc" id="L292">            throw new IllegalStateException(</span>
+                    &quot;Training already in progress. Current state: &quot; + classifierState);
+        }
+
+<span class="pc bpc" id="L296" title="1 of 2 branches missed.">        if (classifierState == PipelineState.READY) {</span>
+<span class="nc" id="L297">            getLogger().warn(&quot;Classifier already trained. Call reset() before retraining.&quot;);</span>
+<span class="nc" id="L298">            throw new IllegalStateException(</span>
+                    &quot;Already trained. Current state: &quot; + classifierState + &quot;. Call reset() first.&quot;);
+        }
+<span class="fc" id="L301">    }</span>
+
+    /**
+     * Validate train() input parameters.
+     */
+    private void validateTrainInput(List&lt;Dataset&gt; trainingData) {
+<span class="fc bfc" id="L307" title="All 4 branches covered.">        if (trainingData == null || trainingData.isEmpty()) {</span>
+<span class="fc" id="L308">            throw new IllegalArgumentException(&quot;Training data cannot be null or empty&quot;);</span>
+        }
+<span class="fc" id="L310">    }</span>
+
+    // ==================== RESET AND CLEANUP ====================
+
+    /**
+     * Reset classifier to UNINITIALIZED state.
+     *
+     * NOT thread-safe - should only be called during:
+     * - Application shutdown
+     * - Controlled retraining scenarios
+     * - Error recovery
+     */
+    public void reset() {
+<span class="nc" id="L323">        stateLock.writeLock().lock(); // ⚠️ EXCLUSIVE ACCESS</span>
+        try {
+<span class="nc" id="L325">            getLogger().info(&quot;Resetting classifier from state: {}&quot;, classifierState);</span>
+
+            // Clear subclass resources
+<span class="nc" id="L328">            doClearResources();</span>
+
+            // Reset timing
+<span class="nc" id="L331">            lastTrainingTimeMs = 0;</span>
+
+            // Transition to UNINITIALIZED
+<span class="nc bnc" id="L334" title="All 2 branches missed.">            if (classifierState != PipelineState.UNINITIALIZED) {</span>
+<span class="nc bnc" id="L335" title="All 2 branches missed.">                if (classifierState == PipelineState.TRAINING) {</span>
+<span class="nc" id="L336">                    transitionToState(PipelineState.ERROR);</span>
+                }
+<span class="nc" id="L338">                transitionToState(PipelineState.UNINITIALIZED);</span>
+            }
+
+<span class="nc" id="L341">            getLogger().info(&quot;Reset complete. New state: {}&quot;, classifierState);</span>
+
+        } finally {
+<span class="nc" id="L344">            stateLock.writeLock().unlock(); // ✅ Always release</span>
+        }
+<span class="nc" id="L346">    }</span>
+
+    /**
+     * Automatic cleanup on bean destruction.
+     * Spring calls this via @PreDestroy.
+     */
+    @PreDestroy
+    public void cleanup() {
+<span class="nc" id="L354">        getLogger().info(&quot;Cleaning up classifier resources&quot;);</span>
+<span class="nc" id="L355">        reset();</span>
+<span class="nc" id="L356">    }</span>
+
+    // ==================== READ-ONLY STATE ACCESS ====================
+
+    /**
+     * Get current classifier state.
+     * Thread-safe: volatile read
+     */
+    public PipelineState getClassifierState() {
+<span class="nc" id="L365">        return classifierState;</span>
+    }
+
+    /**
+     * Check if classifier is ready for inference.
+     * Thread-safe: volatile read
+     */
+    @Override
+    public boolean isTrained() {
+<span class="fc bfc" id="L374" title="All 2 branches covered.">        return classifierState == PipelineState.READY;</span>
+    }
+
+    /**
+     * Get training time in milliseconds.
+     * Thread-safe: volatile read
+     */
+    public long getLastTrainingTimeMs() {
+<span class="nc" id="L382">        return lastTrainingTimeMs;</span>
+    }
+
+    /**
+     * Get comprehensive diagnostics string.
+     */
+    public String getDiagnostics() {
+<span class="nc" id="L389">        stateLock.readLock().lock();</span>
+        try {
+<span class="nc" id="L391">            StringBuilder diag = new StringBuilder();</span>
+<span class="nc" id="L392">            diag.append(&quot;=== Classifier Training Template Diagnostics ===\n&quot;);</span>
+<span class="nc" id="L393">            diag.append(String.format(&quot;Current state: %s\n&quot;, classifierState));</span>
+<span class="nc" id="L394">            diag.append(String.format(&quot;State description: %s\n&quot;, classifierState.getDescription()));</span>
+<span class="nc" id="L395">            diag.append(String.format(&quot;Is ready: %s\n&quot;, classifierState.isReady()));</span>
+<span class="nc" id="L396">            diag.append(String.format(&quot;Can start training: %s\n&quot;, classifierState.canStartTraining()));</span>
+<span class="nc" id="L397">            diag.append(String.format(&quot;Is error: %s\n&quot;, classifierState.isError()));</span>
+<span class="nc" id="L398">            diag.append(String.format(&quot;Last training time: %d ms\n&quot;, lastTrainingTimeMs));</span>
+
+            // Subclass diagnostics
+<span class="nc" id="L401">            String subclassDiag = getSubclassDiagnostics();</span>
+<span class="nc bnc" id="L402" title="All 4 branches missed.">            if (subclassDiag != null &amp;&amp; !subclassDiag.isEmpty()) {</span>
+<span class="nc" id="L403">                diag.append(&quot;\n&quot;).append(subclassDiag);</span>
+            }
+
+<span class="nc" id="L406">            return diag.toString();</span>
+        } finally {
+<span class="nc" id="L408">            stateLock.readLock().unlock();</span>
+        }
+    }
+
+    /**
+     * Subclass can override to provide additional diagnostics.
+     */
+    protected String getSubclassDiagnostics() {
+<span class="nc" id="L416">        return &quot;&quot;;</span>
+    }
+
+    // ==================== WEKA TRAINING DATA VALIDATION ====================
+
+    /**
+     * Validate Weka training data structure and statistics.
+     *
+     * Common validation logic shared across all Weka-based classifiers.
+     * Subclasses can override to add algorithm-specific validations.
+     *
+     * @param data Weka Instances to validate
+     * @throws IllegalArgumentException if data structure is invalid
+     */
+    protected void validateWekaTrainingData(Instances data) {
+<span class="pc bpc" id="L431" title="1 of 2 branches missed.">        if (data.numInstances() &lt; 10) {</span>
+<span class="nc" id="L432">            getLogger().warn(&quot;Small training set ({} instances)&quot;, data.numInstances());</span>
+        }
+
+<span class="pc bpc" id="L435" title="1 of 2 branches missed.">        if (data.classIndex() == -1) {</span>
+<span class="nc" id="L436">            throw new IllegalArgumentException(&quot;Training data must have class attribute set&quot;);</span>
+        }
+
+<span class="pc bpc" id="L439" title="1 of 2 branches missed.">        if (data.classAttribute().numValues() &lt; 2) {</span>
+<span class="nc" id="L440">            throw new IllegalArgumentException(&quot;Need at least 2 classes&quot;);</span>
+        }
+
+<span class="fc" id="L443">        logWekaDatasetStatistics(data);</span>
+<span class="fc" id="L444">    }</span>
+
+    /**
+     * Log Weka dataset statistics (instances, features, class distribution).
+     *
+     * Common logging logic shared across all Weka-based classifiers.
+     *
+     * @param data Weka Instances to log statistics for
+     */
+    protected void logWekaDatasetStatistics(Instances data) {
+<span class="fc" id="L454">        getLogger().info(&quot;Dataset: {} instances, {} features, {} classes&quot;,</span>
+<span class="fc" id="L455">                data.numInstances(), data.numAttributes() - 1,</span>
+<span class="fc" id="L456">                data.classAttribute().numValues());</span>
+
+<span class="fc" id="L458">        int[] classCounts = new int[data.classAttribute().numValues()];</span>
+<span class="fc bfc" id="L459" title="All 2 branches covered.">        for (int i = 0; i &lt; data.numInstances(); i++) {</span>
+<span class="fc" id="L460">            classCounts[(int) data.instance(i).classValue()]++;</span>
+        }
+
+<span class="fc bfc" id="L463" title="All 2 branches covered.">        for (int i = 0; i &lt; classCounts.length; i++) {</span>
+<span class="fc" id="L464">            String percentage = String.format(&quot;%.1f&quot;, (classCounts[i] * 100.0) / data.numInstances());</span>
+<span class="fc" id="L465">            getLogger().info(&quot;  {}: {} ({}%)&quot;,</span>
+<span class="fc" id="L466">                    data.classAttribute().value(i),</span>
+<span class="fc" id="L467">                    classCounts[i],</span>
+                    percentage);
+        }
+<span class="fc" id="L470">    }</span>
+
+    // ==================== WEKA HELPER METHODS ====================
+
+    /**
+     * Format probability distribution as human-readable string.
+     *
+     * @param probs Probability array (must match supportedClasses length)
+     * @return Formatted string like &quot;[positive: 0.850, negative: 0.150]&quot;
+     */
+    protected String formatProbabilities(double[] probs) {
+<span class="nc" id="L481">        StringBuilder sb = new StringBuilder(&quot;[&quot;);</span>
+<span class="nc bnc" id="L482" title="All 2 branches missed.">        for (int i = 0; i &lt; probs.length; i++) {</span>
+<span class="nc bnc" id="L483" title="All 2 branches missed.">            if (i &gt; 0) sb.append(&quot;, &quot;);</span>
+<span class="nc" id="L484">            sb.append(String.format(&quot;%s: %.3f&quot;, supportedClasses[i], probs[i]));</span>
+        }
+<span class="nc" id="L486">        sb.append(&quot;]&quot;);</span>
+<span class="nc" id="L487">        return sb.toString();</span>
+    }
+
+    /**
+     * Log probability distribution at DEBUG level and return the probabilities.
+     *
+     * &lt;p&gt;This is a convenience method that centralizes the common pattern of
+     * logging probability distributions in classification methods across all
+     * classifier implementations.
+     *
+     * &lt;p&gt;&lt;b&gt;Usage in subclasses:&lt;/b&gt;
+     * &lt;pre&gt;
+     * double[] probs = classifier.distributionForInstance(instance);
+     * return logProbabilityDistribution(probs);
+     * &lt;/pre&gt;
+     *
+     * @param probs Probability array to log and return
+     * @return The same probability array (for convenient return statements)
+     */
+    protected double[] logProbabilityDistribution(double[] probs) {
+<span class="pc bpc" id="L507" title="1 of 2 branches missed.">        if (getLogger().isDebugEnabled()) {</span>
+<span class="nc" id="L508">            getLogger().debug(&quot;Probability distribution: {}&quot;, formatProbabilities(probs));</span>
+        }
+<span class="fc" id="L510">        return probs;</span>
+    }
+
+    /**
+     * Get training instance count (0 if not trained).
+     */
+    protected int getTrainingInstanceCount() {
+<span class="pc bpc" id="L517" title="1 of 2 branches missed.">        return trainingDataStructure != null ? trainingDataStructure.numInstances() : 0;</span>
+    }
+
+    /**
+     * Get feature count (0 if not trained).
+     * Excludes class attribute.
+     */
+    protected int getFeatureCount() {
+<span class="pc bpc" id="L525" title="1 of 2 branches missed.">        return trainingDataStructure != null ? trainingDataStructure.numAttributes() - 1 : 0;</span>
+    }
+
+    /**
+     * Validate text input for classification methods.
+     *
+     * @param text Input text to validate
+     * @throws IllegalArgumentException if text is null or empty
+     */
+    protected void validateTextInput(String text) {
+<span class="fc" id="L535">        ValidationUtils.requireNonEmpty(text);</span>
+<span class="fc" id="L536">    }</span>
+
+    /**
+     * Safely compute metric, returning 0.0 on NaN or exception.
+     *
+     * @param supplier Metric computation that may throw or return NaN
+     * @return Metric value or 0.0 if unavailable
+     */
+    protected double safeMetric(MetricSupplier supplier) {
+        try {
+<span class="nc" id="L546">            double value = supplier.get();</span>
+<span class="nc bnc" id="L547" title="All 2 branches missed.">            return Double.isNaN(value) ? 0.0 : value;</span>
+<span class="nc" id="L548">        } catch (Exception e) {</span>
+<span class="nc" id="L549">            return 0.0;</span>
+        }
+    }
+
+    /**
+     * Functional interface for metric suppliers that may throw exceptions.
+     */
+    @FunctionalInterface
+    protected interface MetricSupplier {
+        double get() throws Exception;
+    }
+
+    /**
+     * Build additional statistics map for evaluation results.
+     * Subclasses can override to add algorithm-specific stats.
+     *
+     * @param evaluation Weka evaluation object
+     * @param testData Test dataset
+     * @param evaluationTimeMs Time taken for evaluation
+     * @return Map of additional statistics
+     */
+    protected Map&lt;String, Object&gt; buildAdditionalStats(
+            Evaluation evaluation, Instances testData, long evaluationTimeMs) {
+
+<span class="nc" id="L573">        Map&lt;String, Object&gt; stats = new HashMap&lt;&gt;();</span>
+<span class="nc" id="L574">        stats.put(&quot;totalInstances&quot;, testData.numInstances());</span>
+<span class="nc" id="L575">        stats.put(&quot;correctlyClassified&quot;, (int) evaluation.correct());</span>
+<span class="nc" id="L576">        stats.put(&quot;incorrectlyClassified&quot;, (int) evaluation.incorrect());</span>
+<span class="nc" id="L577">        stats.put(&quot;evaluationTimeMs&quot;, evaluationTimeMs);</span>
+<span class="nc" id="L578">        stats.put(&quot;kappa&quot;, safeMetric(() -&gt; evaluation.kappa()));</span>
+
+<span class="nc bnc" id="L580" title="All 2 branches missed.">        if (lastTrainingTimeMs &gt; 0) {</span>
+<span class="nc" id="L581">            stats.put(&quot;trainingTimeMs&quot;, lastTrainingTimeMs);</span>
+        }
+
+<span class="nc bnc" id="L584" title="All 4 branches missed.">        if (converter != null &amp;&amp; converter.isReady()) {</span>
+<span class="nc" id="L585">            stats.put(&quot;vocabularySize&quot;, converter.getVocabulary().size());</span>
+        }
+
+<span class="nc" id="L588">        return stats;</span>
+    }
+
+    /**
+     * Build ClassifierEvaluationResult from Weka Evaluation.
+     * Subclasses can override getAlgorithmName() to customize the algorithm name.
+     *
+     * @param evaluation Weka evaluation object
+     * @param testData Test dataset
+     * @param evaluationTimeMs Time taken for evaluation
+     * @return Complete evaluation result
+     */
+    protected sentiment.evaluation.ClassifierEvaluationResult buildEvaluationResult(
+            Evaluation evaluation, Instances testData, long evaluationTimeMs) throws Exception {
+
+<span class="nc" id="L603">        double accuracy = evaluation.pctCorrect() / 100.0;</span>
+<span class="nc" id="L604">        int numClasses = supportedClasses.length;</span>
+
+<span class="nc" id="L606">        double[] precision = new double[numClasses];</span>
+<span class="nc" id="L607">        double[] recall = new double[numClasses];</span>
+<span class="nc" id="L608">        double[] f1Score = new double[numClasses];</span>
+
+<span class="nc bnc" id="L610" title="All 2 branches missed.">        for (int i = 0; i &lt; numClasses; i++) {</span>
+<span class="nc" id="L611">            final int classIndex = i;</span>
+<span class="nc" id="L612">            precision[i] = safeMetric(() -&gt; evaluation.precision(classIndex));</span>
+<span class="nc" id="L613">            recall[i] = safeMetric(() -&gt; evaluation.recall(classIndex));</span>
+<span class="nc" id="L614">            f1Score[i] = safeMetric(() -&gt; evaluation.fMeasure(classIndex));</span>
+        }
+
+<span class="nc" id="L617">        double macroAvgPrecision = Arrays.stream(precision).average().orElse(0.0);</span>
+<span class="nc" id="L618">        double macroAvgRecall = Arrays.stream(recall).average().orElse(0.0);</span>
+<span class="nc" id="L619">        double macroAvgF1 = Arrays.stream(f1Score).average().orElse(0.0);</span>
+
+<span class="nc" id="L621">        double weightedPrecision = safeMetric(() -&gt; evaluation.weightedPrecision());</span>
+<span class="nc" id="L622">        double weightedRecall = safeMetric(() -&gt; evaluation.weightedRecall());</span>
+<span class="nc" id="L623">        double weightedF1 = safeMetric(() -&gt; evaluation.weightedFMeasure());</span>
+
+<span class="nc" id="L625">        double[][] confusionMatrix = evaluation.confusionMatrix();</span>
+
+<span class="nc" id="L627">        Map&lt;String, Object&gt; stats = buildAdditionalStats(evaluation, testData, evaluationTimeMs);</span>
+
+<span class="nc" id="L629">        return new sentiment.evaluation.ClassifierEvaluationResult(</span>
+<span class="nc" id="L630">                getAlgorithmName(), accuracy,</span>
+                precision, recall, f1Score,
+                macroAvgPrecision, macroAvgRecall, macroAvgF1,
+                weightedPrecision, weightedRecall, weightedF1,
+                confusionMatrix, supportedClasses, stats
+        );
+    }
+
+    /**
+     * Get algorithm name for evaluation results.
+     * Subclasses should override to provide specific algorithm name.
+     *
+     * @return Algorithm name (default: class simple name)
+     */
+    public String getAlgorithmName() {
+<span class="nc" id="L645">        return this.getClass().getSimpleName();</span>
+    }
+
+    // ==================== CONSOLIDATED WEKA TRAINING HELPERS ====================
+
+    /**
+     * Finalize training by storing metadata.
+     * Called after successful model training to prepare for inference.
+     *
+     * CONSOLIDATED: This was duplicated across all 4 classifiers.
+     *
+     * @param trainingData The training Instances used for model training
+     */
+    protected final void finalizeTraining(Instances trainingData) {
+<span class="fc" id="L659">        this.trainingDataStructure = new Instances(trainingData, 0);</span>
+
+<span class="fc" id="L661">        this.supportedClasses = new String[trainingData.classAttribute().numValues()];</span>
+<span class="fc bfc" id="L662" title="All 2 branches covered.">        for (int i = 0; i &lt; supportedClasses.length; i++) {</span>
+<span class="fc" id="L663">            supportedClasses[i] = trainingData.classAttribute().value(i);</span>
+        }
+
+<span class="fc" id="L666">        getLogger().info(&quot;Training finalized. Model ready. Classes: {}&quot;,</span>
+<span class="fc" id="L667">                String.join(&quot;, &quot;, supportedClasses));</span>
+<span class="fc" id="L668">    }</span>
+
+    /**
+     * Perform the common training pipeline orchestration.
+     * Subclasses can call this from doTrain() to avoid duplication.
+     *
+     * CONSOLIDATED: Extracted from duplicate code in all classifiers.
+     *
+     * @param rawDatasets Raw training datasets
+     * @param modelTrainer Lambda that performs the algorithm-specific training
+     * @return Trained Weka Instances
+     */
+    protected final Instances performStandardTrainingPipeline(
+            List&lt;Dataset&gt; rawDatasets,
+            ModelTrainer modelTrainer) throws Exception {
+
+<span class="nc" id="L684">        getLogger().info(&quot;Training {} on {} raw datasets with full pipeline&quot;,</span>
+<span class="nc" id="L685">                getAlgorithmName(), rawDatasets.size());</span>
+
+        // Step 1: Fit preprocessing pipeline
+<span class="nc" id="L688">        getLogger().info(&quot;Step 1/3: Fitting preprocessing pipeline&quot;);</span>
+<span class="nc" id="L689">        getPreprocessor().fit(rawDatasets);</span>
+<span class="nc" id="L690">        getLogger().info(&quot;Preprocessor fitted. Vocabulary: {}&quot;,</span>
+<span class="nc" id="L691">                getPreprocessor().getPipelineState().vocabularySize);</span>
+
+        // Step 2: Fit feature extraction
+<span class="nc" id="L694">        getLogger().info(&quot;Step 2/3: Fitting feature extraction&quot;);</span>
+<span class="nc" id="L695">        Instances trainingInstances = converter.fit(rawDatasets);</span>
+<span class="nc" id="L696">        getLogger().info(&quot;Converter fitted. Features: {}, Vocabulary: {}&quot;,</span>
+<span class="nc" id="L697">                trainingInstances.numAttributes() - 1,</span>
+<span class="nc" id="L698">                converter.getVocabulary().size());</span>
+
+        // Step 3: Train classifier (algorithm-specific)
+<span class="nc" id="L701">        getLogger().info(&quot;Step 3/3: Training {} classifier&quot;, getAlgorithmName());</span>
+<span class="nc" id="L702">        validateWekaTrainingData(trainingInstances);</span>
+<span class="nc" id="L703">        modelTrainer.train(trainingInstances);</span>
+<span class="nc" id="L704">        finalizeTraining(trainingInstances);</span>
+
+<span class="nc" id="L706">        getLogger().info(&quot;{} training complete. Pipeline ready for inference.&quot;, getAlgorithmName());</span>
+
+<span class="nc" id="L708">        return trainingInstances;</span>
+    }
+
+    /**
+     * Functional interface for algorithm-specific model training.
+     */
+    @FunctionalInterface
+    protected interface ModelTrainer {
+        void train(Instances data) throws Exception;
+    }
+
+    // ==================== CONSOLIDATED INFERENCE METHODS ====================
+
+    /**
+     * Classify text and return predicted sentiment label.
+     *
+     * CONSOLIDATED: This was duplicated identically across all 4 classifiers.
+     * The only difference is the Weka classifier instance, now accessed via getWekaClassifierInstance().
+     *
+     * @param text Input text to classify
+     * @return Predicted sentiment label
+     * @throws Exception if classification fails
+     */
+    public String classify(String text) throws Exception {
+<span class="fc" id="L732">        requireTrained();</span>
+<span class="fc" id="L733">        validateTextInput(text);</span>
+
+<span class="fc" id="L735">        return executeInference((InferenceTask&lt;String&gt;) () -&gt; {</span>
+<span class="fc" id="L736">            getLogger().debug(&quot;INFERENCE: Classifying text: '{}'&quot;,</span>
+<span class="fc" id="L737">                    text.substring(0, Math.min(50, text.length())));</span>
+
+<span class="fc" id="L739">            Instance instance = converter.transform(text, &quot;unknown&quot;);</span>
+<span class="fc" id="L740">            instance.setDataset(trainingDataStructure);</span>
+
+<span class="fc" id="L742">            double classIndex = getWekaClassifierInstance().classifyInstance(instance);</span>
+<span class="fc" id="L743">            String predicted = supportedClasses[(int) classIndex];</span>
+
+<span class="fc" id="L745">            getLogger().debug(&quot;Classification result: {}&quot;, predicted);</span>
+<span class="fc" id="L746">            return predicted;</span>
+        });
+    }
+
+    /**
+     * Get classification probabilities for all classes.
+     *
+     * CONSOLIDATED: This was duplicated identically across all 4 classifiers.
+     *
+     * @param text Input text to classify
+     * @return Probability distribution over classes
+     * @throws Exception if classification fails
+     */
+    public double[] getClassificationProbabilities(String text) throws Exception {
+<span class="fc" id="L760">        requireTrained();</span>
+<span class="fc" id="L761">        validateTextInput(text);</span>
+
+<span class="fc" id="L763">        return executeInference((InferenceTask&lt;double[]&gt;) () -&gt; {</span>
+<span class="fc" id="L764">            getLogger().debug(&quot;INFERENCE: Getting probabilities for: '{}'&quot;,</span>
+<span class="fc" id="L765">                    text.substring(0, Math.min(50, text.length())));</span>
+
+<span class="fc" id="L767">            Instance instance = converter.transform(text, &quot;unknown&quot;);</span>
+<span class="fc" id="L768">            instance.setDataset(trainingDataStructure);</span>
+
+<span class="fc" id="L770">            double[] probs = getWekaClassifierInstance().distributionForInstance(instance);</span>
+<span class="fc" id="L771">            return logProbabilityDistribution(probs);</span>
+        });
+    }
+
+    /**
+     * Evaluate classifier on test data.
+     *
+     * CONSOLIDATED: This was duplicated identically across all 4 classifiers.
+     *
+     * @param testData Weka Instances to evaluate on
+     * @return Evaluation results
+     * @throws Exception if evaluation fails
+     */
+    public sentiment.evaluation.ClassifierEvaluationResult evaluate(Instances testData) throws Exception {
+<span class="fc" id="L785">        requireTrained();</span>
+
+<span class="pc bpc" id="L787" title="1 of 4 branches missed.">        if (testData == null || testData.numInstances() == 0) {</span>
+<span class="fc" id="L788">            throw new IllegalArgumentException(&quot;Test data cannot be null or empty&quot;);</span>
+        }
+
+<span class="nc" id="L791">        getLogger().info(&quot;Evaluating on {} test instances&quot;, testData.numInstances());</span>
+
+<span class="nc" id="L793">        return executeInference((InferenceTask&lt;sentiment.evaluation.ClassifierEvaluationResult&gt;) () -&gt; {</span>
+<span class="nc" id="L794">            validateTestDataStructure(testData);</span>
+<span class="nc" id="L795">            return performEvaluation(testData);</span>
+        });
+    }
+
+    /**
+     * Validate test data structure matches training data.
+     *
+     * CONSOLIDATED: This was duplicated identically across all 4 classifiers.
+     *
+     * @param testData Test Instances to validate
+     * @throws Exception if structure mismatch detected
+     */
+    protected void validateTestDataStructure(Instances testData) throws Exception {
+<span class="nc bnc" id="L808" title="All 2 branches missed.">        if (testData.numAttributes() != trainingDataStructure.numAttributes()) {</span>
+<span class="nc" id="L809">            throw new Exception(String.format(</span>
+                    &quot;Attribute mismatch: training=%d, test=%d&quot;,
+<span class="nc" id="L811">                    trainingDataStructure.numAttributes(), testData.numAttributes()));</span>
+        }
+
+<span class="nc" id="L814">        getLogger().info(&quot;Test data validated: {} instances&quot;, testData.numInstances());</span>
+<span class="nc" id="L815">    }</span>
+
+    /**
+     * Perform evaluation and build result.
+     *
+     * CONSOLIDATED: Common evaluation logic extracted from classifiers.
+     *
+     * @param testData Test Instances
+     * @return Evaluation result
+     * @throws Exception if evaluation fails
+     */
+    protected sentiment.evaluation.ClassifierEvaluationResult performEvaluation(Instances testData) throws Exception {
+<span class="nc" id="L827">        long startTime = System.currentTimeMillis();</span>
+
+<span class="nc" id="L829">        Evaluation evaluation = new Evaluation(trainingDataStructure);</span>
+<span class="nc" id="L830">        evaluation.evaluateModel(getWekaClassifierInstance(), testData);</span>
+
+<span class="nc" id="L832">        long evaluationTime = System.currentTimeMillis() - startTime;</span>
+
+<span class="nc" id="L834">        sentiment.evaluation.ClassifierEvaluationResult result = buildEvaluationResult(</span>
+                evaluation, testData, evaluationTime);
+
+<span class="nc" id="L837">        String accuracy = String.format(&quot;%.3f&quot;, result.getAccuracy());</span>
+<span class="nc" id="L838">        getLogger().info(&quot;Evaluation complete in {}ms: accuracy={}&quot;,</span>
+<span class="nc" id="L839">                evaluationTime, accuracy);</span>
+
+<span class="nc" id="L841">        return result;</span>
+    }
+
+    /**
+     * Execute inference task with Callable interface (for WekaClassifier).
+     *
+     * CONSOLIDATED: This adapter was duplicated across all 4 classifiers.
+     *
+     * @param task The inference task to execute
+     * @param &lt;R&gt; Return type
+     * @return Task result
+     * @throws Exception if task fails
+     */
+    public &lt;R&gt; R executeInference(java.util.concurrent.Callable&lt;R&gt; task) throws Exception {
+<span class="fc" id="L855">        return executeInference((InferenceTask&lt;R&gt;) () -&gt; task.call());</span>
+    }
+
+    // ==================== PERSISTENCE SUPPORT ====================
+
+    /**
+     * Get training data structure for persistence.
+     * Package-private to allow WekaModelPersistence access.
+     *
+     * @return Training data structure (schema only, no instances)
+     */
+    Instances getTrainingStructure() {
+<span class="nc" id="L867">        return trainingDataStructure;</span>
+    }
+
+    /**
+     * Set training metadata after loading from persistence.
+     * Package-private to allow WekaModelPersistence access.
+     *
+     * @param structure Training data structure
+     * @param classes Supported class labels
+     */
+    void setTrainingMetadata(Instances structure, String[] classes) {
+<span class="nc" id="L878">        this.trainingDataStructure = structure;</span>
+<span class="nc" id="L879">        this.supportedClasses = classes.clone();</span>
+<span class="nc" id="L880">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

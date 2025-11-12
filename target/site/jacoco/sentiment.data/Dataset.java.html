@@ -1,0 +1,268 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>Dataset.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Java Sentiment Analysis</a> &gt; <a href="index.source.html" class="el_package">sentiment.data</a> &gt; <span class="el_source">Dataset.java</span></div><h1>Dataset.java</h1><pre class="source lang-java linenums">package sentiment.data;
+
+import sentiment.util.ValidationUtils;
+
+import java.time.LocalDateTime;
+import java.util.Objects;
+import java.util.UUID;
+
+/**
+ * Data model representing a text sample with sentiment label and metadata.
+ * Supports both binary (positive/negative) and ternary (positive/neutral/negative) sentiment schemes.
+ */
+public class Dataset {
+
+    // Core data fields
+    private final String id;
+    private final String text;
+    private final SentimentLabel sentiment;
+    private final double confidence;
+
+    // Metadata fields
+    private final String source;
+    private final LocalDateTime timestamp;
+    private final String originalLabel; // Store original string label for reference
+
+    /**
+     * Enum for standardized sentiment labels with support for different schemes
+     */
+<span class="fc" id="L29">    public enum SentimentLabel {</span>
+<span class="fc" id="L30">        POSITIVE(&quot;positive&quot;, 1),</span>
+<span class="fc" id="L31">        NEGATIVE(&quot;negative&quot;, -1),</span>
+<span class="fc" id="L32">        NEUTRAL(&quot;neutral&quot;, 0);</span>
+
+        private final String displayName;
+        private final int numericValue;
+
+<span class="fc" id="L37">        SentimentLabel(String displayName, int numericValue) {</span>
+<span class="fc" id="L38">            this.displayName = displayName;</span>
+<span class="fc" id="L39">            this.numericValue = numericValue;</span>
+<span class="fc" id="L40">        }</span>
+
+        public String getDisplayName() {
+<span class="fc" id="L43">            return displayName;</span>
+        }
+
+        public int getNumericValue() {
+<span class="fc" id="L47">            return numericValue;</span>
+        }
+
+        /**
+         * Parse sentiment from various string representations
+         */
+        public static SentimentLabel fromString(String label) {
+<span class="fc bfc" id="L54" title="All 4 branches covered.">            if (label == null || label.trim().isEmpty()) {</span>
+<span class="fc" id="L55">                throw new IllegalArgumentException(&quot;Sentiment label cannot be null or empty&quot;);</span>
+            }
+
+<span class="fc" id="L58">            String normalized = label.trim().toLowerCase();</span>
+
+<span class="fc bfc" id="L60" title="All 4 branches covered.">            return switch (normalized) {</span>
+<span class="fc" id="L61">                case &quot;positive&quot;, &quot;pos&quot;, &quot;1&quot;, &quot;good&quot;, &quot;liked&quot; -&gt; POSITIVE;</span>
+<span class="fc" id="L62">                case &quot;negative&quot;, &quot;neg&quot;, &quot;0&quot;, &quot;-1&quot;, &quot;bad&quot;, &quot;disliked&quot; -&gt; NEGATIVE;</span>
+<span class="fc" id="L63">                case &quot;neutral&quot;, &quot;neut&quot;, &quot;2&quot;, &quot;mixed&quot; -&gt; NEUTRAL;</span>
+<span class="fc" id="L64">                default -&gt; throw new IllegalArgumentException(&quot;Unknown sentiment label: &quot; + label);</span>
+            };
+        }
+    }
+
+    /**
+     * Private constructor - use Builder for object creation
+     */
+<span class="fc" id="L72">    private Dataset(Builder builder) {</span>
+<span class="fc bfc" id="L73" title="All 2 branches covered.">        this.id = builder.id != null ? builder.id : UUID.randomUUID().toString();</span>
+<span class="fc" id="L74">        this.text = validateAndCleanText(builder.text);</span>
+<span class="fc" id="L75">        this.sentiment = Objects.requireNonNull(builder.sentiment, &quot;Sentiment cannot be null&quot;);</span>
+<span class="fc" id="L76">        this.confidence = validateConfidence(builder.confidence);</span>
+<span class="fc" id="L77">        this.source = builder.source;</span>
+<span class="fc bfc" id="L78" title="All 2 branches covered.">        this.timestamp = builder.timestamp != null ? builder.timestamp : LocalDateTime.now();</span>
+<span class="fc" id="L79">        this.originalLabel = builder.originalLabel;</span>
+<span class="fc" id="L80">    }</span>
+
+    /**
+     * Convenience constructor for basic usage
+     */
+    public Dataset(String text, String sentimentLabel) {
+<span class="fc" id="L86">        this(new Builder(text, SentimentLabel.fromString(sentimentLabel)));</span>
+<span class="fc" id="L87">    }</span>
+
+    /**
+     * Convenience constructor with confidence
+     */
+    public Dataset(String text, SentimentLabel sentiment, double confidence) {
+<span class="fc" id="L93">        this(new Builder(text, sentiment).confidence(confidence));</span>
+<span class="fc" id="L94">    }</span>
+
+    // Validation methods
+    private String validateAndCleanText(String text) {
+<span class="fc" id="L98">        ValidationUtils.requireNonEmpty(text);</span>
+
+<span class="fc" id="L100">        String cleaned = text.trim();</span>
+<span class="fc bfc" id="L101" title="All 2 branches covered.">        if (cleaned.length() &gt; 10000) {</span>
+<span class="fc" id="L102">            throw new IllegalArgumentException(&quot;Text exceeds maximum length of 10000 characters&quot;);</span>
+        }
+
+<span class="fc" id="L105">        return cleaned;</span>
+    }
+
+    private double validateConfidence(double confidence) {
+<span class="fc bfc" id="L109" title="All 4 branches covered.">        if (confidence &lt; 0.0 || confidence &gt; 1.0) {</span>
+<span class="fc" id="L110">            throw new IllegalArgumentException(&quot;Confidence must be between 0.0 and 1.0, got: &quot; + confidence);</span>
+        }
+<span class="fc" id="L112">        return confidence;</span>
+    }
+
+    // Getters
+<span class="fc" id="L116">    public String getId() { return id; }</span>
+<span class="fc" id="L117">    public String getText() { return text; }</span>
+<span class="fc" id="L118">    public SentimentLabel getSentiment() { return sentiment; }</span>
+<span class="fc" id="L119">    public double getConfidence() { return confidence; }</span>
+<span class="fc" id="L120">    public String getSource() { return source; }</span>
+<span class="fc" id="L121">    public LocalDateTime getTimestamp() { return timestamp; }</span>
+<span class="fc" id="L122">    public String getOriginalLabel() { return originalLabel; }</span>
+
+    // Utility methods
+    public boolean hasHighConfidence() {
+<span class="fc bfc" id="L126" title="All 2 branches covered.">        return confidence &gt;= 0.8;</span>
+    }
+
+    public boolean isFromSource(String sourceName) {
+<span class="fc bfc" id="L130" title="All 4 branches covered.">        return source != null &amp;&amp; source.equalsIgnoreCase(sourceName);</span>
+    }
+
+    public int getTextLength() {
+<span class="fc" id="L134">        return text.length();</span>
+    }
+
+    public String getSentimentAsString() {
+<span class="fc" id="L138">        return sentiment.getDisplayName();</span>
+    }
+
+    public int getSentimentAsNumeric() {
+<span class="fc" id="L142">        return sentiment.getNumericValue();</span>
+    }
+
+    // Builder Pattern Implementation
+    public static class Builder {
+        // Required fields
+        private final String text;
+        private final SentimentLabel sentiment;
+
+        // Optional fields with defaults
+        private String id;
+<span class="fc" id="L153">        private double confidence = 0.5; // Default neutral confidence</span>
+        private String source;
+        private LocalDateTime timestamp;
+        private String originalLabel;
+
+<span class="fc" id="L158">        public Builder(String text, SentimentLabel sentiment) {</span>
+<span class="fc" id="L159">            this.text = text;</span>
+<span class="fc" id="L160">            this.sentiment = sentiment;</span>
+<span class="fc" id="L161">        }</span>
+
+<span class="fc" id="L163">        public Builder(String text, String sentimentLabel) {</span>
+<span class="fc" id="L164">            this.text = text;</span>
+<span class="fc" id="L165">            this.sentiment = SentimentLabel.fromString(sentimentLabel);</span>
+<span class="fc" id="L166">            this.originalLabel = sentimentLabel; // Store original for reference</span>
+<span class="fc" id="L167">        }</span>
+
+        public Builder id(String id) {
+<span class="fc" id="L170">            this.id = id;</span>
+<span class="fc" id="L171">            return this;</span>
+        }
+
+        public Builder confidence(double confidence) {
+<span class="fc" id="L175">            this.confidence = confidence;</span>
+<span class="fc" id="L176">            return this;</span>
+        }
+
+        public Builder source(String source) {
+<span class="fc" id="L180">            this.source = source;</span>
+<span class="fc" id="L181">            return this;</span>
+        }
+
+        public Builder timestamp(LocalDateTime timestamp) {
+<span class="fc" id="L185">            this.timestamp = timestamp;</span>
+<span class="fc" id="L186">            return this;</span>
+        }
+
+        public Builder originalLabel(String originalLabel) {
+<span class="fc" id="L190">            this.originalLabel = originalLabel;</span>
+<span class="fc" id="L191">            return this;</span>
+        }
+
+        public Dataset build() {
+<span class="fc" id="L195">            return new Dataset(this);</span>
+        }
+    }
+
+    // Static factory methods for common use cases
+    public static Dataset createPositive(String text) {
+<span class="fc" id="L201">        return new Builder(text, SentimentLabel.POSITIVE).build();</span>
+    }
+
+    public static Dataset createNegative(String text) {
+<span class="fc" id="L205">        return new Builder(text, SentimentLabel.NEGATIVE).build();</span>
+    }
+
+    public static Dataset createNeutral(String text) {
+<span class="fc" id="L209">        return new Builder(text, SentimentLabel.NEUTRAL).build();</span>
+    }
+
+    public static Dataset fromCsvRow(String text, String label, String source) {
+<span class="fc" id="L213">        return new Builder(text, label)</span>
+<span class="fc" id="L214">                .source(source)</span>
+<span class="fc" id="L215">                .build();</span>
+    }
+
+    // Object contract methods
+    @Override
+    public boolean equals(Object obj) {
+<span class="fc bfc" id="L221" title="All 2 branches covered.">        if (this == obj) return true;</span>
+<span class="pc bpc" id="L222" title="1 of 4 branches missed.">        if (obj == null || getClass() != obj.getClass()) return false;</span>
+
+<span class="fc" id="L224">        Dataset dataset = (Dataset) obj;</span>
+<span class="pc bpc" id="L225" title="1 of 2 branches missed.">        return Double.compare(dataset.confidence, confidence) == 0 &amp;&amp;</span>
+<span class="pc bpc" id="L226" title="1 of 2 branches missed.">                Objects.equals(id, dataset.id) &amp;&amp;</span>
+<span class="pc bpc" id="L227" title="2 of 4 branches missed.">                Objects.equals(text, dataset.text) &amp;&amp;</span>
+                sentiment == dataset.sentiment &amp;&amp;
+<span class="pc bpc" id="L229" title="1 of 2 branches missed.">                Objects.equals(source, dataset.source) &amp;&amp;</span>
+<span class="pc bpc" id="L230" title="1 of 2 branches missed.">                Objects.equals(timestamp, dataset.timestamp);</span>
+    }
+
+    @Override
+    public int hashCode() {
+<span class="fc" id="L235">        return Objects.hash(id, text, sentiment, confidence, source, timestamp);</span>
+    }
+
+    @Override
+    public String toString() {
+<span class="fc" id="L240">        return String.format(&quot;Dataset{id='%s', text='%.50s%s', sentiment=%s, confidence=%.3f, source='%s'}&quot;,</span>
+                id,
+                text,
+<span class="fc bfc" id="L243" title="All 2 branches covered.">                text.length() &gt; 50 ? &quot;...&quot; : &quot;&quot;,</span>
+<span class="fc" id="L244">                sentiment.getDisplayName(),</span>
+<span class="fc" id="L245">                confidence,</span>
+<span class="fc bfc" id="L246" title="All 2 branches covered.">                source != null ? source : &quot;unknown&quot;);</span>
+    }
+
+    /**
+     * Create a JSON-like representation for debugging
+     */
+    public String toDetailedString() {
+<span class="fc" id="L253">        return String.format(&quot;&quot;&quot;</span>
+                Dataset {
+                    id: %s
+                    text: &quot;%s&quot;
+                    sentiment: %s (%d)
+                    confidence: %.3f
+                    source: %s
+                    timestamp: %s
+                    originalLabel: %s
+                    textLength: %d
+                }&quot;&quot;&quot;,
+<span class="fc" id="L264">                id, text, sentiment.getDisplayName(), sentiment.getNumericValue(),</span>
+<span class="fc" id="L265">                confidence, source, timestamp, originalLabel, text.length());</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

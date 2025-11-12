@@ -1,0 +1,297 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>StratifiedDataSplitter.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Java Sentiment Analysis</a> &gt; <a href="index.source.html" class="el_package">sentiment.evaluation</a> &gt; <span class="el_source">StratifiedDataSplitter.java</span></div><h1>StratifiedDataSplitter.java</h1><pre class="source lang-java linenums">package sentiment.evaluation;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import sentiment.data.Dataset;
+
+import java.util.*;
+import java.util.stream.Collectors;
+
+/**
+ * ARIA'S MATHEMATICAL RIGOR: Proper Data Splitting for Unbiased Evaluation
+ * =========================================================================
+ *
+ * &quot;The model is only as honest as its data splitting strategy.&quot;
+ *
+ * CRITICAL PRINCIPLE:
+ * ===================
+ * Test set must be held out BEFORE any model selection or hyperparameter tuning.
+ * Otherwise, information leakage causes overoptimistic performance estimates.
+ *
+ * PROPER WORKFLOW:
+ * ================
+ * 1. Split data: 60% train, 20% validation, 20% test
+ * 2. Use train set for model training
+ * 3. Use validation set for hyperparameter tuning and model selection
+ * 4. Use test set ONCE for final unbiased performance estimate
+ * 5. For robust estimates, use k-fold CV on train+val (NOT test)
+ *
+ * STRATIFICATION:
+ * ===============
+ * Ensures class distribution is preserved across splits.
+ * Critical for imbalanced datasets.
+ *
+ * EXAMPLE:
+ * ========
+ * ```java
+ * List&lt;Dataset&gt; data = loadData();
+ *
+ * // 60/20/20 split with stratification
+ * DataSplit split = StratifiedDataSplitter.stratifiedSplit(data, 0.6, 0.2, 0.2, 42);
+ *
+ * // Train on train set
+ * classifier.train(split.train);
+ *
+ * // Tune hyperparameters on validation set
+ * tuneHyperparameters(classifier, split.validation);
+ *
+ * // Final evaluation on test set (ONCE)
+ * ClassifierEvaluationResult finalResult = classifier.evaluate(split.test);
+ * ```
+ *
+ * @author Aria (Mathematical Foundations Mentor)
+ */
+<span class="nc" id="L54">public class StratifiedDataSplitter {</span>
+
+<span class="fc" id="L56">    private static final Logger logger = LoggerFactory.getLogger(StratifiedDataSplitter.class);</span>
+
+    /**
+     * Stratified train/validation/test split.
+     *
+     * GUARANTEES:
+     * - Class distribution preserved in each split
+     * - No data leakage between splits
+     * - Reproducible with fixed seed
+     *
+     * @param data Full dataset
+     * @param trainRatio Proportion for training (e.g., 0.6)
+     * @param valRatio Proportion for validation (e.g., 0.2)
+     * @param testRatio Proportion for test (e.g., 0.2)
+     * @param randomSeed Seed for reproducibility
+     * @return DataSplit with train, validation, and test sets
+     */
+    public static DataSplit stratifiedSplit(
+            List&lt;Dataset&gt; data,
+            double trainRatio,
+            double valRatio,
+            double testRatio,
+            long randomSeed) {
+
+        // Validate input
+<span class="fc bfc" id="L81" title="All 2 branches covered.">        if (data == null) {</span>
+<span class="fc" id="L82">            throw new IllegalArgumentException(&quot;Data cannot be null&quot;);</span>
+        }
+<span class="fc bfc" id="L84" title="All 2 branches covered.">        if (data.isEmpty()) {</span>
+<span class="fc" id="L85">            throw new IllegalArgumentException(&quot;Data cannot be empty&quot;);</span>
+        }
+
+        // Validate ratios
+<span class="fc bfc" id="L89" title="All 2 branches covered.">        if (Math.abs(trainRatio + valRatio + testRatio - 1.0) &gt; 1e-6) {</span>
+<span class="fc" id="L90">            throw new IllegalArgumentException(</span>
+<span class="fc" id="L91">                    String.format(&quot;Ratios must sum to 1.0, got %.3f&quot;, trainRatio + valRatio + testRatio));</span>
+        }
+
+<span class="pc bpc" id="L94" title="2 of 6 branches missed.">        if (trainRatio &lt; 0 || valRatio &lt; 0 || testRatio &lt; 0) {</span>
+<span class="fc" id="L95">            throw new IllegalArgumentException(&quot;Ratios cannot be negative&quot;);</span>
+        }
+
+<span class="pc bpc" id="L98" title="2 of 6 branches missed.">        if (trainRatio &lt;= 0 || valRatio &lt; 0 || testRatio &lt; 0) {</span>
+<span class="fc" id="L99">            throw new IllegalArgumentException(&quot;All ratios must be non-negative&quot;);</span>
+        }
+
+        // Group by class
+<span class="fc" id="L103">        Map&lt;Dataset.SentimentLabel, List&lt;Dataset&gt;&gt; byClass = data.stream()</span>
+<span class="fc" id="L104">                .collect(Collectors.groupingBy(Dataset::getSentiment));</span>
+
+<span class="fc" id="L106">        logger.info(&quot;Performing stratified split: train={}%, val={}%, test={}%&quot;,</span>
+<span class="fc" id="L107">                trainRatio * 100, valRatio * 100, testRatio * 100);</span>
+
+<span class="fc" id="L109">        List&lt;Dataset&gt; trainSet = new ArrayList&lt;&gt;();</span>
+<span class="fc" id="L110">        List&lt;Dataset&gt; valSet = new ArrayList&lt;&gt;();</span>
+<span class="fc" id="L111">        List&lt;Dataset&gt; testSet = new ArrayList&lt;&gt;();</span>
+
+<span class="fc" id="L113">        Random random = new Random(randomSeed);</span>
+
+        // Split each class proportionally
+<span class="fc bfc" id="L116" title="All 2 branches covered.">        for (Map.Entry&lt;Dataset.SentimentLabel, List&lt;Dataset&gt;&gt; entry : byClass.entrySet()) {</span>
+<span class="fc" id="L117">            Dataset.SentimentLabel label = entry.getKey();</span>
+<span class="fc" id="L118">            List&lt;Dataset&gt; classData = new ArrayList&lt;&gt;(entry.getValue());</span>
+
+            // Shuffle within class
+<span class="fc" id="L121">            Collections.shuffle(classData, random);</span>
+
+<span class="fc" id="L123">            int total = classData.size();</span>
+<span class="fc" id="L124">            int trainSize = (int) (total * trainRatio);</span>
+<span class="fc" id="L125">            int valSize = (int) (total * valRatio);</span>
+
+            // Split
+<span class="fc" id="L128">            List&lt;Dataset&gt; classTrain = classData.subList(0, trainSize);</span>
+<span class="fc" id="L129">            List&lt;Dataset&gt; classVal = classData.subList(trainSize, trainSize + valSize);</span>
+<span class="fc" id="L130">            List&lt;Dataset&gt; classTest = classData.subList(trainSize + valSize, total);</span>
+
+<span class="fc" id="L132">            trainSet.addAll(classTrain);</span>
+<span class="fc" id="L133">            valSet.addAll(classVal);</span>
+<span class="fc" id="L134">            testSet.addAll(classTest);</span>
+
+<span class="fc" id="L136">            logger.debug(&quot;Class {}: train={}, val={}, test={}&quot;,</span>
+<span class="fc" id="L137">                    label, classTrain.size(), classVal.size(), classTest.size());</span>
+<span class="fc" id="L138">        }</span>
+
+        // Shuffle combined sets (within each split)
+<span class="fc" id="L141">        Collections.shuffle(trainSet, random);</span>
+<span class="fc" id="L142">        Collections.shuffle(valSet, random);</span>
+<span class="fc" id="L143">        Collections.shuffle(testSet, random);</span>
+
+<span class="fc" id="L145">        logger.info(&quot;Split complete: train={}, val={}, test={}&quot;,</span>
+<span class="fc" id="L146">                trainSet.size(), valSet.size(), testSet.size());</span>
+
+        // Verify class distribution
+<span class="fc" id="L149">        verifyStratification(data, trainSet, valSet, testSet);</span>
+
+<span class="fc" id="L151">        return new DataSplit(trainSet, valSet, testSet);</span>
+    }
+
+    /**
+     * Two-way stratified split (train/test only).
+     *
+     * @param data Full dataset
+     * @param trainRatio Proportion for training (e.g., 0.8)
+     * @param randomSeed Seed for reproducibility
+     * @return DataSplit with validation set empty
+     */
+    public static DataSplit stratifiedSplit(
+            List&lt;Dataset&gt; data,
+            double trainRatio,
+            long randomSeed) {
+
+<span class="fc" id="L167">        return stratifiedSplit(data, trainRatio, 0.0, 1.0 - trainRatio, randomSeed);</span>
+    }
+
+    /**
+     * K-fold stratified cross-validation splits.
+     *
+     * USAGE:
+     * For model evaluation WITHOUT a held-out test set.
+     * Typically used on train+val data, never on test data.
+     *
+     * @param data Dataset to split
+     * @param k Number of folds (typically 5 or 10)
+     * @param randomSeed Seed for reproducibility
+     * @return List of k folds, each containing train and test split
+     */
+    public static List&lt;DataSplit&gt; stratifiedKFold(
+            List&lt;Dataset&gt; data,
+            int k,
+            long randomSeed) {
+
+<span class="fc bfc" id="L187" title="All 2 branches covered.">        if (k &lt; 2) {</span>
+<span class="fc" id="L188">            throw new IllegalArgumentException(&quot;k must be &gt;= 2 for k-fold CV&quot;);</span>
+        }
+
+        // Group by class
+<span class="fc" id="L192">        Map&lt;Dataset.SentimentLabel, List&lt;Dataset&gt;&gt; byClass = data.stream()</span>
+<span class="fc" id="L193">                .collect(Collectors.groupingBy(Dataset::getSentiment));</span>
+
+<span class="fc" id="L195">        logger.info(&quot;Creating {}-fold stratified CV splits from {} samples&quot;, k, data.size());</span>
+
+        // Create k empty folds
+<span class="fc" id="L198">        List&lt;List&lt;Dataset&gt;&gt; folds = new ArrayList&lt;&gt;();</span>
+<span class="fc bfc" id="L199" title="All 2 branches covered.">        for (int i = 0; i &lt; k; i++) {</span>
+<span class="fc" id="L200">            folds.add(new ArrayList&lt;&gt;());</span>
+        }
+
+<span class="fc" id="L203">        Random random = new Random(randomSeed);</span>
+
+        // Distribute each class across folds
+<span class="fc bfc" id="L206" title="All 2 branches covered.">        for (Map.Entry&lt;Dataset.SentimentLabel, List&lt;Dataset&gt;&gt; entry : byClass.entrySet()) {</span>
+<span class="fc" id="L207">            List&lt;Dataset&gt; classData = new ArrayList&lt;&gt;(entry.getValue());</span>
+<span class="fc" id="L208">            Collections.shuffle(classData, random);</span>
+
+            // Round-robin assignment to folds
+<span class="fc bfc" id="L211" title="All 2 branches covered.">            for (int i = 0; i &lt; classData.size(); i++) {</span>
+<span class="fc" id="L212">                int foldIdx = i % k;</span>
+<span class="fc" id="L213">                folds.get(foldIdx).add(classData.get(i));</span>
+            }
+<span class="fc" id="L215">        }</span>
+
+        // Create train/test splits for each fold
+<span class="fc" id="L218">        List&lt;DataSplit&gt; cvSplits = new ArrayList&lt;&gt;();</span>
+<span class="fc bfc" id="L219" title="All 2 branches covered.">        for (int testFoldIdx = 0; testFoldIdx &lt; k; testFoldIdx++) {</span>
+<span class="fc" id="L220">            List&lt;Dataset&gt; testSet = folds.get(testFoldIdx);</span>
+<span class="fc" id="L221">            List&lt;Dataset&gt; trainSet = new ArrayList&lt;&gt;();</span>
+
+            // Combine all other folds as training set
+<span class="fc bfc" id="L224" title="All 2 branches covered.">            for (int i = 0; i &lt; k; i++) {</span>
+<span class="fc bfc" id="L225" title="All 2 branches covered.">                if (i != testFoldIdx) {</span>
+<span class="fc" id="L226">                    trainSet.addAll(folds.get(i));</span>
+                }
+            }
+
+<span class="fc" id="L230">            cvSplits.add(new DataSplit(trainSet, List.of(), testSet));</span>
+
+<span class="fc" id="L232">            logger.debug(&quot;Fold {}/{}: train={}, test={}&quot;,</span>
+<span class="fc" id="L233">                    testFoldIdx + 1, k, trainSet.size(), testSet.size());</span>
+        }
+
+<span class="fc" id="L236">        return cvSplits;</span>
+    }
+
+    /**
+     * Verify that stratification preserved class distribution.
+     */
+    private static void verifyStratification(
+            List&lt;Dataset&gt; original,
+            List&lt;Dataset&gt; train,
+            List&lt;Dataset&gt; val,
+            List&lt;Dataset&gt; test) {
+
+<span class="fc" id="L248">        Map&lt;Dataset.SentimentLabel, Long&gt; origDist = original.stream()</span>
+<span class="fc" id="L249">                .collect(Collectors.groupingBy(Dataset::getSentiment, Collectors.counting()));</span>
+
+<span class="fc" id="L251">        Map&lt;Dataset.SentimentLabel, Long&gt; trainDist = train.stream()</span>
+<span class="fc" id="L252">                .collect(Collectors.groupingBy(Dataset::getSentiment, Collectors.counting()));</span>
+
+<span class="fc bfc" id="L254" title="All 2 branches covered.">        Map&lt;Dataset.SentimentLabel, Long&gt; valDist = val.isEmpty() ? Map.of() : val.stream()</span>
+<span class="fc" id="L255">                .collect(Collectors.groupingBy(Dataset::getSentiment, Collectors.counting()));</span>
+
+<span class="fc" id="L257">        Map&lt;Dataset.SentimentLabel, Long&gt; testDist = test.stream()</span>
+<span class="fc" id="L258">                .collect(Collectors.groupingBy(Dataset::getSentiment, Collectors.counting()));</span>
+
+<span class="fc" id="L260">        logger.info(&quot;=== Class Distribution Verification ===&quot;);</span>
+<span class="fc bfc" id="L261" title="All 2 branches covered.">        for (Dataset.SentimentLabel label : origDist.keySet()) {</span>
+<span class="fc" id="L262">            double origPct = 100.0 * origDist.get(label) / original.size();</span>
+<span class="fc" id="L263">            double trainPct = 100.0 * trainDist.getOrDefault(label, 0L) / train.size();</span>
+<span class="fc bfc" id="L264" title="All 2 branches covered.">            double valPct = val.isEmpty() ? 0.0 : 100.0 * valDist.getOrDefault(label, 0L) / val.size();</span>
+<span class="fc" id="L265">            double testPct = 100.0 * testDist.getOrDefault(label, 0L) / test.size();</span>
+
+<span class="fc" id="L267">            logger.info(&quot;{}: original={}%, train={}%, val={}%, test={}%&quot;,</span>
+<span class="fc" id="L268">                    label, origPct, trainPct, valPct, testPct);</span>
+<span class="fc" id="L269">        }</span>
+<span class="fc" id="L270">    }</span>
+
+    /**
+     * Result of data splitting.
+     */
+    public static class DataSplit {
+        public final List&lt;Dataset&gt; train;
+        public final List&lt;Dataset&gt; validation;
+        public final List&lt;Dataset&gt; test;
+
+<span class="fc" id="L280">        public DataSplit(List&lt;Dataset&gt; train, List&lt;Dataset&gt; validation, List&lt;Dataset&gt; test) {</span>
+<span class="fc" id="L281">            this.train = List.copyOf(train);</span>
+<span class="fc" id="L282">            this.validation = List.copyOf(validation);</span>
+<span class="fc" id="L283">            this.test = List.copyOf(test);</span>
+<span class="fc" id="L284">        }</span>
+
+        public int totalSize() {
+<span class="fc" id="L287">            return train.size() + validation.size() + test.size();</span>
+        }
+
+        @Override
+        public String toString() {
+<span class="fc" id="L292">            return String.format(&quot;DataSplit{train=%d, val=%d, test=%d, total=%d}&quot;,</span>
+<span class="fc" id="L293">                    train.size(), validation.size(), test.size(), totalSize());</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

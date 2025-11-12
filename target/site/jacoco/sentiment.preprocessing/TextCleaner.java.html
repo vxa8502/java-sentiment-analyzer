@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>TextCleaner.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Java Sentiment Analysis</a> &gt; <a href="index.source.html" class="el_package">sentiment.preprocessing</a> &gt; <span class="el_source">TextCleaner.java</span></div><h1>TextCleaner.java</h1><pre class="source lang-java linenums">package sentiment.preprocessing;
+
+import java.util.List;
+
+/**
+ * Interface for text cleaning and basic preprocessing operations.
+ *
+ * This interface defines the minimal contract needed for text preprocessing
+ * without coupling to the full PreprocessingPipeline lifecycle (fit/transform/save/load).
+ *
+ * DESIGN PATTERN: Interface Segregation Principle
+ * ================================================
+ * Classes that only need basic text cleaning should depend on TextCleaner,
+ * not the full PreprocessingPipeline interface.
+ *
+ * CIRCULAR DEPENDENCY SOLUTION:
+ * ==============================
+ * Before:
+ *   TextPreprocessor → TFIDFFeatureExtractor → PreprocessingPipeline (TextPreprocessor)
+ *   ❌ CIRCULAR!
+ *
+ * After:
+ *   TextPreprocessor implements TextCleaner
+ *   TFIDFFeatureExtractor → TextCleaner (no circular dependency)
+ *   ✅ CLEAN!
+ *
+ * @see TextPreprocessor
+ * @see TFIDFFeatureExtractor
+ */
+public interface TextCleaner {
+
+    /**
+     * Clean raw text by removing noise, URLs, HTML tags, etc.
+     *
+     * This method performs basic text cleaning operations like:
+     * - Removing URLs and emails
+     * - Removing HTML tags
+     * - Handling social media mentions and hashtags
+     * - Expanding contractions
+     * - Normalizing whitespace
+     *
+     * @param rawText The raw input text to clean
+     * @return Cleaned text ready for tokenization
+     */
+    String cleanText(String rawText);
+
+    /**
+     * Tokenize cleaned text into individual words/tokens.
+     *
+     * This method splits the cleaned text into meaningful tokens,
+     * handling edge cases like:
+     * - Compound words
+     * - Emoticons
+     * - Special tokens (url_token, email_token, etc.)
+     *
+     * @param text The cleaned text to tokenize
+     * @return List of tokens extracted from the text
+     */
+    List&lt;String&gt; tokenize(String text);
+
+    /**
+     * Remove stopwords from a list of tokens.
+     *
+     * Stopwords are common words that typically don't carry much
+     * sentiment information (e.g., &quot;the&quot;, &quot;a&quot;, &quot;is&quot;, &quot;are&quot;).
+     *
+     * @param tokens The list of tokens to filter
+     * @return Filtered list with stopwords removed
+     */
+    List&lt;String&gt; removeStopwords(List&lt;String&gt; tokens);
+
+    /**
+     * Complete text preprocessing pipeline: clean → tokenize → remove stopwords → join.
+     *
+     * This is a convenience method that chains all preprocessing steps together.
+     * Default implementation:
+     * 1. Clean the raw text
+     * 2. Tokenize into words
+     * 3. Remove stopwords
+     * 4. Join tokens back into a single string
+     *
+     * Implementations can override this for custom behavior.
+     *
+     * @param rawText The raw input text to preprocess
+     * @return Fully preprocessed text ready for feature extraction
+     */
+    default String preprocessText(String rawText) {
+<span class="nc bnc" id="L88" title="All 4 branches missed.">        if (rawText == null || rawText.trim().isEmpty()) {</span>
+<span class="nc" id="L89">            return &quot;&quot;;</span>
+        }
+
+<span class="nc" id="L92">        String cleaned = cleanText(rawText);</span>
+<span class="nc" id="L93">        List&lt;String&gt; tokens = tokenize(cleaned);</span>
+<span class="nc" id="L94">        List&lt;String&gt; filtered = removeStopwords(tokens);</span>
+<span class="nc" id="L95">        return String.join(&quot; &quot;, filtered);</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

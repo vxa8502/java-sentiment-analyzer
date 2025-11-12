@@ -1,0 +1,415 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>DataLoadingLimits.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Java Sentiment Analysis</a> &gt; <a href="index.source.html" class="el_package">sentiment.data</a> &gt; <span class="el_source">DataLoadingLimits.java</span></div><h1>DataLoadingLimits.java</h1><pre class="source lang-java linenums">package sentiment.data;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.validation.annotation.Validated;
+
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotNull;
+
+/**
+ * Configuration for dataset loading memory limits.
+ * Prevents OOM errors when loading large datasets by enforcing reasonable limits.
+ *
+ * All limits are configurable via application.properties:
+ *
+ * sentiment.data.limits.max-datasets-per-file=100000
+ * sentiment.data.limits.max-combined-datasets=500000
+ * sentiment.data.limits.max-file-size-mb=500
+ * sentiment.data.limits.warn-threshold-percent=80
+ */
+@Configuration
+@ConfigurationProperties(prefix = &quot;sentiment.data.limits&quot;)
+@Validated
+<span class="fc" id="L26">public class DataLoadingLimits {</span>
+
+<span class="fc" id="L28">    private static final Logger logger = LoggerFactory.getLogger(DataLoadingLimits.class);</span>
+
+    /**
+     * Maximum number of datasets to load from a single file.
+     * Default: 100,000 datasets (~100MB assuming 1KB per text)
+     */
+<span class="fc" id="L34">    @NotNull</span>
+    @Min(1000)
+<span class="fc" id="L36">    private Integer maxDatasetsPerFile = 100_000;</span>
+
+    /**
+     * Maximum total datasets when combining multiple files.
+     * Default: 500,000 datasets (~500MB assuming 1KB per text)
+     */
+<span class="fc" id="L42">    @NotNull</span>
+    @Min(10000)
+<span class="fc" id="L44">    private Integer maxCombinedDatasets = 500_000;</span>
+
+    /**
+     * Maximum file size in MB before warning.
+     * Default: 500MB
+     */
+<span class="fc" id="L50">    @NotNull</span>
+    @Min(1)
+<span class="fc" id="L52">    private Integer maxFileSizeMb = 500;</span>
+
+    /**
+     * Percentage threshold (0-100) to trigger warnings before hitting hard limits.
+     * Default: 80% (warn when reaching 80% of limit)
+     */
+<span class="fc" id="L58">    @NotNull</span>
+    @Min(50)
+<span class="fc" id="L60">    private Integer warnThresholdPercent = 80;</span>
+
+    /**
+     * Whether to enforce limits strictly (throw exception) or just warn.
+     * Default: true (strict enforcement)
+     */
+<span class="fc" id="L66">    private boolean strictEnforcement = true;</span>
+
+    /**
+     * Estimated number of features for statistical validation.
+     * Used to calculate minimum required samples for statistical power.
+     * Default: 5000 (typical TF-IDF feature count)
+     */
+<span class="fc" id="L73">    @NotNull</span>
+    @Min(100)
+<span class="fc" id="L75">    private Integer estimatedFeatures = 5000;</span>
+
+    // Getters and Setters
+
+    public Integer getMaxDatasetsPerFile() {
+<span class="fc" id="L80">        return maxDatasetsPerFile;</span>
+    }
+
+    public void setMaxDatasetsPerFile(Integer maxDatasetsPerFile) {
+<span class="pc bpc" id="L84" title="2 of 4 branches missed.">        if (maxDatasetsPerFile != null &amp;&amp; maxDatasetsPerFile &gt;= 1000) {</span>
+<span class="fc" id="L85">            this.maxDatasetsPerFile = maxDatasetsPerFile;</span>
+<span class="fc" id="L86">            logger.info(&quot;Updated maxDatasetsPerFile to: {}&quot;, maxDatasetsPerFile);</span>
+        }
+<span class="fc" id="L88">    }</span>
+
+    public Integer getMaxCombinedDatasets() {
+<span class="fc" id="L91">        return maxCombinedDatasets;</span>
+    }
+
+    public void setMaxCombinedDatasets(Integer maxCombinedDatasets) {
+<span class="pc bpc" id="L95" title="1 of 4 branches missed.">        if (maxCombinedDatasets != null &amp;&amp; maxCombinedDatasets &gt;= 10000) {</span>
+<span class="fc" id="L96">            this.maxCombinedDatasets = maxCombinedDatasets;</span>
+<span class="fc" id="L97">            logger.info(&quot;Updated maxCombinedDatasets to: {}&quot;, maxCombinedDatasets);</span>
+        }
+<span class="fc" id="L99">    }</span>
+
+    public Integer getMaxFileSizeMb() {
+<span class="fc" id="L102">        return maxFileSizeMb;</span>
+    }
+
+    public void setMaxFileSizeMb(Integer maxFileSizeMb) {
+<span class="pc bpc" id="L106" title="1 of 4 branches missed.">        if (maxFileSizeMb != null &amp;&amp; maxFileSizeMb &gt;= 1) {</span>
+<span class="fc" id="L107">            this.maxFileSizeMb = maxFileSizeMb;</span>
+<span class="fc" id="L108">            logger.info(&quot;Updated maxFileSizeMb to: {}&quot;, maxFileSizeMb);</span>
+        }
+<span class="fc" id="L110">    }</span>
+
+    public Integer getWarnThresholdPercent() {
+<span class="nc" id="L113">        return warnThresholdPercent;</span>
+    }
+
+    public void setWarnThresholdPercent(Integer warnThresholdPercent) {
+<span class="nc bnc" id="L117" title="All 6 branches missed.">        if (warnThresholdPercent != null &amp;&amp; warnThresholdPercent &gt;= 50 &amp;&amp; warnThresholdPercent &lt;= 100) {</span>
+<span class="nc" id="L118">            this.warnThresholdPercent = warnThresholdPercent;</span>
+<span class="nc" id="L119">            logger.info(&quot;Updated warnThresholdPercent to: {}&quot;, warnThresholdPercent);</span>
+        }
+<span class="nc" id="L121">    }</span>
+
+    public boolean isStrictEnforcement() {
+<span class="nc" id="L124">        return strictEnforcement;</span>
+    }
+
+    public void setStrictEnforcement(boolean strictEnforcement) {
+<span class="fc" id="L128">        this.strictEnforcement = strictEnforcement;</span>
+<span class="fc" id="L129">        logger.info(&quot;Updated strictEnforcement to: {}&quot;, strictEnforcement);</span>
+<span class="fc" id="L130">    }</span>
+
+    public Integer getEstimatedFeatures() {
+<span class="fc" id="L133">        return estimatedFeatures;</span>
+    }
+
+    public void setEstimatedFeatures(Integer estimatedFeatures) {
+<span class="nc bnc" id="L137" title="All 4 branches missed.">        if (estimatedFeatures != null &amp;&amp; estimatedFeatures &gt;= 100) {</span>
+<span class="nc" id="L138">            this.estimatedFeatures = estimatedFeatures;</span>
+<span class="nc" id="L139">            logger.info(&quot;Updated estimatedFeatures to: {}&quot;, estimatedFeatures);</span>
+        }
+<span class="nc" id="L141">    }</span>
+
+    // Utility Methods
+
+    /**
+     * Check if a dataset count exceeds the per-file limit.
+     *
+     * @param count Current dataset count
+     * @param filePath File being loaded (for logging)
+     * @throws DataLoadingException if strict enforcement is enabled and limit exceeded
+     */
+    public void checkPerFileLimit(int count, String filePath) throws DataLoadingException {
+<span class="pc bpc" id="L153" title="1 of 2 branches missed.">        if (count &gt; maxDatasetsPerFile) {</span>
+<span class="nc" id="L154">            String message = String.format(</span>
+                    &quot;Dataset count %d exceeds maximum per-file limit of %d for file: %s&quot;,
+<span class="nc" id="L156">                    count, maxDatasetsPerFile, getFileName(filePath)</span>
+            );
+
+<span class="nc bnc" id="L159" title="All 2 branches missed.">            if (strictEnforcement) {</span>
+<span class="nc" id="L160">                logger.error(&quot;HARD LIMIT EXCEEDED: {}&quot;, message);</span>
+<span class="nc" id="L161">                throw new DataLoadingException(message, filePath, &quot;Memory Limit&quot;);</span>
+            } else {
+<span class="nc" id="L163">                logger.warn(&quot;SOFT LIMIT EXCEEDED: {} (strict enforcement disabled)&quot;, message);</span>
+            }
+        }
+
+        // Warn when approaching limit
+<span class="fc" id="L168">        int warnThreshold = (maxDatasetsPerFile * warnThresholdPercent) / 100;</span>
+<span class="pc bpc" id="L169" title="1 of 4 branches missed.">        if (count &gt; warnThreshold &amp;&amp; count &lt;= maxDatasetsPerFile) {</span>
+<span class="fc" id="L170">            double percentUsed = (double) count / maxDatasetsPerFile * 100;</span>
+<span class="fc" id="L171">            String percent = String.format(&quot;%.1f&quot;, percentUsed);</span>
+<span class="fc" id="L172">            logger.warn(&quot;Approaching per-file limit for {}: {} datasets ({}% of limit)&quot;,</span>
+<span class="fc" id="L173">                    getFileName(filePath), count, percent);</span>
+        }
+<span class="fc" id="L175">    }</span>
+
+    /**
+     * Check if combined dataset count exceeds the limit.
+     *
+     * @param totalCount Total datasets across all files
+     * @param fileCount Number of files being combined
+     * @throws DataLoadingException if strict enforcement is enabled and limit exceeded
+     */
+    public void checkCombinedLimit(int totalCount, int fileCount) throws DataLoadingException {
+<span class="fc bfc" id="L185" title="All 2 branches covered.">        if (totalCount &gt; maxCombinedDatasets) {</span>
+<span class="fc" id="L186">            String message = String.format(</span>
+                    &quot;Combined dataset count %d exceeds maximum limit of %d (from %d files)&quot;,
+<span class="fc" id="L188">                    totalCount, maxCombinedDatasets, fileCount</span>
+            );
+
+<span class="pc bpc" id="L191" title="1 of 2 branches missed.">            if (strictEnforcement) {</span>
+<span class="fc" id="L192">                logger.error(&quot;HARD LIMIT EXCEEDED: {}&quot;, message);</span>
+<span class="fc" id="L193">                throw new DataLoadingException(message,</span>
+<span class="fc" id="L194">                        String.format(&quot;Combined from %d files&quot;, fileCount), &quot;Memory Limit&quot;);</span>
+            } else {
+<span class="nc" id="L196">                logger.warn(&quot;SOFT LIMIT EXCEEDED: {} (strict enforcement disabled)&quot;, message);</span>
+            }
+        }
+
+        // Warn when approaching limit
+<span class="fc" id="L201">        int warnThreshold = (maxCombinedDatasets * warnThresholdPercent) / 100;</span>
+<span class="pc bpc" id="L202" title="3 of 4 branches missed.">        if (totalCount &gt; warnThreshold &amp;&amp; totalCount &lt;= maxCombinedDatasets) {</span>
+<span class="nc" id="L203">            double percentUsed = (double) totalCount / maxCombinedDatasets * 100;</span>
+<span class="nc" id="L204">            String percent = String.format(&quot;%.1f&quot;, percentUsed);</span>
+<span class="nc" id="L205">            logger.warn(&quot;Approaching combined dataset limit: {} datasets ({}% of limit) from {} files&quot;,</span>
+<span class="nc" id="L206">                    totalCount, percent, fileCount);</span>
+        }
+<span class="fc" id="L208">    }</span>
+
+    /**
+     * Check if file size is too large before attempting to load.
+     *
+     * @param fileSizeMb File size in MB
+     * @param filePath File being checked
+     * @throws DataLoadingException if strict enforcement is enabled and size too large
+     */
+    public void checkFileSize(long fileSizeMb, String filePath) throws DataLoadingException {
+<span class="pc bpc" id="L218" title="1 of 2 branches missed.">        if (fileSizeMb &gt; maxFileSizeMb) {</span>
+<span class="nc" id="L219">            String message = String.format(</span>
+                    &quot;File size %d MB exceeds maximum limit of %d MB for file: %s&quot;,
+<span class="nc" id="L221">                    fileSizeMb, maxFileSizeMb, getFileName(filePath)</span>
+            );
+
+<span class="nc bnc" id="L224" title="All 2 branches missed.">            if (strictEnforcement) {</span>
+<span class="nc" id="L225">                logger.error(&quot;HARD LIMIT EXCEEDED: {}&quot;, message);</span>
+<span class="nc" id="L226">                throw new DataLoadingException(message, filePath, &quot;Memory Limit&quot;);</span>
+            } else {
+<span class="nc" id="L228">                logger.warn(&quot;SOFT LIMIT EXCEEDED: {} (strict enforcement disabled)&quot;, message);</span>
+            }
+        }
+
+        // Warn for large files even below limit
+<span class="fc" id="L233">        long warnThreshold = (maxFileSizeMb * warnThresholdPercent) / 100;</span>
+<span class="pc bpc" id="L234" title="3 of 4 branches missed.">        if (fileSizeMb &gt; warnThreshold &amp;&amp; fileSizeMb &lt;= maxFileSizeMb) {</span>
+<span class="nc" id="L235">            double percentUsed = (double) fileSizeMb / maxFileSizeMb * 100;</span>
+<span class="nc" id="L236">            String percent = String.format(&quot;%.1f&quot;, percentUsed);</span>
+<span class="nc" id="L237">            logger.warn(&quot;Loading large file {}: {} MB ({}% of limit) - may take time&quot;,</span>
+<span class="nc" id="L238">                    getFileName(filePath), fileSizeMb, percent);</span>
+        }
+<span class="fc" id="L240">    }</span>
+
+    /**
+     * Get estimated memory usage for a dataset count.
+     * Assumes average 1KB per text sample.
+     *
+     * @param datasetCount Number of datasets
+     * @return Estimated memory in MB
+     */
+    public long estimateMemoryUsageMb(int datasetCount) {
+        // Conservative estimate: 1KB per text + overhead
+<span class="fc" id="L251">        return (datasetCount * 1024L) / (1024L * 1024L);</span>
+    }
+
+    /**
+     * Validate if the proposed sample size is statistically sufficient.
+     * Aria's requirement: Prove that sample sizes meet statistical power requirements.
+     *
+     * This method checks:
+     * 1. Minimum samples per class for statistical significance
+     * 2. Sample size for reliable confidence interval estimation
+     *
+     * @param proposedSize Number of samples being loaded
+     * @param numClasses Number of distinct classes in the dataset (e.g., 3 for positive/negative/neutral)
+     * @param numFeatures Number of features in the model (for statistical power calculation)
+     * @return ValidationResult containing warnings and recommendations
+     */
+    public SampleSizeValidation validateSampleSize(int proposedSize, int numClasses, int numFeatures) {
+<span class="fc" id="L268">        SampleSizeValidation result = new SampleSizeValidation();</span>
+
+        // 1. Minimum samples per class for statistical significance
+        // Rule: 30 base samples + 10 * log(numFeatures) to account for feature dimensionality
+        // Justification: Based on Central Limit Theorem and degrees of freedom requirements
+<span class="fc" id="L273">        int minPerClass = (int) Math.ceil(30 + 10 * Math.log(numFeatures));</span>
+<span class="fc" id="L274">        int recommendedMinTotal = minPerClass * numClasses;</span>
+
+<span class="fc bfc" id="L276" title="All 2 branches covered.">        if (proposedSize &lt; recommendedMinTotal) {</span>
+<span class="fc" id="L277">            String warning = String.format(</span>
+                &quot;Sample size %d may be insufficient for %d classes with %d features. &quot; +
+                &quot;Recommend at least %d samples (%d per class) for statistical power.&quot;,
+<span class="fc" id="L280">                proposedSize, numClasses, numFeatures, recommendedMinTotal, minPerClass</span>
+            );
+<span class="fc" id="L282">            logger.warn(warning);</span>
+<span class="fc" id="L283">            result.addWarning(warning);</span>
+<span class="fc" id="L284">            result.setSufficient(false);</span>
+        }
+
+        // 2. Sample size for confidence interval estimation
+        // Formula: n = (Z^2 * p * (1-p)) / E^2
+        // Where: Z = 1.96 (95% CI), p = 0.5 (max variance), E = 0.05 (±5% margin)
+        // Result: n ≈ 384 for 95% confidence with ±5% margin of error
+<span class="fc" id="L291">        double z = 1.96;  // 95% confidence level</span>
+<span class="fc" id="L292">        double p = 0.25;  // Conservative variance estimate (0.5 * 0.5)</span>
+<span class="fc" id="L293">        double e = 0.05;  // ±5% margin of error</span>
+<span class="fc" id="L294">        double requiredForCI = (z * z * p) / (e * e);</span>
+
+<span class="fc bfc" id="L296" title="All 2 branches covered.">        if (proposedSize &lt; requiredForCI) {</span>
+<span class="fc" id="L297">            String warning = String.format(</span>
+                &quot;Sample size %d insufficient for tight confidence intervals. &quot; +
+                &quot;Need at least %d samples for ±%.1f%% margin at 95%% confidence (currently achievable margin: ±%.2f%%).&quot;,
+<span class="fc" id="L300">                proposedSize, (int)Math.ceil(requiredForCI), e * 100,</span>
+<span class="fc" id="L301">                z * Math.sqrt(p / proposedSize) * 100</span>
+            );
+<span class="fc" id="L303">            logger.warn(warning);</span>
+<span class="fc" id="L304">            result.addWarning(warning);</span>
+<span class="fc" id="L305">            result.setSufficient(false);</span>
+        }
+
+        // 3. Check for class imbalance concerns
+        // If we have fewer than 100 samples per class on average, warn about potential imbalance issues
+<span class="fc" id="L310">        int avgPerClass = proposedSize / numClasses;</span>
+<span class="fc bfc" id="L311" title="All 2 branches covered.">        if (avgPerClass &lt; 100) {</span>
+<span class="fc" id="L312">            String warning = String.format(</span>
+                &quot;Average samples per class (%d) is low. &quot; +
+                &quot;Class imbalance may significantly impact model performance. &quot; +
+                &quot;Consider stratified sampling to ensure balanced representation.&quot;,
+<span class="fc" id="L316">                avgPerClass</span>
+            );
+<span class="fc" id="L318">            logger.warn(warning);</span>
+<span class="fc" id="L319">            result.addWarning(warning);</span>
+        }
+
+        // 4. Model complexity vs sample size ratio (curse of dimensionality)
+        // Rule of thumb: Need at least 10-20 samples per feature for reliable generalization
+<span class="fc" id="L324">        int minForFeatures = numFeatures * 10;  // Conservative estimate</span>
+<span class="pc bpc" id="L325" title="1 of 2 branches missed.">        if (proposedSize &lt; minForFeatures) {</span>
+<span class="fc" id="L326">            String warning = String.format(</span>
+                &quot;Sample size %d may be too small for %d features (ratio: %.1f samples/feature). &quot; +
+                &quot;Risk of overfitting. Recommend at least %d samples (10x features) or feature reduction.&quot;,
+<span class="fc" id="L329">                proposedSize, numFeatures, (double)proposedSize / numFeatures, minForFeatures</span>
+            );
+<span class="fc" id="L331">            logger.warn(warning);</span>
+<span class="fc" id="L332">            result.addWarning(warning);</span>
+<span class="fc" id="L333">            result.setSufficient(false);</span>
+        }
+
+        // Success case
+<span class="pc bpc" id="L337" title="1 of 2 branches missed.">        if (result.isSufficient()) {</span>
+<span class="nc" id="L338">            logger.info(&quot;Sample size {} validated: Sufficient for {} classes with {} features &quot; +</span>
+                       &quot;({}% of recommended minimum, {:.1f} samples/feature)&quot;,
+<span class="nc" id="L340">                       proposedSize, numClasses, numFeatures,</span>
+<span class="nc" id="L341">                       (proposedSize * 100 / recommendedMinTotal),</span>
+<span class="nc" id="L342">                       (double)proposedSize / numFeatures);</span>
+        }
+
+<span class="fc" id="L345">        return result;</span>
+    }
+
+    /**
+     * Result of sample size validation with warnings and recommendations.
+     */
+<span class="fc" id="L351">    public static class SampleSizeValidation {</span>
+<span class="fc" id="L352">        private boolean sufficient = true;</span>
+<span class="fc" id="L353">        private final java.util.List&lt;String&gt; warnings = new java.util.ArrayList&lt;&gt;();</span>
+
+        public boolean isSufficient() {
+<span class="fc" id="L356">            return sufficient;</span>
+        }
+
+        public void setSufficient(boolean sufficient) {
+<span class="fc" id="L360">            this.sufficient = sufficient;</span>
+<span class="fc" id="L361">        }</span>
+
+        public java.util.List&lt;String&gt; getWarnings() {
+<span class="fc" id="L364">            return warnings;</span>
+        }
+
+        public void addWarning(String warning) {
+<span class="fc" id="L368">            this.warnings.add(warning);</span>
+<span class="fc" id="L369">        }</span>
+
+        public boolean hasWarnings() {
+<span class="pc bpc" id="L372" title="1 of 2 branches missed.">            return !warnings.isEmpty();</span>
+        }
+    }
+
+    /**
+     * Log current limit configuration.
+     */
+    public void logConfiguration() {
+<span class="fc" id="L380">        logger.info(&quot;=== Dataset Loading Limits Configuration ===&quot;);</span>
+<span class="fc" id="L381">        logger.info(&quot;Max datasets per file: {}&quot;, maxDatasetsPerFile);</span>
+<span class="fc" id="L382">        logger.info(&quot;Max combined datasets: {}&quot;, maxCombinedDatasets);</span>
+<span class="fc" id="L383">        logger.info(&quot;Max file size: {} MB&quot;, maxFileSizeMb);</span>
+<span class="fc" id="L384">        logger.info(&quot;Warning threshold: {}%&quot;, warnThresholdPercent);</span>
+<span class="fc" id="L385">        logger.info(&quot;Strict enforcement: {}&quot;, strictEnforcement);</span>
+<span class="fc" id="L386">        logger.info(&quot;Estimated max memory per file: ~{} MB&quot;,</span>
+<span class="fc" id="L387">                estimateMemoryUsageMb(maxDatasetsPerFile));</span>
+<span class="fc" id="L388">        logger.info(&quot;Estimated max memory combined: ~{} MB&quot;,</span>
+<span class="fc" id="L389">                estimateMemoryUsageMb(maxCombinedDatasets));</span>
+<span class="fc" id="L390">        logger.info(&quot;===========================================&quot;);</span>
+<span class="fc" id="L391">    }</span>
+
+    private String getFileName(String filePath) {
+<span class="pc bpc" id="L394" title="2 of 4 branches missed.">        if (filePath == null || filePath.isEmpty()) {</span>
+<span class="nc" id="L395">            return &quot;unknown file&quot;;</span>
+        }
+
+<span class="fc" id="L398">        int lastSeparator = Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\'));</span>
+<span class="pc bpc" id="L399" title="2 of 4 branches missed.">        if (lastSeparator &gt;= 0 &amp;&amp; lastSeparator &lt; filePath.length() - 1) {</span>
+<span class="fc" id="L400">            return filePath.substring(lastSeparator + 1);</span>
+        }
+
+<span class="nc" id="L403">        return filePath;</span>
+    }
+
+    @Override
+    public String toString() {
+<span class="nc" id="L408">        return String.format(</span>
+                &quot;DataLoadingLimits{perFile=%d, combined=%d, fileSize=%dMB, warnAt=%d%%, strict=%s}&quot;,
+                maxDatasetsPerFile, maxCombinedDatasets, maxFileSizeMb,
+<span class="nc" id="L411">                warnThresholdPercent, strictEnforcement</span>
+        );
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

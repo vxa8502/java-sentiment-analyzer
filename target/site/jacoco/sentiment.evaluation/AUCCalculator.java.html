@@ -1,0 +1,339 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AUCCalculator.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Java Sentiment Analysis</a> &gt; <a href="index.source.html" class="el_package">sentiment.evaluation</a> &gt; <span class="el_source">AUCCalculator.java</span></div><h1>AUCCalculator.java</h1><pre class="source lang-java linenums">package sentiment.evaluation;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.*;
+import java.util.stream.IntStream;
+
+/**
+ * ARIA'S MATHEMATICAL RIGOR: ROC-AUC and PR-AUC Computation
+ * ===========================================================
+ *
+ * &quot;Accuracy alone is misleading, especially with imbalanced data.
+ * ROC-AUC and PR-AUC reveal the true discrimination power.&quot;
+ *
+ * KEY CONCEPTS:
+ * =============
+ *
+ * 1. ROC-AUC (Receiver Operating Characteristic - Area Under Curve):
+ *    - Plots True Positive Rate (TPR) vs. False Positive Rate (FPR)
+ *    - Range: [0, 1], higher is better
+ *    - 0.5 = random classifier, 1.0 = perfect classifier
+ *    - Robust to class imbalance
+ *    - Interpretation: Probability that a random positive is ranked higher than a random negative
+ *
+ * 2. PR-AUC (Precision-Recall - Area Under Curve):
+ *    - Plots Precision vs. Recall
+ *    - Range: [0, 1], higher is better
+ *    - More informative for imbalanced datasets than ROC-AUC
+ *    - Focuses on positive class performance
+ *
+ * WHEN TO USE:
+ * ============
+ * - ROC-AUC: General classification performance, balanced datasets
+ * - PR-AUC: Imbalanced datasets where positive class is rare (e.g., fraud detection)
+ *
+ * COMPUTATION:
+ * ============
+ * Both use trapezoidal rule for numerical integration:
+ * AUC = Σ (x[i+1] - x[i]) * (y[i+1] + y[i]) / 2
+ *
+ * EXAMPLE:
+ * ========
+ * ```java
+ * double[] predictedProbs = {0.9, 0.8, 0.7, 0.6, 0.4, 0.3, 0.2, 0.1};
+ * int[] actualLabels = {1, 1, 1, 0, 1, 0, 0, 0};
+ *
+ * double rocAUC = AUCCalculator.computeROCAUC(predictedProbs, actualLabels);
+ * double prAUC = AUCCalculator.computePRAUC(predictedProbs, actualLabels);
+ *
+ * System.out.printf(&quot;ROC-AUC: %.3f\n&quot;, rocAUC);  // Higher is better
+ * System.out.printf(&quot;PR-AUC:  %.3f\n&quot;, prAUC);   // Higher is better
+ * ```
+ *
+ * @author Aria (Mathematical Foundations Mentor)
+ */
+<span class="nc" id="L57">public class AUCCalculator {</span>
+
+<span class="fc" id="L59">    private static final Logger logger = LoggerFactory.getLogger(AUCCalculator.class);</span>
+
+    /**
+     * Compute ROC-AUC (Area Under ROC Curve) for binary classification.
+     *
+     * ALGORITHM:
+     * 1. Sort predictions by descending confidence
+     * 2. For each threshold, compute TPR and FPR
+     * 3. Integrate area under ROC curve using trapezoidal rule
+     *
+     * @param predictedProbs Predicted probabilities for positive class [0, 1]
+     * @param actualLabels Actual labels (0 or 1)
+     * @return ROC-AUC score [0, 1]
+     */
+    public static double computeROCAUC(double[] predictedProbs, int[] actualLabels) {
+<span class="fc bfc" id="L74" title="All 2 branches covered.">        if (predictedProbs.length != actualLabels.length) {</span>
+<span class="fc" id="L75">            throw new IllegalArgumentException(&quot;Arrays must have same length&quot;);</span>
+        }
+
+<span class="fc bfc" id="L78" title="All 2 branches covered.">        if (predictedProbs.length == 0) {</span>
+<span class="fc" id="L79">            throw new IllegalArgumentException(&quot;Empty arrays&quot;);</span>
+        }
+
+        // Create (prediction, label) pairs
+<span class="fc" id="L83">        List&lt;PredictionLabel&gt; pairs = createPredictionLabelPairs(predictedProbs, actualLabels);</span>
+
+        // Sort by prediction descending (highest confidence first)
+<span class="fc" id="L86">        pairs.sort((a, b) -&gt; Double.compare(b.prediction, a.prediction));</span>
+
+        // Count positives and negatives
+<span class="fc" id="L89">        int totalPositives = 0;</span>
+<span class="fc" id="L90">        int totalNegatives = 0;</span>
+<span class="fc bfc" id="L91" title="All 2 branches covered.">        for (int label : actualLabels) {</span>
+<span class="fc bfc" id="L92" title="All 2 branches covered.">            if (label == 1) totalPositives++;</span>
+<span class="fc" id="L93">            else totalNegatives++;</span>
+        }
+
+<span class="pc bpc" id="L96" title="1 of 4 branches missed.">        if (totalPositives == 0 || totalNegatives == 0) {</span>
+<span class="fc" id="L97">            logger.warn(&quot;Only one class present in labels, ROC-AUC undefined&quot;);</span>
+<span class="fc" id="L98">            return 0.5;  // Undefined, return random classifier score</span>
+        }
+
+        // Compute ROC curve points
+<span class="fc" id="L102">        List&lt;ROCPoint&gt; rocCurve = new ArrayList&lt;&gt;();</span>
+<span class="fc" id="L103">        rocCurve.add(new ROCPoint(0.0, 0.0));  // Start at origin</span>
+
+<span class="fc" id="L105">        int truePositives = 0;</span>
+<span class="fc" id="L106">        int falsePositives = 0;</span>
+
+<span class="fc bfc" id="L108" title="All 2 branches covered.">        for (PredictionLabel pair : pairs) {</span>
+<span class="fc bfc" id="L109" title="All 2 branches covered.">            if (pair.label == 1) {</span>
+<span class="fc" id="L110">                truePositives++;</span>
+            } else {
+<span class="fc" id="L112">                falsePositives++;</span>
+            }
+
+<span class="fc" id="L115">            double tpr = (double) truePositives / totalPositives;</span>
+<span class="fc" id="L116">            double fpr = (double) falsePositives / totalNegatives;</span>
+
+<span class="fc" id="L118">            rocCurve.add(new ROCPoint(fpr, tpr));</span>
+<span class="fc" id="L119">        }</span>
+
+        // Compute AUC using trapezoidal rule
+<span class="fc" id="L122">        double auc = computeAUCTrapezoidal(rocCurve);</span>
+
+<span class="fc" id="L124">        logger.debug(&quot;ROC-AUC computed: {}&quot;, auc);</span>
+
+<span class="fc" id="L126">        return auc;</span>
+    }
+
+    /**
+     * Compute PR-AUC (Area Under Precision-Recall Curve) for binary classification.
+     *
+     * ALGORITHM:
+     * 1. Sort predictions by descending confidence
+     * 2. For each threshold, compute Precision and Recall
+     * 3. Integrate area under PR curve using trapezoidal rule
+     *
+     * NOTE: PR-AUC is more sensitive to class imbalance than ROC-AUC.
+     *
+     * @param predictedProbs Predicted probabilities for positive class [0, 1]
+     * @param actualLabels Actual labels (0 or 1)
+     * @return PR-AUC score [0, 1]
+     */
+    public static double computePRAUC(double[] predictedProbs, int[] actualLabels) {
+<span class="fc bfc" id="L144" title="All 2 branches covered.">        if (predictedProbs.length != actualLabels.length) {</span>
+<span class="fc" id="L145">            throw new IllegalArgumentException(&quot;Arrays must have same length&quot;);</span>
+        }
+
+<span class="fc bfc" id="L148" title="All 2 branches covered.">        if (predictedProbs.length == 0) {</span>
+<span class="fc" id="L149">            throw new IllegalArgumentException(&quot;Empty arrays&quot;);</span>
+        }
+
+        // Create (prediction, label) pairs
+<span class="fc" id="L153">        List&lt;PredictionLabel&gt; pairs = createPredictionLabelPairs(predictedProbs, actualLabels);</span>
+
+        // Sort by prediction descending (highest confidence first)
+<span class="fc" id="L156">        pairs.sort((a, b) -&gt; Double.compare(b.prediction, a.prediction));</span>
+
+        // Count total positives
+<span class="fc" id="L159">        int totalPositives = 0;</span>
+<span class="fc bfc" id="L160" title="All 2 branches covered.">        for (int label : actualLabels) {</span>
+<span class="fc bfc" id="L161" title="All 2 branches covered.">            if (label == 1) totalPositives++;</span>
+        }
+
+<span class="fc bfc" id="L164" title="All 2 branches covered.">        if (totalPositives == 0) {</span>
+<span class="fc" id="L165">            logger.warn(&quot;No positive samples, PR-AUC undefined&quot;);</span>
+<span class="fc" id="L166">            return 0.0;</span>
+        }
+
+        // Compute PR curve points
+<span class="fc" id="L170">        List&lt;PRPoint&gt; prCurve = new ArrayList&lt;&gt;();</span>
+
+<span class="fc" id="L172">        int truePositives = 0;</span>
+<span class="fc" id="L173">        int predictedPositives = 0;</span>
+
+<span class="fc bfc" id="L175" title="All 2 branches covered.">        for (PredictionLabel pair : pairs) {</span>
+<span class="fc" id="L176">            predictedPositives++;</span>
+<span class="fc bfc" id="L177" title="All 2 branches covered.">            if (pair.label == 1) {</span>
+<span class="fc" id="L178">                truePositives++;</span>
+            }
+
+<span class="fc" id="L181">            double precision = (double) truePositives / predictedPositives;</span>
+<span class="fc" id="L182">            double recall = (double) truePositives / totalPositives;</span>
+
+<span class="fc" id="L184">            prCurve.add(new PRPoint(recall, precision));</span>
+<span class="fc" id="L185">        }</span>
+
+        // Compute AUC using trapezoidal rule
+<span class="fc" id="L188">        double auc = computePRAUCTrapezoidal(prCurve);</span>
+
+<span class="fc" id="L190">        logger.debug(&quot;PR-AUC computed: {}&quot;, auc);</span>
+
+<span class="fc" id="L192">        return auc;</span>
+    }
+
+    /**
+     * Compute multi-class ROC-AUC using one-vs-rest approach.
+     *
+     * @param predictedProbs Predicted probabilities [n_samples x n_classes]
+     * @param actualLabels Actual class indices [0, n_classes-1]
+     * @return Per-class ROC-AUC scores
+     */
+    public static double[] computeMultiClassROCAUC(
+            double[][] predictedProbs,
+            int[] actualLabels) {
+
+<span class="fc" id="L206">        int nSamples = predictedProbs.length;</span>
+<span class="fc" id="L207">        int nClasses = predictedProbs[0].length;</span>
+
+<span class="fc" id="L209">        double[] perClassAUC = new double[nClasses];</span>
+
+<span class="fc bfc" id="L211" title="All 2 branches covered.">        for (int classIdx = 0; classIdx &lt; nClasses; classIdx++) {</span>
+            // Extract probabilities for this class
+<span class="fc" id="L213">            double[] classProbs = new double[nSamples];</span>
+<span class="fc" id="L214">            int[] binaryLabels = new int[nSamples];</span>
+
+<span class="fc bfc" id="L216" title="All 2 branches covered.">            for (int i = 0; i &lt; nSamples; i++) {</span>
+<span class="fc" id="L217">                classProbs[i] = predictedProbs[i][classIdx];</span>
+<span class="fc bfc" id="L218" title="All 2 branches covered.">                binaryLabels[i] = (actualLabels[i] == classIdx) ? 1 : 0;</span>
+            }
+
+<span class="fc" id="L221">            perClassAUC[classIdx] = computeROCAUC(classProbs, binaryLabels);</span>
+        }
+
+<span class="fc" id="L224">        return perClassAUC;</span>
+    }
+
+    /**
+     * Compute multi-class PR-AUC using one-vs-rest approach.
+     */
+    public static double[] computeMultiClassPRAUC(
+            double[][] predictedProbs,
+            int[] actualLabels) {
+
+<span class="fc" id="L234">        int nSamples = predictedProbs.length;</span>
+<span class="fc" id="L235">        int nClasses = predictedProbs[0].length;</span>
+
+<span class="fc" id="L237">        double[] perClassAUC = new double[nClasses];</span>
+
+<span class="fc bfc" id="L239" title="All 2 branches covered.">        for (int classIdx = 0; classIdx &lt; nClasses; classIdx++) {</span>
+            // Extract probabilities for this class
+<span class="fc" id="L241">            double[] classProbs = new double[nSamples];</span>
+<span class="fc" id="L242">            int[] binaryLabels = new int[nSamples];</span>
+
+<span class="fc bfc" id="L244" title="All 2 branches covered.">            for (int i = 0; i &lt; nSamples; i++) {</span>
+<span class="fc" id="L245">                classProbs[i] = predictedProbs[i][classIdx];</span>
+<span class="fc bfc" id="L246" title="All 2 branches covered.">                binaryLabels[i] = (actualLabels[i] == classIdx) ? 1 : 0;</span>
+            }
+
+<span class="fc" id="L249">            perClassAUC[classIdx] = computePRAUC(classProbs, binaryLabels);</span>
+        }
+
+<span class="fc" id="L252">        return perClassAUC;</span>
+    }
+
+    // ==================== HELPER METHODS ====================
+
+    private static List&lt;PredictionLabel&gt; createPredictionLabelPairs(
+            double[] predictions, int[] labels) {
+
+<span class="fc" id="L260">        List&lt;PredictionLabel&gt; pairs = new ArrayList&lt;&gt;();</span>
+<span class="fc bfc" id="L261" title="All 2 branches covered.">        for (int i = 0; i &lt; predictions.length; i++) {</span>
+<span class="fc" id="L262">            pairs.add(new PredictionLabel(predictions[i], labels[i]));</span>
+        }
+<span class="fc" id="L264">        return pairs;</span>
+    }
+
+    /**
+     * Compute AUC using trapezoidal rule.
+     *
+     * AUC = Σ (x[i+1] - x[i]) * (y[i+1] + y[i]) / 2
+     */
+    private static double computeAUCTrapezoidal(List&lt;ROCPoint&gt; curve) {
+<span class="fc" id="L273">        double auc = 0.0;</span>
+
+<span class="fc bfc" id="L275" title="All 2 branches covered.">        for (int i = 0; i &lt; curve.size() - 1; i++) {</span>
+<span class="fc" id="L276">            ROCPoint p1 = curve.get(i);</span>
+<span class="fc" id="L277">            ROCPoint p2 = curve.get(i + 1);</span>
+
+<span class="fc" id="L279">            double width = p2.fpr - p1.fpr;</span>
+<span class="fc" id="L280">            double height = (p1.tpr + p2.tpr) / 2.0;</span>
+
+<span class="fc" id="L282">            auc += width * height;</span>
+        }
+
+<span class="fc" id="L285">        return auc;</span>
+    }
+
+    /**
+     * Compute PR-AUC using trapezoidal rule.
+     */
+    private static double computePRAUCTrapezoidal(List&lt;PRPoint&gt; curve) {
+<span class="fc" id="L292">        double auc = 0.0;</span>
+
+<span class="fc bfc" id="L294" title="All 2 branches covered.">        for (int i = 0; i &lt; curve.size() - 1; i++) {</span>
+<span class="fc" id="L295">            PRPoint p1 = curve.get(i);</span>
+<span class="fc" id="L296">            PRPoint p2 = curve.get(i + 1);</span>
+
+<span class="fc" id="L298">            double width = Math.abs(p2.recall - p1.recall);</span>
+<span class="fc" id="L299">            double height = (p1.precision + p2.precision) / 2.0;</span>
+
+<span class="fc" id="L301">            auc += width * height;</span>
+        }
+
+<span class="fc" id="L304">        return auc;</span>
+    }
+
+    // ==================== DATA CLASSES ====================
+
+    private static class PredictionLabel {
+        final double prediction;
+        final int label;
+
+<span class="fc" id="L313">        PredictionLabel(double prediction, int label) {</span>
+<span class="fc" id="L314">            this.prediction = prediction;</span>
+<span class="fc" id="L315">            this.label = label;</span>
+<span class="fc" id="L316">        }</span>
+    }
+
+    private static class ROCPoint {
+        final double fpr;  // False Positive Rate (x-axis)
+        final double tpr;  // True Positive Rate (y-axis)
+
+<span class="fc" id="L323">        ROCPoint(double fpr, double tpr) {</span>
+<span class="fc" id="L324">            this.fpr = fpr;</span>
+<span class="fc" id="L325">            this.tpr = tpr;</span>
+<span class="fc" id="L326">        }</span>
+    }
+
+    private static class PRPoint {
+        final double recall;     // x-axis
+        final double precision;  // y-axis
+
+<span class="fc" id="L333">        PRPoint(double recall, double precision) {</span>
+<span class="fc" id="L334">            this.recall = recall;</span>
+<span class="fc" id="L335">            this.precision = precision;</span>
+<span class="fc" id="L336">        }</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

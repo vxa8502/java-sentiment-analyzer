@@ -1,0 +1,250 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ContractionExpander.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Java Sentiment Analysis</a> &gt; <a href="index.source.html" class="el_package">sentiment.preprocessing</a> &gt; <span class="el_source">ContractionExpander.java</span></div><h1>ContractionExpander.java</h1><pre class="source lang-java linenums">package sentiment.preprocessing;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
+import sentiment.util.ValidationUtils;
+
+import java.util.Map;
+import java.util.regex.Pattern;
+
+/**
+ * Expands English contractions for improved text preprocessing.
+ * Uses regex-based word boundary matching to avoid partial word replacements.
+ * Thread-safe and optimized for performance with compiled patterns.
+ */
+@Component
+<span class="fc" id="L17">public class ContractionExpander {</span>
+
+    private static final String VERSION = &quot;1.0.0&quot;;
+<span class="fc" id="L20">    private static final Logger logger = LoggerFactory.getLogger(ContractionExpander.class);</span>
+
+    // Comprehensive contractions map with case-insensitive matching
+<span class="fc" id="L23">    private static final Map&lt;String, String&gt; CONTRACTIONS = Map.&lt;String, String&gt;ofEntries(</span>
+            // Common negative contractions
+<span class="fc" id="L25">            Map.entry(&quot;don't&quot;, &quot;do not&quot;),</span>
+<span class="fc" id="L26">            Map.entry(&quot;doesn't&quot;, &quot;does not&quot;),</span>
+<span class="fc" id="L27">            Map.entry(&quot;didn't&quot;, &quot;did not&quot;),</span>
+<span class="fc" id="L28">            Map.entry(&quot;won't&quot;, &quot;will not&quot;),</span>
+<span class="fc" id="L29">            Map.entry(&quot;wouldn't&quot;, &quot;would not&quot;),</span>
+<span class="fc" id="L30">            Map.entry(&quot;can't&quot;, &quot;cannot&quot;),</span>
+<span class="fc" id="L31">            Map.entry(&quot;couldn't&quot;, &quot;could not&quot;),</span>
+<span class="fc" id="L32">            Map.entry(&quot;shouldn't&quot;, &quot;should not&quot;),</span>
+<span class="fc" id="L33">            Map.entry(&quot;mustn't&quot;, &quot;must not&quot;),</span>
+<span class="fc" id="L34">            Map.entry(&quot;needn't&quot;, &quot;need not&quot;),</span>
+<span class="fc" id="L35">            Map.entry(&quot;daren't&quot;, &quot;dare not&quot;),</span>
+<span class="fc" id="L36">            Map.entry(&quot;mayn't&quot;, &quot;may not&quot;),</span>
+<span class="fc" id="L37">            Map.entry(&quot;mightn't&quot;, &quot;might not&quot;),</span>
+<span class="fc" id="L38">            Map.entry(&quot;oughtn't&quot;, &quot;ought not&quot;),</span>
+
+            // &quot;Be&quot; verb contractions
+<span class="fc" id="L41">            Map.entry(&quot;isn't&quot;, &quot;is not&quot;),</span>
+<span class="fc" id="L42">            Map.entry(&quot;aren't&quot;, &quot;are not&quot;),</span>
+<span class="fc" id="L43">            Map.entry(&quot;wasn't&quot;, &quot;was not&quot;),</span>
+<span class="fc" id="L44">            Map.entry(&quot;weren't&quot;, &quot;were not&quot;),</span>
+
+            // &quot;Have&quot; verb contractions
+<span class="fc" id="L47">            Map.entry(&quot;haven't&quot;, &quot;have not&quot;),</span>
+<span class="fc" id="L48">            Map.entry(&quot;hasn't&quot;, &quot;has not&quot;),</span>
+<span class="fc" id="L49">            Map.entry(&quot;hadn't&quot;, &quot;had not&quot;),</span>
+
+            // Positive contractions with pronouns
+<span class="fc" id="L52">            Map.entry(&quot;i'm&quot;, &quot;I am&quot;),</span>
+<span class="fc" id="L53">            Map.entry(&quot;you're&quot;, &quot;you are&quot;),</span>
+<span class="fc" id="L54">            Map.entry(&quot;he's&quot;, &quot;he is&quot;),</span>
+<span class="fc" id="L55">            Map.entry(&quot;she's&quot;, &quot;she is&quot;),</span>
+<span class="fc" id="L56">            Map.entry(&quot;it's&quot;, &quot;it is&quot;),</span>
+<span class="fc" id="L57">            Map.entry(&quot;we're&quot;, &quot;we are&quot;),</span>
+<span class="fc" id="L58">            Map.entry(&quot;they're&quot;, &quot;they are&quot;),</span>
+<span class="fc" id="L59">            Map.entry(&quot;that's&quot;, &quot;that is&quot;),</span>
+<span class="fc" id="L60">            Map.entry(&quot;there's&quot;, &quot;there is&quot;),</span>
+<span class="fc" id="L61">            Map.entry(&quot;here's&quot;, &quot;here is&quot;),</span>
+<span class="fc" id="L62">            Map.entry(&quot;what's&quot;, &quot;what is&quot;),</span>
+<span class="fc" id="L63">            Map.entry(&quot;where's&quot;, &quot;where is&quot;),</span>
+<span class="fc" id="L64">            Map.entry(&quot;when's&quot;, &quot;when is&quot;),</span>
+<span class="fc" id="L65">            Map.entry(&quot;why's&quot;, &quot;why is&quot;),</span>
+<span class="fc" id="L66">            Map.entry(&quot;how's&quot;, &quot;how is&quot;),</span>
+<span class="fc" id="L67">            Map.entry(&quot;who's&quot;, &quot;who is&quot;),</span>
+
+            // &quot;Have&quot; contractions
+<span class="fc" id="L70">            Map.entry(&quot;i've&quot;, &quot;I have&quot;),</span>
+<span class="fc" id="L71">            Map.entry(&quot;you've&quot;, &quot;you have&quot;),</span>
+<span class="fc" id="L72">            Map.entry(&quot;we've&quot;, &quot;we have&quot;),</span>
+<span class="fc" id="L73">            Map.entry(&quot;they've&quot;, &quot;they have&quot;),</span>
+
+            // &quot;Will&quot; contractions
+<span class="fc" id="L76">            Map.entry(&quot;i'll&quot;, &quot;I will&quot;),</span>
+<span class="fc" id="L77">            Map.entry(&quot;you'll&quot;, &quot;you will&quot;),</span>
+<span class="fc" id="L78">            Map.entry(&quot;he'll&quot;, &quot;he will&quot;),</span>
+<span class="fc" id="L79">            Map.entry(&quot;she'll&quot;, &quot;she will&quot;),</span>
+<span class="fc" id="L80">            Map.entry(&quot;it'll&quot;, &quot;it will&quot;),</span>
+<span class="fc" id="L81">            Map.entry(&quot;we'll&quot;, &quot;we will&quot;),</span>
+<span class="fc" id="L82">            Map.entry(&quot;they'll&quot;, &quot;they will&quot;),</span>
+<span class="fc" id="L83">            Map.entry(&quot;that'll&quot;, &quot;that will&quot;),</span>
+
+            // &quot;Would&quot; contractions
+<span class="fc" id="L86">            Map.entry(&quot;i'd&quot;, &quot;I would&quot;),</span>
+<span class="fc" id="L87">            Map.entry(&quot;you'd&quot;, &quot;you would&quot;),</span>
+<span class="fc" id="L88">            Map.entry(&quot;he'd&quot;, &quot;he would&quot;),</span>
+<span class="fc" id="L89">            Map.entry(&quot;she'd&quot;, &quot;she would&quot;),</span>
+<span class="fc" id="L90">            Map.entry(&quot;we'd&quot;, &quot;we would&quot;),</span>
+<span class="fc" id="L91">            Map.entry(&quot;they'd&quot;, &quot;they would&quot;),</span>
+<span class="fc" id="L92">            Map.entry(&quot;that'd&quot;, &quot;that would&quot;),</span>
+
+            // Informal contractions
+<span class="fc" id="L95">            Map.entry(&quot;ain't&quot;, &quot;am not&quot;),</span>
+<span class="fc" id="L96">            Map.entry(&quot;y'all&quot;, &quot;you all&quot;),</span>
+<span class="fc" id="L97">            Map.entry(&quot;'til&quot;, &quot;until&quot;),</span>
+<span class="fc" id="L98">            Map.entry(&quot;'cause&quot;, &quot;because&quot;),</span>
+<span class="fc" id="L99">            Map.entry(&quot;'bout&quot;, &quot;about&quot;),</span>
+<span class="fc" id="L100">            Map.entry(&quot;'round&quot;, &quot;around&quot;),</span>
+<span class="fc" id="L101">            Map.entry(&quot;o'clock&quot;, &quot;of the clock&quot;),</span>
+
+            // Let's handle &quot;let us&quot;
+<span class="fc" id="L104">            Map.entry(&quot;let's&quot;, &quot;let us&quot;)</span>
+    );
+
+    // Pre-compiled patterns for efficiency
+    private static final Map&lt;Pattern, String&gt; COMPILED_PATTERNS;
+
+    static {
+<span class="fc" id="L111">        COMPILED_PATTERNS = CONTRACTIONS.entrySet().stream()</span>
+<span class="fc" id="L112">                .collect(java.util.stream.Collectors.toMap(</span>
+<span class="fc" id="L113">                        entry -&gt; Pattern.compile(&quot;\\b&quot; + Pattern.quote(entry.getKey()) + &quot;\\b&quot;,</span>
+                                Pattern.CASE_INSENSITIVE),
+                        Map.Entry::getValue
+                ));
+
+<span class="fc" id="L118">        logger.debug(&quot;ContractionExpander initialized with {} contraction patterns&quot;,</span>
+<span class="fc" id="L119">                COMPILED_PATTERNS.size());</span>
+<span class="fc" id="L120">    }</span>
+
+    /**
+     * Expands contractions in the given text using word boundary matching.
+     * Preserves original capitalization patterns where possible.
+     *
+     * @param text The input text containing potential contractions
+     * @return Text with contractions expanded to full forms
+     */
+    public String expand(String text) {
+<span class="fc bfc" id="L130" title="All 2 branches covered.">        if (ValidationUtils.isNullOrEmpty(text)) {</span>
+<span class="fc" id="L131">            logger.debug(&quot;Received null or empty text for contraction expansion&quot;);</span>
+<span class="fc bfc" id="L132" title="All 2 branches covered.">            return text != null ? text : &quot;&quot;;</span>
+        }
+
+<span class="fc" id="L135">        logger.debug(&quot;Expanding contractions in text of length: {}&quot;, text.length());</span>
+
+<span class="fc" id="L137">        String expanded = text;</span>
+<span class="fc" id="L138">        int expansionsCount = 0;</span>
+
+        // Apply each contraction pattern
+<span class="fc bfc" id="L141" title="All 2 branches covered.">        for (Map.Entry&lt;Pattern, String&gt; entry : COMPILED_PATTERNS.entrySet()) {</span>
+<span class="fc" id="L142">            Pattern pattern = entry.getKey();</span>
+<span class="fc" id="L143">            String replacement = entry.getValue();</span>
+
+<span class="fc" id="L145">            String beforeReplacement = expanded;</span>
+<span class="fc" id="L146">            expanded = pattern.matcher(expanded).replaceAll(matchResult -&gt; {</span>
+<span class="fc" id="L147">                String matched = matchResult.group();</span>
+<span class="fc" id="L148">                return preserveCapitalization(matched, replacement);</span>
+            });
+
+            // Count actual replacements made
+<span class="fc bfc" id="L152" title="All 2 branches covered.">            if (!beforeReplacement.equals(expanded)) {</span>
+<span class="fc" id="L153">                expansionsCount++;</span>
+            }
+<span class="fc" id="L155">        }</span>
+
+<span class="fc" id="L157">        logger.debug(&quot;Contraction expansion complete: {} patterns applied&quot;, expansionsCount);</span>
+
+<span class="fc bfc" id="L159" title="All 2 branches covered.">        if (expansionsCount &gt; 0) {</span>
+<span class="fc" id="L160">            logger.trace(&quot;Text before expansion: '{}'&quot;, text);</span>
+<span class="fc" id="L161">            logger.trace(&quot;Text after expansion:  '{}'&quot;, expanded);</span>
+        }
+
+<span class="fc" id="L164">        return expanded;</span>
+    }
+
+    /**
+     * Preserves capitalization patterns when expanding contractions.
+     * Examples:
+     * - &quot;Don't&quot; -&gt; &quot;Do not&quot; (capitalize first word)
+     * - &quot;DON'T&quot; -&gt; &quot;DO NOT&quot; (all caps)
+     * - &quot;don't&quot; -&gt; &quot;do not&quot; (lowercase)
+     */
+    private String preserveCapitalization(String original, String replacement) {
+<span class="fc bfc" id="L175" title="All 2 branches covered.">        if (original.equals(original.toUpperCase())) {</span>
+            // All caps
+<span class="fc" id="L177">            return replacement.toUpperCase();</span>
+<span class="fc bfc" id="L178" title="All 2 branches covered.">        } else if (Character.isUpperCase(original.charAt(0))) {</span>
+            // First letter capitalized
+<span class="fc" id="L180">            return capitalizeFirstLetter(replacement);</span>
+        } else {
+            // Lowercase
+<span class="fc" id="L183">            return replacement.toLowerCase();</span>
+        }
+    }
+
+    /**
+     * Capitalizes the first letter of a string
+     */
+    private String capitalizeFirstLetter(String text) {
+<span class="pc bpc" id="L191" title="2 of 4 branches missed.">        if (text == null || text.isEmpty()) {</span>
+<span class="nc" id="L192">            return text;</span>
+        }
+<span class="fc" id="L194">        return Character.toUpperCase(text.charAt(0)) + text.substring(1).toLowerCase();</span>
+    }
+
+    /**
+     * Get statistics about available contractions
+     */
+    public ContractionStats getStats() {
+<span class="fc" id="L201">        int totalContractions = CONTRACTIONS.size();</span>
+<span class="fc" id="L202">        long negativeContractions = CONTRACTIONS.keySet().stream()</span>
+<span class="fc" id="L203">                .filter(key -&gt; key.contains(&quot;n't&quot;))</span>
+<span class="fc" id="L204">                .count();</span>
+
+<span class="fc" id="L206">        return new ContractionStats(totalContractions, (int) negativeContractions);</span>
+    }
+
+    /**
+     * Statistics about contraction expansion capabilities
+     */
+<span class="fc" id="L212">    public record ContractionStats(int totalContractions, int negativeContractions) {</span>
+
+        public String toString() {
+<span class="nc" id="L215">            return String.format(&quot;ContractionStats{total=%d, negative=%d}&quot;,</span>
+<span class="nc" id="L216">                    totalContractions, negativeContractions);</span>
+        }
+    }
+
+
+    /**
+     * Check if text contains any known contractions
+     */
+    public boolean hasContractions(String text) {
+<span class="fc bfc" id="L225" title="All 2 branches covered.">        if (ValidationUtils.isNullOrEmpty(text)) {</span>
+<span class="fc" id="L226">            return false;</span>
+        }
+
+<span class="fc" id="L229">        return COMPILED_PATTERNS.keySet().stream()</span>
+<span class="fc" id="L230">                .anyMatch(pattern -&gt; pattern.matcher(text).find());</span>
+    }
+
+    /**
+     * Count total contractions in text
+     */
+    public int countContractions(String text) {
+<span class="fc bfc" id="L237" title="All 2 branches covered.">        if (ValidationUtils.isNullOrEmpty(text)) {</span>
+<span class="fc" id="L238">            return 0;</span>
+        }
+
+<span class="fc" id="L241">        return (int) COMPILED_PATTERNS.keySet().stream()</span>
+<span class="fc" id="L242">                .mapToLong(pattern -&gt; pattern.matcher(text).results().count())</span>
+<span class="fc" id="L243">                .sum();</span>
+    }
+
+    public String getVersion() {
+<span class="fc" id="L247">        return VERSION;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

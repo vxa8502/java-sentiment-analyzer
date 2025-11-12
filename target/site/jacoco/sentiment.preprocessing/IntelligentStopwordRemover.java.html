@@ -1,0 +1,404 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>IntelligentStopwordRemover.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Java Sentiment Analysis</a> &gt; <a href="index.source.html" class="el_package">sentiment.preprocessing</a> &gt; <span class="el_source">IntelligentStopwordRemover.java</span></div><h1>IntelligentStopwordRemover.java</h1><pre class="source lang-java linenums">package sentiment.preprocessing;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Value;
+
+import java.util.*;
+import java.util.stream.Collectors;
+
+/**
+ * Intelligent stopword removal that adapts to different text domains.
+ * Provides multiple stopword removal strategies optimized for sentiment analysis.
+ */
+@Component
+public class IntelligentStopwordRemover {
+
+    private static final String VERSION = &quot;1.0.0&quot;;
+<span class="fc" id="L19">    private static final Logger logger = LoggerFactory.getLogger(IntelligentStopwordRemover.class);</span>
+
+    @Value(&quot;${sentiment.stopwords.strategy:SENTIMENT_AWARE}&quot;)
+    private String stopwordStrategy;
+
+    @Value(&quot;${sentiment.stopwords.preserve-negations:true}&quot;)
+    private boolean preserveNegations;
+
+    @Value(&quot;${sentiment.stopwords.preserve-intensifiers:true}&quot;)
+    private boolean preserveIntensifiers;
+
+    /**
+     * Default constructor for Spring injection
+     */
+<span class="nc" id="L33">    public IntelligentStopwordRemover() {</span>
+        // Fields will be injected by Spring
+<span class="nc" id="L35">    }</span>
+
+    /**
+     * Constructor for manual initialization (non-Spring usage)
+     */
+<span class="nc" id="L40">    public IntelligentStopwordRemover(String stopwordStrategy, boolean preserveNegations, boolean preserveIntensifiers) {</span>
+<span class="nc" id="L41">        this.stopwordStrategy = stopwordStrategy;</span>
+<span class="nc" id="L42">        this.preserveNegations = preserveNegations;</span>
+<span class="nc" id="L43">        this.preserveIntensifiers = preserveIntensifiers;</span>
+<span class="nc" id="L44">    }</span>
+
+    /**
+     * Convenience constructor with default settings
+     */
+    public IntelligentStopwordRemover(String stopwordStrategy) {
+<span class="nc" id="L50">        this(stopwordStrategy, true, true);</span>
+<span class="nc" id="L51">    }</span>
+
+    // Enhanced stopword sets for different strategies
+<span class="fc" id="L54">    private static final Set&lt;String&gt; BASIC_STOPWORDS = Set.of(</span>
+            &quot;a&quot;, &quot;an&quot;, &quot;and&quot;, &quot;are&quot;, &quot;as&quot;, &quot;at&quot;, &quot;be&quot;, &quot;by&quot;, &quot;for&quot;, &quot;from&quot;, &quot;has&quot;,
+            &quot;he&quot;, &quot;in&quot;, &quot;is&quot;, &quot;it&quot;, &quot;its&quot;, &quot;of&quot;, &quot;on&quot;, &quot;that&quot;, &quot;the&quot;, &quot;to&quot;, &quot;was&quot;,
+            &quot;were&quot;, &quot;will&quot;, &quot;with&quot;, &quot;would&quot;, &quot;could&quot;, &quot;should&quot;, &quot;this&quot;, &quot;these&quot;,
+            &quot;they&quot;, &quot;them&quot;, &quot;there&quot;, &quot;their&quot;, &quot;than&quot;, &quot;then&quot;, &quot;been&quot;, &quot;have&quot;, &quot;had&quot;
+    );
+
+<span class="fc" id="L61">    private static final Set&lt;String&gt; EXTENDED_STOPWORDS = new HashSet&lt;&gt;(BASIC_STOPWORDS);</span>
+    static {
+<span class="fc" id="L63">        EXTENDED_STOPWORDS.addAll(Set.of(</span>
+                &quot;do&quot;, &quot;does&quot;, &quot;did&quot;, &quot;can&quot;, &quot;cannot&quot;, &quot;i&quot;, &quot;me&quot;, &quot;my&quot;, &quot;myself&quot;, &quot;we&quot;,
+                &quot;our&quot;, &quot;ours&quot;, &quot;ourselves&quot;, &quot;you&quot;, &quot;your&quot;, &quot;yours&quot;, &quot;yourself&quot;,
+                &quot;yourselves&quot;, &quot;him&quot;, &quot;his&quot;, &quot;himself&quot;, &quot;she&quot;, &quot;her&quot;, &quot;hers&quot;, &quot;herself&quot;,
+                &quot;us&quot;, &quot;they&quot;, &quot;them&quot;, &quot;their&quot;, &quot;theirs&quot;, &quot;themselves&quot;, &quot;what&quot;, &quot;which&quot;,
+                &quot;who&quot;, &quot;whom&quot;, &quot;whose&quot;, &quot;where&quot;, &quot;when&quot;, &quot;why&quot;, &quot;how&quot;, &quot;all&quot;, &quot;any&quot;,
+                &quot;both&quot;, &quot;each&quot;, &quot;few&quot;, &quot;more&quot;, &quot;most&quot;, &quot;other&quot;, &quot;some&quot;, &quot;such&quot;, &quot;no&quot;,
+                &quot;nor&quot;, &quot;only&quot;, &quot;own&quot;, &quot;same&quot;, &quot;so&quot;, &quot;up&quot;, &quot;very&quot;, &quot;just&quot;, &quot;now&quot;
+        ));
+    }
+
+    // Words that carry sentiment meaning and should be preserved
+<span class="fc" id="L75">    private static final Set&lt;String&gt; SENTIMENT_BEARING_WORDS = Set.of(</span>
+            &quot;not&quot;, &quot;no&quot;, &quot;never&quot;, &quot;none&quot;, &quot;nothing&quot;, &quot;nobody&quot;, &quot;nowhere&quot;,
+            &quot;very&quot;, &quot;really&quot;, &quot;quite&quot;, &quot;extremely&quot;, &quot;incredibly&quot;, &quot;absolutely&quot;,
+            &quot;totally&quot;, &quot;completely&quot;, &quot;utterly&quot;, &quot;highly&quot;, &quot;particularly&quot;,
+            &quot;rather&quot;, &quot;somewhat&quot;, &quot;fairly&quot;, &quot;pretty&quot;, &quot;much&quot;, &quot;too&quot;, &quot;so&quot;
+    );
+
+    // Negation words that are critical for sentiment analysis
+<span class="fc" id="L83">    private static final Set&lt;String&gt; NEGATION_WORDS = Set.of(</span>
+            &quot;not&quot;, &quot;no&quot;, &quot;never&quot;, &quot;none&quot;, &quot;nothing&quot;, &quot;nobody&quot;, &quot;nowhere&quot;,
+            &quot;neither&quot;, &quot;nor&quot;, &quot;cannot&quot;, &quot;can't&quot;, &quot;won't&quot;, &quot;wouldn't&quot;,
+            &quot;couldn't&quot;, &quot;shouldn't&quot;, &quot;mustn't&quot;, &quot;needn't&quot;, &quot;daren't&quot;,
+            &quot;isn't&quot;, &quot;aren't&quot;, &quot;wasn't&quot;, &quot;weren't&quot;, &quot;haven't&quot;, &quot;hasn't&quot;, &quot;hadn't&quot;
+    );
+
+    // Intensifier words that amplify sentiment
+<span class="fc" id="L91">    private static final Set&lt;String&gt; INTENSIFIER_WORDS = Set.of(</span>
+            &quot;very&quot;, &quot;really&quot;, &quot;quite&quot;, &quot;extremely&quot;, &quot;incredibly&quot;, &quot;absolutely&quot;,
+            &quot;totally&quot;, &quot;completely&quot;, &quot;utterly&quot;, &quot;highly&quot;, &quot;particularly&quot;,
+            &quot;rather&quot;, &quot;somewhat&quot;, &quot;fairly&quot;, &quot;pretty&quot;, &quot;much&quot;, &quot;too&quot;, &quot;so&quot;,
+            &quot;super&quot;, &quot;ultra&quot;, &quot;mega&quot;, &quot;hyper&quot;, &quot;exceptionally&quot;, &quot;remarkably&quot;
+    );
+
+    /**
+     * Main stopword removal method with strategy selection
+     */
+    public List&lt;String&gt; removeStopwords(List&lt;String&gt; tokens) {
+<span class="nc bnc" id="L102" title="All 4 branches missed.">        if (tokens == null || tokens.isEmpty()) {</span>
+<span class="nc" id="L103">            return new ArrayList&lt;&gt;();</span>
+        }
+
+<span class="nc" id="L106">        logger.debug(&quot;Removing stopwords using strategy: {} from {} tokens&quot;,</span>
+<span class="nc" id="L107">                stopwordStrategy, tokens.size());</span>
+
+<span class="nc" id="L109">        StopwordStrategy strategy = StopwordStrategy.valueOf(stopwordStrategy.toUpperCase());</span>
+<span class="nc" id="L110">        List&lt;String&gt; filtered = applyStopwordStrategy(tokens, strategy);</span>
+
+<span class="nc" id="L112">        logger.debug(&quot;Stopword removal complete: {} -&gt; {} tokens using {} strategy&quot;,</span>
+<span class="nc" id="L113">                tokens.size(), filtered.size(), strategy);</span>
+
+<span class="nc" id="L115">        return filtered;</span>
+    }
+
+    /**
+     * Apply the selected stopword removal strategy
+     */
+    private List&lt;String&gt; applyStopwordStrategy(List&lt;String&gt; tokens, StopwordStrategy strategy) {
+<span class="nc bnc" id="L122" title="All 4 branches missed.">        return switch (strategy) {</span>
+<span class="nc" id="L123">            case BASIC -&gt; removeBasicStopwords(tokens);</span>
+<span class="nc" id="L124">            case EXTENDED -&gt; removeExtendedStopwords(tokens);</span>
+<span class="nc" id="L125">            case SENTIMENT_AWARE -&gt; removeSentimentAwareStopwords(tokens);</span>
+<span class="nc" id="L126">            case MINIMAL -&gt; removeMinimalStopwords(tokens);</span>
+        };
+    }
+
+    /**
+     * Basic stopword removal - conservative approach
+     */
+    private List&lt;String&gt; removeBasicStopwords(List&lt;String&gt; tokens) {
+<span class="nc" id="L134">        return tokens.stream()</span>
+<span class="nc bnc" id="L135" title="All 2 branches missed.">                .filter(token -&gt; !isBasicStopword(token))</span>
+<span class="nc" id="L136">                .collect(Collectors.toList());</span>
+    }
+
+    /**
+     * Extended stopword removal - more aggressive filtering
+     */
+    private List&lt;String&gt; removeExtendedStopwords(List&lt;String&gt; tokens) {
+<span class="nc" id="L143">        return tokens.stream()</span>
+<span class="nc bnc" id="L144" title="All 2 branches missed.">                .filter(token -&gt; !isExtendedStopword(token))</span>
+<span class="nc" id="L145">                .collect(Collectors.toList());</span>
+    }
+
+    /**
+     * Sentiment-aware stopword removal - preserves sentiment-critical words
+     */
+    private List&lt;String&gt; removeSentimentAwareStopwords(List&lt;String&gt; tokens) {
+<span class="nc" id="L152">        return tokens.stream()</span>
+<span class="nc bnc" id="L153" title="All 2 branches missed.">                .filter(token -&gt; !isSentimentAwareStopword(token))</span>
+<span class="nc" id="L154">                .collect(Collectors.toList());</span>
+    }
+
+    /**
+     * Minimal stopword removal - only removes the most common function words
+     */
+    private List&lt;String&gt; removeMinimalStopwords(List&lt;String&gt; tokens) {
+<span class="nc" id="L161">        Set&lt;String&gt; minimalStops = Set.of(&quot;the&quot;, &quot;a&quot;, &quot;an&quot;, &quot;and&quot;, &quot;or&quot;, &quot;but&quot;, &quot;in&quot;, &quot;on&quot;, &quot;at&quot;, &quot;to&quot;, &quot;for&quot;, &quot;of&quot;, &quot;with&quot;, &quot;by&quot;);</span>
+<span class="nc" id="L162">        return tokens.stream()</span>
+<span class="nc bnc" id="L163" title="All 2 branches missed.">                .filter(token -&gt; !minimalStops.contains(token.toLowerCase()))</span>
+<span class="nc" id="L164">                .collect(Collectors.toList());</span>
+    }
+
+    /**
+     * Check if token is a basic stopword
+     */
+    private boolean isBasicStopword(String token) {
+<span class="nc" id="L171">        return BASIC_STOPWORDS.contains(token.toLowerCase());</span>
+    }
+
+    /**
+     * Check if token is an extended stopword
+     */
+    private boolean isExtendedStopword(String token) {
+<span class="nc" id="L178">        String normalized = token.toLowerCase();</span>
+
+        // Don't remove sentiment-bearing words even in extended mode
+<span class="nc bnc" id="L181" title="All 2 branches missed.">        if (SENTIMENT_BEARING_WORDS.contains(normalized)) {</span>
+<span class="nc" id="L182">            return false;</span>
+        }
+
+<span class="nc" id="L185">        return EXTENDED_STOPWORDS.contains(normalized);</span>
+    }
+
+    /**
+     * Sentiment-aware stopword detection - the most sophisticated approach
+     */
+    private boolean isSentimentAwareStopword(String token) {
+<span class="nc" id="L192">        String normalized = token.toLowerCase().trim();</span>
+
+        // Always preserve negation words
+<span class="nc bnc" id="L195" title="All 4 branches missed.">        if (preserveNegations &amp;&amp; NEGATION_WORDS.contains(normalized)) {</span>
+<span class="nc" id="L196">            return false;</span>
+        }
+
+        // Always preserve intensifiers
+<span class="nc bnc" id="L200" title="All 4 branches missed.">        if (preserveIntensifiers &amp;&amp; INTENSIFIER_WORDS.contains(normalized)) {</span>
+<span class="nc" id="L201">            return false;</span>
+        }
+
+        // Don't remove preserved sentiment indicators (from tokenizer)
+<span class="nc bnc" id="L205" title="All 2 branches missed.">        if (isPreservedSentimentToken(normalized)) {</span>
+<span class="nc" id="L206">            return false;</span>
+        }
+
+        // Don't remove hyphenated words (often meaningful compounds)
+<span class="nc bnc" id="L210" title="All 2 branches missed.">        if (token.contains(&quot;-&quot;)) {</span>
+<span class="nc" id="L211">            return false;</span>
+        }
+
+        // Don't remove meaningful punctuation
+<span class="nc bnc" id="L215" title="All 2 branches missed.">        if (token.matches(&quot;[!?]+&quot;)) {</span>
+<span class="nc" id="L216">            return false;</span>
+        }
+
+        // Standard stopword check
+<span class="nc" id="L220">        return EXTENDED_STOPWORDS.contains(normalized);</span>
+    }
+
+    /**
+     * Check if token is a preserved sentiment indicator from preprocessing
+     */
+    private boolean isPreservedSentimentToken(String token) {
+<span class="nc bnc" id="L227" title="All 2 branches missed.">        return token.startsWith(&quot;positive_emoticon&quot;) ||</span>
+<span class="nc bnc" id="L228" title="All 2 branches missed.">                token.startsWith(&quot;negative_emoticon&quot;) ||</span>
+<span class="nc bnc" id="L229" title="All 2 branches missed.">                token.startsWith(&quot;url_token&quot;) ||</span>
+<span class="nc bnc" id="L230" title="All 2 branches missed.">                token.startsWith(&quot;email_token&quot;) ||</span>
+<span class="nc bnc" id="L231" title="All 2 branches missed.">                token.startsWith(&quot;mention_token&quot;) ||</span>
+<span class="nc bnc" id="L232" title="All 2 branches missed.">                token.startsWith(&quot;hashtag_&quot;) ||</span>
+<span class="nc bnc" id="L233" title="All 2 branches missed.">                token.equals(&quot;number_token&quot;);</span>
+    }
+
+    /**
+     * Analyze stopword removal impact
+     */
+    public StopwordAnalysis analyzeStopwordRemoval(List&lt;String&gt; tokens) {
+<span class="nc bnc" id="L240" title="All 4 branches missed.">        if (tokens == null || tokens.isEmpty()) {</span>
+<span class="nc" id="L241">            return new StopwordAnalysis(0, 0, 0, 0, 0, 0);</span>
+        }
+
+<span class="nc" id="L244">        int total = tokens.size();</span>
+<span class="nc" id="L245">        int basicRemoved = (int) tokens.stream().filter(this::isBasicStopword).count();</span>
+<span class="nc" id="L246">        int extendedRemoved = (int) tokens.stream().filter(this::isExtendedStopword).count();</span>
+<span class="nc" id="L247">        int sentimentAwareRemoved = (int) tokens.stream().filter(this::isSentimentAwareStopword).count();</span>
+<span class="nc" id="L248">        int negationsFound = (int) tokens.stream().filter(token -&gt; NEGATION_WORDS.contains(token.toLowerCase())).count();</span>
+<span class="nc" id="L249">        int intensifiersFound = (int) tokens.stream().filter(token -&gt; INTENSIFIER_WORDS.contains(token.toLowerCase())).count();</span>
+
+<span class="nc" id="L251">        return new StopwordAnalysis(total, basicRemoved, extendedRemoved,</span>
+                sentimentAwareRemoved, negationsFound, intensifiersFound);
+    }
+
+    /**
+     * Compare different stopword removal strategies on the same text
+     */
+    public StopwordComparisonResult compareStrategies(List&lt;String&gt; tokens) {
+<span class="nc bnc" id="L259" title="All 4 branches missed.">        if (tokens == null || tokens.isEmpty()) {</span>
+<span class="nc" id="L260">            return new StopwordComparisonResult(new HashMap&lt;&gt;(), tokens);</span>
+        }
+
+<span class="nc" id="L263">        Map&lt;StopwordStrategy, List&lt;String&gt;&gt; results = new HashMap&lt;&gt;();</span>
+
+<span class="nc bnc" id="L265" title="All 2 branches missed.">        for (StopwordStrategy strategy : StopwordStrategy.values()) {</span>
+<span class="nc" id="L266">            results.put(strategy, applyStopwordStrategy(tokens, strategy));</span>
+        }
+
+<span class="nc" id="L269">        return new StopwordComparisonResult(results, tokens);</span>
+    }
+
+    /**
+     * Demonstrate stopword removal with different strategies
+     */
+    public void demonstrateStopwordRemoval(String sampleText) {
+<span class="nc" id="L276">        logger.info(&quot;=== Stopword Removal Demonstration ===&quot;);</span>
+<span class="nc" id="L277">        logger.info(&quot;Sample text: '{}'&quot;, sampleText);</span>
+
+        // Simple tokenization for demonstration
+<span class="nc" id="L280">        List&lt;String&gt; tokens = Arrays.asList(sampleText.toLowerCase().split(&quot;\\s+&quot;));</span>
+<span class="nc" id="L281">        logger.info(&quot;Tokens ({}): {}&quot;, tokens.size(), tokens);</span>
+
+<span class="nc" id="L283">        StopwordComparisonResult comparison = compareStrategies(tokens);</span>
+<span class="nc" id="L284">        comparison.printComparison();</span>
+
+<span class="nc" id="L286">        StopwordAnalysis analysis = analyzeStopwordRemoval(tokens);</span>
+<span class="nc" id="L287">        logger.info(&quot;Analysis: {}&quot;, analysis);</span>
+
+<span class="nc" id="L289">        logger.info(&quot;=== End Stopword Demonstration ===&quot;);</span>
+<span class="nc" id="L290">    }</span>
+
+    /**
+     * Stopword removal strategies
+     */
+<span class="nc" id="L295">    public enum StopwordStrategy {</span>
+<span class="nc" id="L296">        BASIC(&quot;Basic - Conservative removal&quot;),</span>
+<span class="nc" id="L297">        EXTENDED(&quot;Extended - Aggressive removal&quot;),</span>
+<span class="nc" id="L298">        SENTIMENT_AWARE(&quot;Sentiment Aware - Preserves sentiment words&quot;),</span>
+<span class="nc" id="L299">        MINIMAL(&quot;Minimal - Only most common function words&quot;);</span>
+
+        private final String description;
+
+<span class="nc" id="L303">        StopwordStrategy(String description) {</span>
+<span class="nc" id="L304">            this.description = description;</span>
+<span class="nc" id="L305">        }</span>
+
+        @Override
+        public String toString() {
+<span class="nc" id="L309">            return description;</span>
+        }
+    }
+
+    /**
+     * Analysis results for stopword removal impact
+     */
+    public static class StopwordAnalysis {
+        public final int totalTokens;
+        public final int basicRemoved;
+        public final int extendedRemoved;
+        public final int sentimentAwareRemoved;
+        public final int negationsFound;
+        public final int intensifiersFound;
+
+        public StopwordAnalysis(int totalTokens, int basicRemoved, int extendedRemoved,
+<span class="nc" id="L325">                                int sentimentAwareRemoved, int negationsFound, int intensifiersFound) {</span>
+<span class="nc" id="L326">            this.totalTokens = totalTokens;</span>
+<span class="nc" id="L327">            this.basicRemoved = basicRemoved;</span>
+<span class="nc" id="L328">            this.extendedRemoved = extendedRemoved;</span>
+<span class="nc" id="L329">            this.sentimentAwareRemoved = sentimentAwareRemoved;</span>
+<span class="nc" id="L330">            this.negationsFound = negationsFound;</span>
+<span class="nc" id="L331">            this.intensifiersFound = intensifiersFound;</span>
+<span class="nc" id="L332">        }</span>
+
+        @Override
+        public String toString() {
+<span class="nc" id="L336">            return String.format(</span>
+                    &quot;StopwordAnalysis{total=%d, basic=%d(%.1f%%), extended=%d(%.1f%%), sentimentAware=%d(%.1f%%), negations=%d, intensifiers=%d}&quot;,
+<span class="nc" id="L338">                    totalTokens, basicRemoved, getPercentage(basicRemoved),</span>
+<span class="nc" id="L339">                    extendedRemoved, getPercentage(extendedRemoved),</span>
+<span class="nc" id="L340">                    sentimentAwareRemoved, getPercentage(sentimentAwareRemoved),</span>
+<span class="nc" id="L341">                    negationsFound, intensifiersFound</span>
+            );
+        }
+
+        private double getPercentage(int removed) {
+<span class="nc bnc" id="L346" title="All 2 branches missed.">            return totalTokens &gt; 0 ? (double) removed / totalTokens * 100 : 0;</span>
+        }
+    }
+
+    /**
+     * Comparison results between different stopword strategies
+     */
+    public static class StopwordComparisonResult {
+        public final Map&lt;StopwordStrategy, List&lt;String&gt;&gt; results;
+        public final List&lt;String&gt; originalTokens;
+
+        public StopwordComparisonResult(Map&lt;StopwordStrategy, List&lt;String&gt;&gt; results,
+<span class="nc" id="L358">                                        List&lt;String&gt; originalTokens) {</span>
+<span class="nc" id="L359">            this.results = results;</span>
+<span class="nc" id="L360">            this.originalTokens = originalTokens;</span>
+<span class="nc" id="L361">        }</span>
+
+        public void printComparison() {
+<span class="nc" id="L364">            logger.debug(&quot;\nStopword Strategy Comparison:&quot;);</span>
+<span class="nc" id="L365">            logger.debug(&quot;Original ({}): {}&quot;, originalTokens.size(), originalTokens);</span>
+
+<span class="nc bnc" id="L367" title="All 2 branches missed.">            for (Map.Entry&lt;StopwordStrategy, List&lt;String&gt;&gt; entry : results.entrySet()) {</span>
+<span class="nc" id="L368">                List&lt;String&gt; tokens = entry.getValue();</span>
+<span class="nc bnc" id="L369" title="All 2 branches missed.">                double retention = !originalTokens.isEmpty() ?</span>
+<span class="nc" id="L370">                        (double) tokens.size() / originalTokens.size() * 100 : 0;</span>
+<span class="nc" id="L371">                logger.debug(&quot;{} ({} tokens, {}% retained): {}&quot;,</span>
+<span class="nc" id="L372">                        entry.getKey(), tokens.size(), String.format(&quot;%.1f&quot;, retention), tokens);</span>
+<span class="nc" id="L373">            }</span>
+<span class="nc" id="L374">        }</span>
+
+        public StopwordStrategy getBestStrategy() {
+            // Best strategy preserves sentiment words while removing noise
+            // Look for strategy that removes reasonable amount but preserves key words
+<span class="nc" id="L379">            return results.entrySet().stream()</span>
+<span class="nc" id="L380">                    .filter(entry -&gt; {</span>
+<span class="nc" id="L381">                        double retentionRate = (double) entry.getValue().size() / originalTokens.size();</span>
+<span class="nc bnc" id="L382" title="All 4 branches missed.">                        return retentionRate &gt;= 0.6 &amp;&amp; retentionRate &lt;= 0.85; // Sweet spot</span>
+                    })
+<span class="nc" id="L384">                    .findFirst()</span>
+<span class="nc" id="L385">                    .map(Map.Entry::getKey)</span>
+<span class="nc" id="L386">                    .orElse(StopwordStrategy.SENTIMENT_AWARE);</span>
+        }
+    }
+
+    /**
+     * Get configuration summary
+     */
+    public String getConfigurationSummary() {
+<span class="nc" id="L394">        return String.format(</span>
+                &quot;IntelligentStopwordRemover{strategy=%s, preserveNegations=%s, preserveIntensifiers=%s}&quot;,
+<span class="nc" id="L396">                stopwordStrategy, preserveNegations, preserveIntensifiers</span>
+        );
+    }
+
+    public String getVersion() {
+<span class="nc" id="L401">        return VERSION;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

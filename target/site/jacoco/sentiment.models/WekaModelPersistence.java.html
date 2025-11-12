@@ -1,0 +1,318 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>WekaModelPersistence.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Java Sentiment Analysis</a> &gt; <a href="index.source.html" class="el_package">sentiment.models</a> &gt; <span class="el_source">WekaModelPersistence.java</span></div><h1>WekaModelPersistence.java</h1><pre class="source lang-java linenums">package sentiment.models;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import sentiment.PipelineState;
+import weka.classifiers.Classifier;
+import weka.core.Instances;
+
+import java.io.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Date;
+
+/**
+ * Generic model persistence for Weka-based classifiers.
+ *
+ * PURPOSE:
+ * ========
+ * Provides unified save/load functionality for all Weka classifier types
+ * (Naive Bayes, Random Forest, Logistic Regression, etc.).
+ *
+ * DESIGN:
+ * =======
+ * Uses Java serialization to save complete classifier state including:
+ * - Trained Weka classifier instance
+ * - Training data structure (for validation)
+ * - Supported class labels
+ * - Training metadata (time, version)
+ *
+ * THREAD SAFETY:
+ * ==============
+ * This class is stateless and thread-safe. However, the classifiers being
+ * saved/loaded must handle their own thread safety.
+ *
+ * USAGE:
+ * ======
+ * &lt;pre&gt;
+ * // Save a trained classifier
+ * WekaModelPersistence&lt;NaiveBayesClassifier&gt; persistence = new WekaModelPersistence&lt;&gt;();
+ * persistence.saveModel(classifier, Path.of(&quot;./models/nb-model.ser&quot;));
+ *
+ * // Load a classifier
+ * NaiveBayesClassifier loaded = persistence.loadModel(
+ *     new NaiveBayesClassifier(preprocessor, converter),
+ *     Path.of(&quot;./models/nb-model.ser&quot;)
+ * );
+ * &lt;/pre&gt;
+ */
+<span class="nc" id="L49">public class WekaModelPersistence&lt;T extends ClassifierTrainingTemplate&lt;?&gt;&gt; {</span>
+
+<span class="nc" id="L51">    private static final Logger logger = LoggerFactory.getLogger(WekaModelPersistence.class);</span>
+    private static final String MODEL_VERSION = &quot;1.0.0&quot;;
+
+    /**
+     * Saves trained Weka classifier to disk.
+     *
+     * @param classifier Trained classifier to save
+     * @param modelPath Output path for model file
+     * @throws IOException if save fails
+     * @throws IllegalStateException if classifier not trained
+     */
+    public void saveModel(T classifier, Path modelPath) throws IOException {
+<span class="nc bnc" id="L63" title="All 2 branches missed.">        if (!classifier.isTrained()) {</span>
+<span class="nc" id="L64">            throw new IllegalStateException(&quot;Cannot save untrained classifier&quot;);</span>
+        }
+
+<span class="nc" id="L67">        logger.info(&quot;Saving {} model to: {}&quot;, classifier.getAlgorithmName(), modelPath);</span>
+
+        try {
+<span class="nc" id="L70">            Files.createDirectories(modelPath.getParent());</span>
+
+            // Extract classifier components
+<span class="nc" id="L73">            Classifier wekaClassifier = extractWekaClassifier(classifier);</span>
+<span class="nc" id="L74">            Instances trainingStructure = extractTrainingStructure(classifier);</span>
+<span class="nc" id="L75">            String[] supportedClasses = classifier.getSupportedClasses();</span>
+
+<span class="nc" id="L77">            ModelBundle bundle = new ModelBundle(</span>
+                    wekaClassifier,
+                    trainingStructure,
+                    supportedClasses,
+<span class="nc" id="L81">                    classifier.getLastTrainingTimeMs(),</span>
+<span class="nc" id="L82">                    classifier.getAlgorithmType(),</span>
+                    MODEL_VERSION,
+<span class="nc" id="L84">                    System.currentTimeMillis()</span>
+            );
+
+<span class="nc" id="L87">            try (ObjectOutputStream oos = new ObjectOutputStream(</span>
+<span class="nc" id="L88">                    new BufferedOutputStream(Files.newOutputStream(modelPath)))) {</span>
+<span class="nc" id="L89">                oos.writeObject(bundle);</span>
+            }
+
+<span class="nc" id="L92">            long fileSize = Files.size(modelPath);</span>
+<span class="nc" id="L93">            logger.info(&quot;✅ Model saved successfully: {} bytes ({} KB)&quot;,</span>
+<span class="nc" id="L94">                    fileSize, fileSize / 1024);</span>
+
+<span class="nc" id="L96">        } catch (IOException e) {</span>
+<span class="nc" id="L97">            logger.error(&quot;Failed to save model to {}&quot;, modelPath, e);</span>
+<span class="nc" id="L98">            throw new IOException(&quot;Model save failed: &quot; + e.getMessage(), e);</span>
+<span class="nc" id="L99">        }</span>
+<span class="nc" id="L100">    }</span>
+
+    /**
+     * Loads trained Weka classifier from disk.
+     *
+     * @param classifier Empty classifier instance to load into
+     * @param modelPath Path to saved model file
+     * @return The loaded classifier (same instance passed in)
+     * @throws IOException if load fails
+     * @throws ClassNotFoundException if model format incompatible
+     */
+    public T loadModel(T classifier, Path modelPath)
+            throws IOException, ClassNotFoundException {
+
+<span class="nc bnc" id="L114" title="All 2 branches missed.">        if (!Files.exists(modelPath)) {</span>
+<span class="nc" id="L115">            throw new IOException(&quot;Model file does not exist: &quot; + modelPath);</span>
+        }
+
+<span class="nc" id="L118">        logger.info(&quot;Loading {} model from: {}&quot;, classifier.getAlgorithmName(), modelPath);</span>
+
+        // Acquire write lock for atomic model replacement
+<span class="nc" id="L121">        classifier.stateLock.writeLock().lock();</span>
+        try {
+            ModelBundle bundle;
+
+            // Deserialize model bundle
+<span class="nc" id="L126">            try (ObjectInputStream ois = new ObjectInputStream(</span>
+<span class="nc" id="L127">                    new BufferedInputStream(Files.newInputStream(modelPath)))) {</span>
+<span class="nc" id="L128">                bundle = (ModelBundle) ois.readObject();</span>
+            }
+
+            // Validate version compatibility
+<span class="nc bnc" id="L132" title="All 2 branches missed.">            if (!MODEL_VERSION.equals(bundle.modelVersion)) {</span>
+<span class="nc" id="L133">                logger.warn(&quot;Model version mismatch: current={}, loaded={}&quot;,</span>
+                        MODEL_VERSION, bundle.modelVersion);
+            }
+
+            // Validate algorithm type matches
+<span class="nc bnc" id="L138" title="All 2 branches missed.">            if (bundle.algorithmType != classifier.getAlgorithmType()) {</span>
+<span class="nc" id="L139">                throw new IOException(String.format(</span>
+                        &quot;Algorithm type mismatch: expected %s, found %s in model file&quot;,
+<span class="nc" id="L141">                        classifier.getAlgorithmType(), bundle.algorithmType));</span>
+            }
+
+            // Set classifier components
+<span class="nc" id="L145">            setWekaClassifier(classifier, bundle.wekaClassifier);</span>
+<span class="nc" id="L146">            setTrainingMetadata(classifier, bundle.trainingStructure, bundle.supportedClasses);</span>
+
+            // Transition to READY state
+<span class="nc" id="L149">            classifier.classifierState = PipelineState.READY;</span>
+
+<span class="nc" id="L151">            logger.info(&quot;✅ Model loaded: {} classes, trained at {}&quot;,</span>
+<span class="nc" id="L152">                    bundle.supportedClasses.length, new Date(bundle.timestamp));</span>
+
+<span class="nc" id="L154">            return classifier;</span>
+
+<span class="nc" id="L156">        } catch (IOException | ClassNotFoundException e) {</span>
+<span class="nc" id="L157">            logger.error(&quot;Failed to load model from {}&quot;, modelPath, e);</span>
+<span class="nc" id="L158">            throw e;</span>
+        } finally {
+<span class="nc" id="L160">            classifier.stateLock.writeLock().unlock();</span>
+        }
+    }
+
+    /**
+     * Checks if a model file is valid and loadable.
+     */
+    public boolean isValidModel(Path modelPath) {
+<span class="nc bnc" id="L168" title="All 4 branches missed.">        if (!Files.exists(modelPath) || !Files.isReadable(modelPath)) {</span>
+<span class="nc" id="L169">            return false;</span>
+        }
+
+<span class="nc" id="L172">        try (ObjectInputStream ois = new ObjectInputStream(</span>
+<span class="nc" id="L173">                new BufferedInputStream(Files.newInputStream(modelPath)))) {</span>
+
+<span class="nc" id="L175">            Object obj = ois.readObject();</span>
+<span class="nc bnc" id="L176" title="All 2 branches missed.">            if (!(obj instanceof ModelBundle)) {</span>
+<span class="nc" id="L177">                logger.warn(&quot;File is not a valid ModelBundle: {}&quot;, modelPath);</span>
+<span class="nc" id="L178">                return false;</span>
+            }
+
+<span class="nc" id="L181">            ModelBundle bundle = (ModelBundle) obj;</span>
+
+            // Basic validation
+<span class="nc bnc" id="L184" title="All 8 branches missed.">            if (bundle.wekaClassifier == null || bundle.trainingStructure == null</span>
+                    || bundle.supportedClasses == null || bundle.supportedClasses.length == 0) {
+<span class="nc" id="L186">                logger.warn(&quot;ModelBundle has missing components: {}&quot;, modelPath);</span>
+<span class="nc" id="L187">                return false;</span>
+            }
+
+<span class="nc" id="L190">            return true;</span>
+
+<span class="nc" id="L192">        } catch (Exception e) {</span>
+<span class="nc" id="L193">            logger.warn(&quot;Invalid model file: {}&quot;, modelPath, e);</span>
+<span class="nc" id="L194">            return false;</span>
+        }
+    }
+
+    /**
+     * Gets model metadata without fully loading the model.
+     */
+    public ModelMetadata getModelMetadata(Path modelPath)
+            throws IOException, ClassNotFoundException {
+
+<span class="nc bnc" id="L204" title="All 2 branches missed.">        if (!Files.exists(modelPath)) {</span>
+<span class="nc" id="L205">            throw new IOException(&quot;Model file does not exist: &quot; + modelPath);</span>
+        }
+
+<span class="nc" id="L208">        try (ObjectInputStream ois = new ObjectInputStream(</span>
+<span class="nc" id="L209">                new BufferedInputStream(Files.newInputStream(modelPath)))) {</span>
+
+<span class="nc" id="L211">            ModelBundle bundle = (ModelBundle) ois.readObject();</span>
+
+<span class="nc" id="L213">            return new ModelMetadata(</span>
+                    bundle.algorithmType,
+                    bundle.modelVersion,
+                    bundle.timestamp,
+                    bundle.supportedClasses.length,
+<span class="nc" id="L218">                    bundle.trainingStructure.numAttributes() - 1,</span>
+<span class="nc" id="L219">                    Files.size(modelPath)</span>
+            );
+
+<span class="nc" id="L222">        } catch (IOException | ClassNotFoundException e) {</span>
+<span class="nc" id="L223">            logger.error(&quot;Failed to read metadata from {}&quot;, modelPath, e);</span>
+<span class="nc" id="L224">            throw e;</span>
+        }
+    }
+
+    // ==================== HELPER METHODS ====================
+    // REFACTORED: Eliminated 52 lines of duplicate type-checking by using abstract methods
+
+    /**
+     * Extract Weka classifier using polymorphism instead of type-checking.
+     */
+    private Classifier extractWekaClassifier(T classifier) {
+<span class="nc" id="L235">        return classifier.getWekaClassifierInstance();</span>
+    }
+
+    /**
+     * Extract training structure using polymorphism instead of type-checking.
+     */
+    private Instances extractTrainingStructure(T classifier) {
+<span class="nc" id="L242">        return classifier.getTrainingStructure();</span>
+    }
+
+    /**
+     * Set Weka classifier using polymorphism instead of type-checking.
+     */
+    private void setWekaClassifier(T classifier, Classifier wekaClassifier) {
+<span class="nc" id="L249">        classifier.setWekaClassifierInstance(wekaClassifier);</span>
+<span class="nc" id="L250">    }</span>
+
+    /**
+     * Set training metadata using polymorphism instead of type-checking.
+     */
+    private void setTrainingMetadata(T classifier, Instances structure, String[] classes) {
+<span class="nc" id="L256">        classifier.setTrainingMetadata(structure, classes);</span>
+<span class="nc" id="L257">    }</span>
+
+    // ==================== DATA CLASSES ====================
+
+    /**
+     * Serializable bundle containing all trained model state.
+     */
+    private static class ModelBundle implements Serializable {
+        private static final long serialVersionUID = 1L;
+
+        final Classifier wekaClassifier;
+        final Instances trainingStructure;
+        final String[] supportedClasses;
+        final long trainingTimeMs;
+        final AlgorithmType algorithmType;
+        final String modelVersion;
+        final long timestamp;
+
+        ModelBundle(Classifier wekaClassifier, Instances trainingStructure,
+                    String[] supportedClasses, long trainingTimeMs,
+<span class="nc" id="L277">                    AlgorithmType algorithmType, String modelVersion, long timestamp) {</span>
+<span class="nc" id="L278">            this.wekaClassifier = wekaClassifier;</span>
+<span class="nc" id="L279">            this.trainingStructure = trainingStructure;</span>
+<span class="nc" id="L280">            this.supportedClasses = supportedClasses.clone();</span>
+<span class="nc" id="L281">            this.trainingTimeMs = trainingTimeMs;</span>
+<span class="nc" id="L282">            this.algorithmType = algorithmType;</span>
+<span class="nc" id="L283">            this.modelVersion = modelVersion;</span>
+<span class="nc" id="L284">            this.timestamp = timestamp;</span>
+<span class="nc" id="L285">        }</span>
+    }
+
+    /**
+     * Model metadata without loading full model.
+     */
+    public static class ModelMetadata {
+        public final AlgorithmType algorithmType;
+        public final String version;
+        public final long timestamp;
+        public final int numClasses;
+        public final int numFeatures;
+        public final long fileSizeBytes;
+
+        ModelMetadata(AlgorithmType algorithmType, String version, long timestamp,
+<span class="nc" id="L300">                      int numClasses, int numFeatures, long fileSizeBytes) {</span>
+<span class="nc" id="L301">            this.algorithmType = algorithmType;</span>
+<span class="nc" id="L302">            this.version = version;</span>
+<span class="nc" id="L303">            this.timestamp = timestamp;</span>
+<span class="nc" id="L304">            this.numClasses = numClasses;</span>
+<span class="nc" id="L305">            this.numFeatures = numFeatures;</span>
+<span class="nc" id="L306">            this.fileSizeBytes = fileSizeBytes;</span>
+<span class="nc" id="L307">        }</span>
+
+        @Override
+        public String toString() {
+<span class="nc" id="L311">            return String.format(</span>
+                    &quot;ModelMetadata{algorithm=%s, version=%s, trained=%s, classes=%d, features=%d, size=%d KB}&quot;,
+<span class="nc" id="L313">                    algorithmType.getDisplayName(), version, new Date(timestamp),</span>
+<span class="nc" id="L314">                    numClasses, numFeatures, fileSizeBytes / 1024);</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

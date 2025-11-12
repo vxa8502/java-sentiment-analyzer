@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ErrorResponse.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Java Sentiment Analysis</a> &gt; <a href="index.source.html" class="el_package">sentiment.api</a> &gt; <span class="el_source">ErrorResponse.java</span></div><h1>ErrorResponse.java</h1><pre class="source lang-java linenums">package sentiment.api;
+
+import com.fasterxml.jackson.annotation.JsonInclude;
+
+import java.util.Map;
+
+/**
+ * Standardized error response for all REST API endpoints.
+ *
+ * Provides consistent error formatting across the application with support
+ * for simple error messages and detailed validation errors.
+ */
+@JsonInclude(JsonInclude.Include.NON_NULL)
+public class ErrorResponse {
+
+    private String error;
+    private String message;
+    private Integer status;
+    private Long timestamp;
+    private Map&lt;String, String&gt; details;
+
+    /**
+     * Default constructor - sets timestamp automatically.
+     */
+<span class="nc" id="L25">    public ErrorResponse() {</span>
+<span class="nc" id="L26">        this.timestamp = System.currentTimeMillis();</span>
+<span class="nc" id="L27">    }</span>
+
+    /**
+     * Simple error constructor for backward compatibility.
+     *
+     * @param error the error message
+     */
+<span class="nc" id="L34">    public ErrorResponse(String error) {</span>
+<span class="nc" id="L35">        this.error = error;</span>
+<span class="nc" id="L36">        this.timestamp = System.currentTimeMillis();</span>
+<span class="nc" id="L37">    }</span>
+
+    /**
+     * Constructor with error and status code.
+     *
+     * @param error the error type/title
+     * @param status the HTTP status code
+     */
+<span class="nc" id="L45">    public ErrorResponse(String error, int status) {</span>
+<span class="nc" id="L46">        this.error = error;</span>
+<span class="nc" id="L47">        this.status = status;</span>
+<span class="nc" id="L48">        this.timestamp = System.currentTimeMillis();</span>
+<span class="nc" id="L49">    }</span>
+
+    /**
+     * Full constructor with error, message, and status.
+     *
+     * @param error the error type/title
+     * @param message detailed error message
+     * @param status the HTTP status code
+     */
+<span class="nc" id="L58">    public ErrorResponse(String error, String message, int status) {</span>
+<span class="nc" id="L59">        this.error = error;</span>
+<span class="nc" id="L60">        this.message = message;</span>
+<span class="nc" id="L61">        this.status = status;</span>
+<span class="nc" id="L62">        this.timestamp = System.currentTimeMillis();</span>
+<span class="nc" id="L63">    }</span>
+
+    /**
+     * Constructor with validation details.
+     *
+     * @param error the error type/title
+     * @param details map of field-level validation errors
+     * @param status the HTTP status code
+     */
+<span class="nc" id="L72">    public ErrorResponse(String error, Map&lt;String, String&gt; details, int status) {</span>
+<span class="nc" id="L73">        this.error = error;</span>
+<span class="nc" id="L74">        this.details = details;</span>
+<span class="nc" id="L75">        this.status = status;</span>
+<span class="nc" id="L76">        this.timestamp = System.currentTimeMillis();</span>
+<span class="nc" id="L77">    }</span>
+
+    // Getters and setters
+
+    public String getError() {
+<span class="nc" id="L82">        return error;</span>
+    }
+
+    public void setError(String error) {
+<span class="nc" id="L86">        this.error = error;</span>
+<span class="nc" id="L87">    }</span>
+
+    public String getMessage() {
+<span class="nc" id="L90">        return message;</span>
+    }
+
+    public void setMessage(String message) {
+<span class="nc" id="L94">        this.message = message;</span>
+<span class="nc" id="L95">    }</span>
+
+    public Integer getStatus() {
+<span class="nc" id="L98">        return status;</span>
+    }
+
+    public void setStatus(Integer status) {
+<span class="nc" id="L102">        this.status = status;</span>
+<span class="nc" id="L103">    }</span>
+
+    public Long getTimestamp() {
+<span class="nc" id="L106">        return timestamp;</span>
+    }
+
+    public void setTimestamp(Long timestamp) {
+<span class="nc" id="L110">        this.timestamp = timestamp;</span>
+<span class="nc" id="L111">    }</span>
+
+    public Map&lt;String, String&gt; getDetails() {
+<span class="nc" id="L114">        return details;</span>
+    }
+
+    public void setDetails(Map&lt;String, String&gt; details) {
+<span class="nc" id="L118">        this.details = details;</span>
+<span class="nc" id="L119">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AlgorithmType.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Java Sentiment Analysis</a> &gt; <a href="index.source.html" class="el_package">sentiment.models</a> &gt; <span class="el_source">AlgorithmType.java</span></div><h1>AlgorithmType.java</h1><pre class="source lang-java linenums">package sentiment.models;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.stream.Collectors;
+
+/**
+ * Type-safe enumeration of supported sentiment analysis algorithms.
+ * Provides consistent algorithm identification across the system.
+ */
+<span class="fc" id="L12">public enum AlgorithmType {</span>
+<span class="fc" id="L13">    SVM(&quot;SVM (SMO)&quot;, &quot;Support Vector Machine with Sequential Minimal Optimization&quot;),</span>
+<span class="fc" id="L14">    NAIVE_BAYES(&quot;Naive Bayes&quot;, &quot;Probabilistic classifier based on Bayes' theorem&quot;),</span>
+<span class="fc" id="L15">    RANDOM_FOREST(&quot;Random Forest&quot;, &quot;Ensemble learning method using decision trees&quot;),</span>
+<span class="fc" id="L16">    LOGISTIC_REGRESSION(&quot;Logistic Regression&quot;, &quot;Linear model for binary classification&quot;),</span>
+<span class="fc" id="L17">    NEURAL_NETWORK(&quot;Neural Network&quot;, &quot;Multi-layer perceptron classifier&quot;),</span>
+<span class="fc" id="L18">    UNKNOWN(&quot;Unknown&quot;, &quot;Algorithm type not specified&quot;);</span>
+
+    private final String displayName;
+    private final String description;
+
+<span class="fc" id="L23">    AlgorithmType(String displayName, String description) {</span>
+<span class="fc" id="L24">        this.displayName = displayName;</span>
+<span class="fc" id="L25">        this.description = description;</span>
+<span class="fc" id="L26">    }</span>
+
+    /**
+     * Get human-readable algorithm name for UI display and logging
+     */
+    public String getDisplayName() {
+<span class="fc" id="L32">        return displayName;</span>
+    }
+
+    /**
+     * Get detailed description of the algorithm
+     */
+    public String getDescription() {
+<span class="nc" id="L39">        return description;</span>
+    }
+
+    /**
+     * Parse algorithm type from string with priority-based matching.
+     *
+     * Matching priority:
+     * 1. Exact enum name match (e.g., &quot;NAIVE_BAYES&quot;)
+     * 2. Exact display name match (e.g., &quot;Naive Bayes&quot;)
+     * 3. Display name starts with input (e.g., &quot;naive&quot; → &quot;Naive Bayes&quot;)
+     * 4. Display name contains input (only if unambiguous)
+     *
+     * @param algorithmName Algorithm name to parse
+     * @return Matching AlgorithmType
+     * @throws IllegalArgumentException if name is invalid or ambiguous
+     */
+    public static AlgorithmType fromString(String algorithmName) {
+<span class="nc bnc" id="L56" title="All 4 branches missed.">        if (algorithmName == null || algorithmName.trim().isEmpty()) {</span>
+<span class="nc" id="L57">            throw new IllegalArgumentException(&quot;Algorithm name cannot be null or empty&quot;);</span>
+        }
+
+<span class="nc" id="L60">        String normalized = algorithmName.trim().toLowerCase();</span>
+
+        // Priority 1: Exact enum name match
+<span class="nc bnc" id="L63" title="All 2 branches missed.">        for (AlgorithmType type : values()) {</span>
+<span class="nc bnc" id="L64" title="All 2 branches missed.">            if (type.name().toLowerCase().equals(normalized)) {</span>
+<span class="nc" id="L65">                return type;</span>
+            }
+        }
+
+        // Priority 2: Exact display name match
+<span class="nc bnc" id="L70" title="All 2 branches missed.">        for (AlgorithmType type : values()) {</span>
+<span class="nc bnc" id="L71" title="All 2 branches missed.">            if (type.displayName.toLowerCase().equals(normalized)) {</span>
+<span class="nc" id="L72">                return type;</span>
+            }
+        }
+
+        // Priority 3: Display name starts with input
+<span class="nc" id="L77">        List&lt;AlgorithmType&gt; startsWithMatches = new ArrayList&lt;&gt;();</span>
+<span class="nc bnc" id="L78" title="All 2 branches missed.">        for (AlgorithmType type : values()) {</span>
+<span class="nc bnc" id="L79" title="All 2 branches missed.">            if (type.displayName.toLowerCase().startsWith(normalized)) {</span>
+<span class="nc" id="L80">                startsWithMatches.add(type);</span>
+            }
+        }
+<span class="nc bnc" id="L83" title="All 2 branches missed.">        if (startsWithMatches.size() == 1) {</span>
+<span class="nc" id="L84">            return startsWithMatches.get(0);</span>
+        }
+
+        // Priority 4: Display name contains input (only if unambiguous)
+<span class="nc" id="L88">        List&lt;AlgorithmType&gt; containsMatches = new ArrayList&lt;&gt;();</span>
+<span class="nc bnc" id="L89" title="All 2 branches missed.">        for (AlgorithmType type : values()) {</span>
+<span class="nc bnc" id="L90" title="All 2 branches missed.">            if (type.displayName.toLowerCase().contains(normalized)) {</span>
+<span class="nc" id="L91">                containsMatches.add(type);</span>
+            }
+        }
+
+<span class="nc bnc" id="L95" title="All 2 branches missed.">        if (containsMatches.size() == 1) {</span>
+<span class="nc" id="L96">            return containsMatches.get(0);</span>
+<span class="nc bnc" id="L97" title="All 2 branches missed.">        } else if (containsMatches.size() &gt; 1) {</span>
+<span class="nc" id="L98">            String matchingTypes = containsMatches.stream()</span>
+<span class="nc" id="L99">                    .map(t -&gt; t.displayName)</span>
+<span class="nc" id="L100">                    .collect(Collectors.joining(&quot;, &quot;));</span>
+<span class="nc" id="L101">            throw new IllegalArgumentException(</span>
+                    &quot;Ambiguous algorithm name '&quot; + algorithmName + &quot;' matches multiple types: &quot; +
+                            matchingTypes + &quot;. Use exact name for clarity.&quot;
+            );
+        }
+
+        // No matches found
+<span class="nc" id="L108">        String availableTypes = Arrays.stream(values())</span>
+<span class="nc" id="L109">                .map(t -&gt; t.displayName)</span>
+<span class="nc" id="L110">                .collect(Collectors.joining(&quot;, &quot;));</span>
+<span class="nc" id="L111">        throw new IllegalArgumentException(</span>
+                &quot;Unknown algorithm: '&quot; + algorithmName + &quot;'. Available: &quot; + availableTypes
+        );
+    }
+
+    @Override
+    public String toString() {
+<span class="nc" id="L118">        return displayName;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

@@ -1,0 +1,437 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>CrossValidator.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Java Sentiment Analysis</a> &gt; <a href="index.source.html" class="el_package">sentiment.models</a> &gt; <span class="el_source">CrossValidator.java</span></div><h1>CrossValidator.java</h1><pre class="source lang-java linenums">package sentiment.models;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import weka.classifiers.functions.SMO;
+import weka.classifiers.Evaluation;
+import weka.core.Instances;
+import sentiment.preprocessing.TextPreprocessor;
+import sentiment.preprocessing.WekaInstancesConverter;
+
+import java.util.Random;
+
+/**
+ * Thread-safe cross-validation utility for sentiment classifiers.
+ *
+ * ARCHITECTURAL DECISION:
+ * ======================
+ * Cross-validation is separated from the main classifier because:
+ *
+ * 1. Thread Safety: Creates independent classifier instances per fold,
+ *    avoiding concurrent training conflicts with the main classifier
+ *
+ * 2. State Isolation: Each fold gets a fresh classifier instance,
+ *    preventing state pollution between folds
+ *
+ * 3. Template Pattern Compliance: Doesn't bypass the training template's
+ *    state machine and locking mechanisms
+ *
+ * 4. Separation of Concerns: Cross-validation is a model evaluation technique,
+ *    not a core classification operation
+ *
+ * USAGE:
+ * ======
+ * &lt;pre&gt;
+ * CrossValidator cvUtil = new CrossValidator(preprocessor, converter);
+ * CrossValidationResult result = cvUtil.performCrossValidation(data, 10);
+ * System.out.println(result.getSummary());
+ * &lt;/pre&gt;
+ *
+ * THREAD SAFETY:
+ * ==============
+ * ✅ Each fold creates its own classifier instance
+ * ✅ No shared mutable state between folds
+ * ✅ Safe to run multiple cross-validations concurrently
+ */
+public class CrossValidator {
+
+<span class="nc" id="L48">    private static final Logger logger = LoggerFactory.getLogger(CrossValidator.class);</span>
+
+    private final TextPreprocessor preprocessor;
+    private final WekaInstancesConverter converter;
+
+    /**
+     * Creates a new cross-validation utility.
+     *
+     * @param preprocessor Text preprocessor for feature extraction
+     * @param converter Weka instances converter for data transformation
+     */
+<span class="nc" id="L59">    public CrossValidator(TextPreprocessor preprocessor, WekaInstancesConverter converter) {</span>
+<span class="nc bnc" id="L60" title="All 4 branches missed.">        if (preprocessor == null || converter == null) {</span>
+<span class="nc" id="L61">            throw new IllegalArgumentException(&quot;Preprocessor and converter cannot be null&quot;);</span>
+        }
+<span class="nc" id="L63">        this.preprocessor = preprocessor;</span>
+<span class="nc" id="L64">        this.converter = converter;</span>
+
+<span class="nc" id="L66">        logger.info(&quot;Created CrossValidationUtil - thread-safe fold isolation enabled&quot;);</span>
+<span class="nc" id="L67">    }</span>
+
+    /**
+     * Performs stratified k-fold cross-validation on the given dataset.
+     *
+     * THREAD SAFETY: This method is thread-safe. Each fold creates an independent
+     * classifier instance, so multiple concurrent cross-validations are safe.
+     *
+     * @param data Training data for cross-validation
+     * @param numFolds Number of folds (typically 5 or 10)
+     * @param randomSeed Random seed for reproducibility
+     * @return Cross-validation results with per-fold and aggregate metrics
+     * @throws Exception if validation fails
+     */
+    public CrossValidationResult performCrossValidation(Instances data, int numFolds, long randomSeed)
+            throws Exception {
+
+<span class="nc" id="L84">        validateInputs(data, numFolds);</span>
+
+<span class="nc" id="L86">        logger.info(&quot;Starting {}-fold cross-validation on {} instances (seed={})&quot;,</span>
+<span class="nc" id="L87">                numFolds, data.numInstances(), randomSeed);</span>
+
+        // Prepare stratified folds
+<span class="nc" id="L90">        Instances shuffledData = prepareShuffledData(data, numFolds, randomSeed);</span>
+<span class="nc" id="L91">        Random random = new Random(randomSeed);</span>
+
+        // Track metrics for each fold
+<span class="nc" id="L94">        double[] foldAccuracies = new double[numFolds];</span>
+<span class="nc" id="L95">        double[] foldMacroF1s = new double[numFolds];</span>
+<span class="nc" id="L96">        long[] foldTrainingTimes = new long[numFolds];</span>
+<span class="nc" id="L97">        long totalCVTime = 0;</span>
+
+        // Process each fold independently
+<span class="nc bnc" id="L100" title="All 2 branches missed.">        for (int fold = 0; fold &lt; numFolds; fold++) {</span>
+<span class="nc" id="L101">            logger.info(&quot;Processing fold {}/{}&quot;, fold + 1, numFolds);</span>
+<span class="nc" id="L102">            long foldStartTime = System.currentTimeMillis();</span>
+
+            // Create train/test split for this fold
+<span class="nc" id="L105">            Instances trainSet = shuffledData.trainCV(numFolds, fold, random);</span>
+<span class="nc" id="L106">            Instances testSet = shuffledData.testCV(numFolds, fold);</span>
+
+            // ✅ CRITICAL: Create independent classifier for this fold
+            // Each fold gets its own SMO instance - no shared state!
+<span class="nc" id="L110">            SMO foldClassifier = createAndTrainFoldClassifier(trainSet, fold + 1);</span>
+
+            // Record training time
+<span class="nc" id="L113">            long trainingTime = System.currentTimeMillis() - foldStartTime;</span>
+<span class="nc" id="L114">            foldTrainingTimes[fold] = trainingTime;</span>
+
+            // Evaluate on test set
+<span class="nc" id="L117">            FoldMetrics metrics = evaluateFold(foldClassifier, trainSet, testSet, fold + 1);</span>
+<span class="nc" id="L118">            foldAccuracies[fold] = metrics.accuracy;</span>
+<span class="nc" id="L119">            foldMacroF1s[fold] = metrics.macroF1;</span>
+
+            // Track total time
+<span class="nc" id="L122">            long foldTotalTime = System.currentTimeMillis() - foldStartTime;</span>
+<span class="nc" id="L123">            totalCVTime += foldTotalTime;</span>
+
+<span class="nc" id="L125">            String accuracy = String.format(&quot;%.3f&quot;, foldAccuracies[fold]);</span>
+<span class="nc" id="L126">            String macroF1 = String.format(&quot;%.3f&quot;, foldMacroF1s[fold]);</span>
+<span class="nc" id="L127">            logger.info(&quot;Fold {}/{} complete: accuracy={}, macro-F1={}, time={}ms&quot;,</span>
+<span class="nc" id="L128">                    fold + 1, numFolds, accuracy, macroF1, foldTotalTime);</span>
+        }
+
+        // Calculate aggregate statistics
+<span class="nc" id="L132">        CrossValidationResult result = aggregateResults(</span>
+                numFolds, foldAccuracies, foldMacroF1s, foldTrainingTimes,
+                totalCVTime, randomSeed);
+
+<span class="nc" id="L136">        String accuracy = String.format(&quot;%.3f±%.3f&quot;, result.avgAccuracy, result.stdAccuracy);</span>
+<span class="nc" id="L137">        String macroF1 = String.format(&quot;%.3f±%.3f&quot;, result.avgMacroF1, result.stdMacroF1);</span>
+<span class="nc" id="L138">        logger.info(&quot;Cross-validation complete: accuracy={}, macro-F1={}, total={}ms&quot;,</span>
+<span class="nc" id="L139">                accuracy, macroF1, totalCVTime);</span>
+
+<span class="nc" id="L141">        return result;</span>
+    }
+
+    /**
+     * Convenience method with default random seed.
+     */
+    public CrossValidationResult performCrossValidation(Instances data, int numFolds)
+            throws Exception {
+<span class="nc" id="L149">        return performCrossValidation(data, numFolds, 42L);</span>
+    }
+
+    // ==================== PRIVATE HELPER METHODS ====================
+
+    private void validateInputs(Instances data, int numFolds) {
+<span class="nc bnc" id="L155" title="All 4 branches missed.">        if (data == null || data.numInstances() == 0) {</span>
+<span class="nc" id="L156">            throw new IllegalArgumentException(&quot;Data cannot be null or empty&quot;);</span>
+        }
+
+<span class="nc bnc" id="L159" title="All 4 branches missed.">        if (numFolds &lt; 2 || numFolds &gt; data.numInstances()) {</span>
+<span class="nc" id="L160">            throw new IllegalArgumentException(</span>
+<span class="nc" id="L161">                    String.format(&quot;Invalid numFolds=%d for dataset with %d instances&quot;,</span>
+<span class="nc" id="L162">                            numFolds, data.numInstances()));</span>
+        }
+
+<span class="nc bnc" id="L165" title="All 2 branches missed.">        if (data.classIndex() == -1) {</span>
+<span class="nc" id="L166">            throw new IllegalArgumentException(&quot;Data must have a class attribute set&quot;);</span>
+        }
+<span class="nc" id="L168">    }</span>
+
+    private Instances prepareShuffledData(Instances data, int numFolds, long randomSeed) {
+<span class="nc" id="L171">        logger.debug(&quot;Preparing stratified folds with seed={}&quot;, randomSeed);</span>
+
+<span class="nc" id="L173">        Instances shuffledData = new Instances(data);</span>
+<span class="nc" id="L174">        Random random = new Random(randomSeed);</span>
+<span class="nc" id="L175">        shuffledData.randomize(random);</span>
+
+        // Stratify to maintain class distribution in folds
+<span class="nc bnc" id="L178" title="All 2 branches missed.">        if (numFolds &lt;= data.numInstances()) {</span>
+<span class="nc" id="L179">            shuffledData.stratify(numFolds);</span>
+<span class="nc" id="L180">            logger.debug(&quot;✅ Data stratified into {} folds&quot;, numFolds);</span>
+        } else {
+<span class="nc" id="L182">            logger.warn(&quot;⚠️ Cannot stratify: numFolds ({}) &gt; instances ({})&quot;,</span>
+<span class="nc" id="L183">                    numFolds, data.numInstances());</span>
+        }
+
+<span class="nc" id="L186">        return shuffledData;</span>
+    }
+
+    /**
+     * Creates and trains an independent SMO classifier for a single fold.
+     *
+     * ✅ THREAD SAFETY: Each fold gets its own classifier instance.
+     * No shared state with other folds or the main classifier.
+     */
+    private SMO createAndTrainFoldClassifier(Instances trainSet, int foldNumber) throws Exception {
+<span class="nc" id="L196">        logger.debug(&quot;Training fold {} classifier on {} instances&quot;,</span>
+<span class="nc" id="L197">                foldNumber, trainSet.numInstances());</span>
+
+        // Create fresh SMO instance for this fold
+<span class="nc" id="L200">        SMO foldSMO = new SMO();</span>
+
+        // Configure parameters (same logic as SVMClassifier)
+<span class="nc" id="L203">        double complexityC = calculateOptimalC(trainSet.numInstances());</span>
+<span class="nc" id="L204">        foldSMO.setC(complexityC);</span>
+<span class="nc" id="L205">        logger.trace(&quot;  Fold {} C = {}&quot;, foldNumber, complexityC);</span>
+
+<span class="nc" id="L207">        double epsilon = calculateOptimalEpsilon(trainSet.numInstances());</span>
+<span class="nc" id="L208">        foldSMO.setEpsilon(epsilon);</span>
+<span class="nc" id="L209">        logger.trace(&quot;  Fold {} epsilon = {}&quot;, foldNumber, epsilon);</span>
+
+<span class="nc" id="L211">        foldSMO.setFilterType(new weka.core.SelectedTag(SMO.FILTER_NORMALIZE, SMO.TAGS_FILTER));</span>
+<span class="nc" id="L212">        logger.trace(&quot;  Fold {} normalization enabled&quot;, foldNumber);</span>
+
+        // Train the classifier
+<span class="nc" id="L215">        foldSMO.buildClassifier(trainSet);</span>
+<span class="nc" id="L216">        logger.debug(&quot;✅ Fold {} classifier trained successfully&quot;, foldNumber);</span>
+
+<span class="nc" id="L218">        return foldSMO;</span>
+    }
+
+    private FoldMetrics evaluateFold(SMO classifier, Instances trainStructure,
+                                     Instances testSet, int foldNumber) throws Exception {
+<span class="nc" id="L223">        logger.debug(&quot;Evaluating fold {} on {} test instances&quot;, foldNumber, testSet.numInstances());</span>
+
+<span class="nc" id="L225">        Evaluation evaluation = new Evaluation(trainStructure);</span>
+<span class="nc" id="L226">        evaluation.evaluateModel(classifier, testSet);</span>
+
+<span class="nc" id="L228">        double accuracy = evaluation.pctCorrect() / 100.0;</span>
+
+        // Calculate macro-averaged F1
+<span class="nc" id="L231">        double foldF1Sum = 0.0;</span>
+<span class="nc" id="L232">        int numClasses = testSet.classAttribute().numValues();</span>
+<span class="nc bnc" id="L233" title="All 2 branches missed.">        for (int i = 0; i &lt; numClasses; i++) {</span>
+<span class="nc" id="L234">            double f1 = evaluation.fMeasure(i);</span>
+<span class="nc bnc" id="L235" title="All 2 branches missed.">            foldF1Sum += Double.isNaN(f1) ? 0.0 : f1;</span>
+        }
+<span class="nc" id="L237">        double macroF1 = foldF1Sum / numClasses;</span>
+
+<span class="nc" id="L239">        String accuracyStr = String.format(&quot;%.3f&quot;, accuracy);</span>
+<span class="nc" id="L240">        String macroF1Str = String.format(&quot;%.3f&quot;, macroF1);</span>
+<span class="nc" id="L241">        logger.debug(&quot;✅ Fold {} evaluation complete: accuracy={}, macro-F1={}&quot;,</span>
+<span class="nc" id="L242">                foldNumber, accuracyStr, macroF1Str);</span>
+
+<span class="nc" id="L244">        return new FoldMetrics(accuracy, macroF1);</span>
+    }
+
+    private CrossValidationResult aggregateResults(int numFolds, double[] foldAccuracies,
+                                                   double[] foldMacroF1s, long[] foldTrainingTimes,
+                                                   long totalCVTime, long randomSeed) {
+
+<span class="nc" id="L251">        double avgAccuracy = calculateMean(foldAccuracies);</span>
+<span class="nc" id="L252">        double stdAccuracy = calculateStdDev(foldAccuracies, avgAccuracy);</span>
+
+<span class="nc" id="L254">        double avgMacroF1 = calculateMean(foldMacroF1s);</span>
+<span class="nc" id="L255">        double stdMacroF1 = calculateStdDev(foldMacroF1s, avgMacroF1);</span>
+
+<span class="nc" id="L257">        long avgTrainingTime = calculateMean(foldTrainingTimes);</span>
+
+<span class="nc" id="L259">        return new CrossValidationResult(</span>
+                numFolds,
+                foldAccuracies,
+                foldMacroF1s,
+                foldTrainingTimes,
+                avgAccuracy,
+                stdAccuracy,
+                avgMacroF1,
+                stdMacroF1,
+                avgTrainingTime,
+                totalCVTime,
+                randomSeed
+        );
+    }
+
+    // Statistical calculations
+    private double calculateMean(double[] values) {
+<span class="nc" id="L276">        double sum = 0.0;</span>
+<span class="nc bnc" id="L277" title="All 2 branches missed.">        for (double value : values) {</span>
+<span class="nc" id="L278">            sum += value;</span>
+        }
+<span class="nc" id="L280">        return sum / values.length;</span>
+    }
+
+    private long calculateMean(long[] values) {
+<span class="nc" id="L284">        long sum = 0;</span>
+<span class="nc bnc" id="L285" title="All 2 branches missed.">        for (long value : values) {</span>
+<span class="nc" id="L286">            sum += value;</span>
+        }
+<span class="nc" id="L288">        return sum / values.length;</span>
+    }
+
+    private double calculateStdDev(double[] values, double mean) {
+<span class="nc bnc" id="L292" title="All 2 branches missed.">        if (values.length &lt; 2) return 0.0;</span>
+
+<span class="nc" id="L294">        double sumSquaredDiffs = 0.0;</span>
+<span class="nc bnc" id="L295" title="All 2 branches missed.">        for (double value : values) {</span>
+<span class="nc" id="L296">            double diff = value - mean;</span>
+<span class="nc" id="L297">            sumSquaredDiffs += diff * diff;</span>
+        }
+
+<span class="nc" id="L300">        return Math.sqrt(sumSquaredDiffs / (values.length - 1));</span>
+    }
+
+    // Parameter calculation (same as SVMClassifier)
+    private double calculateOptimalC(int numInstances) {
+<span class="nc bnc" id="L305" title="All 2 branches missed.">        if (numInstances &lt; 1000) return 0.5;</span>
+<span class="nc bnc" id="L306" title="All 2 branches missed.">        else if (numInstances &lt; 10000) return 1.0;</span>
+<span class="nc" id="L307">        else return 2.0;</span>
+    }
+
+    private double calculateOptimalEpsilon(int numInstances) {
+<span class="nc bnc" id="L311" title="All 2 branches missed.">        if (numInstances &lt; 1000) return 1.0E-10;</span>
+<span class="nc" id="L312">        else return 1.0E-12;</span>
+    }
+
+    // ==================== INNER CLASSES ====================
+
+    /**
+     * Metrics for a single fold
+     */
+    private static class FoldMetrics {
+        final double accuracy;
+        final double macroF1;
+
+<span class="nc" id="L324">        FoldMetrics(double accuracy, double macroF1) {</span>
+<span class="nc" id="L325">            this.accuracy = accuracy;</span>
+<span class="nc" id="L326">            this.macroF1 = macroF1;</span>
+<span class="nc" id="L327">        }</span>
+    }
+
+    /**
+     * Complete cross-validation results
+     */
+    public static class CrossValidationResult {
+        public final int numFolds;
+        public final double[] foldAccuracies;
+        public final double[] foldMacroF1s;
+        public final long[] foldTrainingTimes;
+
+        public final double avgAccuracy;
+        public final double stdAccuracy;
+        public final double avgMacroF1;
+        public final double stdMacroF1;
+        public final long avgTrainingTimeMs;
+        public final long totalCVTimeMs;
+        public final long randomSeed;
+
+        public CrossValidationResult(
+                int numFolds,
+                double[] foldAccuracies,
+                double[] foldMacroF1s,
+                long[] foldTrainingTimes,
+                double avgAccuracy,
+                double stdAccuracy,
+                double avgMacroF1,
+                double stdMacroF1,
+                long avgTrainingTimeMs,
+                long totalCVTimeMs,
+<span class="nc" id="L358">                long randomSeed) {</span>
+
+<span class="nc" id="L360">            this.numFolds = numFolds;</span>
+<span class="nc" id="L361">            this.foldAccuracies = foldAccuracies.clone();</span>
+<span class="nc" id="L362">            this.foldMacroF1s = foldMacroF1s.clone();</span>
+<span class="nc" id="L363">            this.foldTrainingTimes = foldTrainingTimes.clone();</span>
+<span class="nc" id="L364">            this.avgAccuracy = avgAccuracy;</span>
+<span class="nc" id="L365">            this.stdAccuracy = stdAccuracy;</span>
+<span class="nc" id="L366">            this.avgMacroF1 = avgMacroF1;</span>
+<span class="nc" id="L367">            this.stdMacroF1 = stdMacroF1;</span>
+<span class="nc" id="L368">            this.avgTrainingTimeMs = avgTrainingTimeMs;</span>
+<span class="nc" id="L369">            this.totalCVTimeMs = totalCVTimeMs;</span>
+<span class="nc" id="L370">            this.randomSeed = randomSeed;</span>
+<span class="nc" id="L371">        }</span>
+
+
+        public String getSummary() {
+<span class="nc" id="L375">            String nl = System.lineSeparator();</span>
+<span class="nc" id="L376">            StringBuilder summary = new StringBuilder();</span>
+<span class="nc" id="L377">            summary.append(String.format(&quot;=== %d-Fold Cross-Validation Results ===%s&quot;, numFolds, nl));</span>
+<span class="nc" id="L378">            summary.append(String.format(&quot;Random Seed: %d%s%s&quot;, randomSeed, nl, nl));</span>
+
+<span class="nc" id="L380">            summary.append(&quot;AGGREGATE METRICS:&quot;).append(nl);</span>
+<span class="nc" id="L381">            summary.append(String.format(&quot;  Accuracy:  %.3f ± %.3f%s&quot;, avgAccuracy, stdAccuracy, nl));</span>
+<span class="nc" id="L382">            summary.append(String.format(&quot;  Macro F1:  %.3f ± %.3f%s&quot;, avgMacroF1, stdMacroF1, nl));</span>
+<span class="nc" id="L383">            summary.append(String.format(&quot;  Avg Training Time: %d ms%s&quot;, avgTrainingTimeMs, nl));</span>
+<span class="nc" id="L384">            summary.append(String.format(&quot;  Total CV Time: %d ms (%.2f sec)%s%s&quot;,</span>
+<span class="nc" id="L385">                    totalCVTimeMs, totalCVTimeMs / 1000.0, nl, nl));</span>
+
+<span class="nc" id="L387">            summary.append(&quot;PER-FOLD BREAKDOWN:&quot;).append(nl);</span>
+<span class="nc bnc" id="L388" title="All 2 branches missed.">            for (int i = 0; i &lt; numFolds; i++) {</span>
+<span class="nc" id="L389">                summary.append(String.format(&quot;  Fold %d: accuracy=%.3f, F1=%.3f, time=%dms%s&quot;,</span>
+<span class="nc" id="L390">                        i + 1, foldAccuracies[i], foldMacroF1s[i], foldTrainingTimes[i], nl));</span>
+            }
+
+<span class="nc" id="L393">            return summary.toString();</span>
+        }
+
+        public boolean isConsistent(double maxStdDev) {
+<span class="nc bnc" id="L397" title="All 4 branches missed.">            return stdAccuracy &lt;= maxStdDev &amp;&amp; stdMacroF1 &lt;= maxStdDev;</span>
+        }
+
+        public int getBestFold() {
+<span class="nc" id="L401">            int bestFold = 0;</span>
+<span class="nc" id="L402">            double bestAccuracy = foldAccuracies[0];</span>
+
+<span class="nc bnc" id="L404" title="All 2 branches missed.">            for (int i = 1; i &lt; numFolds; i++) {</span>
+<span class="nc bnc" id="L405" title="All 2 branches missed.">                if (foldAccuracies[i] &gt; bestAccuracy) {</span>
+<span class="nc" id="L406">                    bestAccuracy = foldAccuracies[i];</span>
+<span class="nc" id="L407">                    bestFold = i;</span>
+                }
+            }
+
+<span class="nc" id="L411">            return bestFold;</span>
+        }
+
+        public int getWorstFold() {
+<span class="nc" id="L415">            int worstFold = 0;</span>
+<span class="nc" id="L416">            double worstAccuracy = foldAccuracies[0];</span>
+
+<span class="nc bnc" id="L418" title="All 2 branches missed.">            for (int i = 1; i &lt; numFolds; i++) {</span>
+<span class="nc bnc" id="L419" title="All 2 branches missed.">                if (foldAccuracies[i] &lt; worstAccuracy) {</span>
+<span class="nc" id="L420">                    worstAccuracy = foldAccuracies[i];</span>
+<span class="nc" id="L421">                    worstFold = i;</span>
+                }
+            }
+
+<span class="nc" id="L425">            return worstFold;</span>
+        }
+
+        @Override
+        public String toString() {
+<span class="nc" id="L430">            return String.format(</span>
+                    &quot;CrossValidationResult{folds=%d, accuracy=%.3f±%.3f, F1=%.3f±%.3f, time=%dms}&quot;,
+<span class="nc" id="L432">                    numFolds, avgAccuracy, stdAccuracy, avgMacroF1, stdMacroF1, totalCVTimeMs</span>
+            );
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

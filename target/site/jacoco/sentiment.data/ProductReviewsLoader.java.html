@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ProductReviewsLoader.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Java Sentiment Analysis</a> &gt; <a href="index.source.html" class="el_package">sentiment.data</a> &gt; <span class="el_source">ProductReviewsLoader.java</span></div><h1>ProductReviewsLoader.java</h1><pre class="source lang-java linenums">package sentiment.data;
+
+import org.apache.commons.csv.CSVRecord;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import java.util.List;
+
+/**
+ * Product Reviews Dataset Loader - simplified to handle CSV only.
+ * Returns completely raw, unprocessed data with only basic structural validation.
+ * Supports both rating-based (1-5 stars) and sentiment-based labels.
+ */
+<span class="fc" id="L13">class ProductReviewsLoader extends CsvLoaderBase {</span>
+
+<span class="fc" id="L15">    private static final Logger logger = LoggerFactory.getLogger(ProductReviewsLoader.class);</span>
+    private static final String DATASET_TYPE = &quot;Product Reviews&quot;;
+<span class="fc" id="L17">    private static final String[] SUPPORTED_EXTENSIONS = {&quot;.csv&quot;};</span>
+
+    @Override
+    protected Dataset processRecord(CSVRecord record, DatasetLoadingStats stats, List&lt;String&gt; headers) {
+
+<span class="fc" id="L22">        int recordNumber = (int) record.getRecordNumber();</span>
+
+        // Extract text field using centralized mapping
+<span class="fc" id="L25">        FieldExtractor.ExtractionResult&lt;String&gt; textResult =</span>
+<span class="fc" id="L26">                FieldExtractor.extractString(record, FieldExtractor.TEXT_FIELDS, 0);</span>
+
+        // Try to extract numeric rating first (1-5 stars) using centralized mapping
+<span class="fc" id="L29">        FieldExtractor.ExtractionResult&lt;Double&gt; ratingResult =</span>
+<span class="fc" id="L30">                FieldExtractor.extractDouble(record, FieldExtractor.PRODUCT_RATING_FIELDS, 1);</span>
+
+<span class="pc bpc" id="L32" title="1 of 2 branches missed.">        String reviewText = textResult.isPresent() ? textResult.getValue() : null;</span>
+<span class="pc bpc" id="L33" title="1 of 2 branches missed.">        Double rating = ratingResult.isPresent() ? ratingResult.getValue() : null;</span>
+<span class="fc" id="L34">        String sentimentLabel = null;</span>
+
+        // If no numeric rating found, try sentiment labels
+<span class="pc bpc" id="L37" title="1 of 2 branches missed.">        if (!ratingResult.isPresent()) {</span>
+<span class="fc" id="L38">            FieldExtractor.ExtractionResult&lt;String&gt; sentimentResult =</span>
+<span class="fc" id="L39">                    FieldExtractor.extractString(record, FieldExtractor.SENTIMENT_FIELDS, 1);</span>
+<span class="pc bpc" id="L40" title="2 of 4 branches missed.">            sentimentLabel = sentimentResult != null &amp;&amp; sentimentResult.isPresent() ?</span>
+<span class="pc" id="L41">                    sentimentResult.getValue() : null;</span>
+        }
+
+        // Validate text first
+<span class="fc" id="L45">        DatasetValidationUtils.ValidationResult textValidation =</span>
+<span class="fc" id="L46">                DatasetValidationUtils.validateRawText(reviewText, DATASET_TYPE, recordNumber, stats);</span>
+<span class="pc bpc" id="L47" title="1 of 2 branches missed.">        if (!textValidation.isValid()) {</span>
+<span class="nc" id="L48">            return null;</span>
+        }
+
+<span class="fc" id="L51">        String validatedText = textValidation.getText();</span>
+
+        // Handle rating-based sentiment (custom logic)
+<span class="pc bpc" id="L54" title="1 of 2 branches missed.">        if (rating != null) {</span>
+<span class="nc bnc" id="L55" title="All 4 branches missed.">            if (rating &lt; 1.0 || rating &gt; 5.0) {</span>
+<span class="nc" id="L56">                stats.incrementInvalidSentimentFormat();</span>
+<span class="nc" id="L57">                logger.debug(&quot;Invalid rating {} for record {} in {}&quot;, rating, recordNumber, DATASET_TYPE);</span>
+<span class="nc" id="L58">                return null;</span>
+            }
+
+<span class="nc" id="L61">            Dataset.SentimentLabel sentiment = convertRatingToSentiment(rating);</span>
+<span class="nc" id="L62">            double confidence = calculateConfidenceFromRating(rating);</span>
+
+<span class="nc" id="L64">            return new Dataset.Builder(validatedText, sentiment)</span>
+<span class="nc" id="L65">                    .source(&quot;product_reviews&quot;)</span>
+<span class="nc" id="L66">                    .originalLabel(String.valueOf(rating))</span>
+<span class="nc" id="L67">                    .timestamp(java.time.LocalDateTime.now())</span>
+<span class="nc" id="L68">                    .confidence(confidence)</span>
+<span class="nc" id="L69">                    .build();</span>
+        }
+
+        // Handle direct sentiment labeling (standard path - use helper)
+<span class="pc bpc" id="L73" title="1 of 2 branches missed.">        if (sentimentLabel != null) {</span>
+<span class="fc" id="L74">            return validateAndBuild(reviewText, sentimentLabel, recordNumber, stats, &quot;product_reviews&quot;, DATASET_TYPE);</span>
+        }
+
+        // Missing both rating and sentiment
+<span class="nc" id="L78">        stats.incrementInvalidSentimentFormat();</span>
+<span class="nc" id="L79">        logger.debug(&quot;Missing both rating and sentiment for record {} in {}&quot;, recordNumber, DATASET_TYPE);</span>
+<span class="nc" id="L80">        return null;</span>
+    }
+
+    /**
+     * Convert star rating to sentiment label
+     */
+    private Dataset.SentimentLabel convertRatingToSentiment(double rating) {
+<span class="nc bnc" id="L87" title="All 2 branches missed.">        if (rating &lt;= 2.0) return Dataset.SentimentLabel.NEGATIVE;</span>
+<span class="nc bnc" id="L88" title="All 2 branches missed.">        if (rating &gt;= 4.0) return Dataset.SentimentLabel.POSITIVE;</span>
+<span class="nc" id="L89">        return Dataset.SentimentLabel.NEUTRAL; // 3-star ratings</span>
+    }
+
+    /**
+     * Calculate confidence based on rating extremity
+     */
+    private double calculateConfidenceFromRating(double rating) {
+<span class="nc bnc" id="L96" title="All 4 branches missed.">        if (rating == 1.0 || rating == 5.0) return 0.9; // Very confident on extremes</span>
+<span class="nc bnc" id="L97" title="All 4 branches missed.">        if (rating == 2.0 || rating == 4.0) return 0.7; // Moderately confident</span>
+<span class="nc" id="L98">        return 0.5; // 3-star ratings are neutral, less confident</span>
+    }
+
+    @Override
+    protected double getMaxErrorRate() {
+<span class="fc" id="L103">        return 0.4; // Allow up to 40% error rate for product reviews</span>
+    }
+
+    @Override
+    public String[] getSupportedExtensions() {
+<span class="fc" id="L108">        return SUPPORTED_EXTENSIONS.clone();</span>
+    }
+
+    @Override
+    public String getDatasetTypeName() {
+<span class="fc" id="L113">        return DATASET_TYPE;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

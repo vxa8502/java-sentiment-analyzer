@@ -1,0 +1,12 @@
+sentiment/preprocessing/AdvancedTokenizerTest.class
+sentiment/evaluation/CalibrationMetricsTest.class
+sentiment/data/DatasetTest.class
+sentiment/evaluation/ClassifierEvaluationResultTest.class
+sentiment/data/DatasetLoaderRegistryTest.class
+sentiment/preprocessing/ContractionExpanderTest.class
+sentiment/preprocessing/TextPreprocessorTest.class
+sentiment/models/SVMClassifierTest.class
+sentiment/models/SVMBatchPredictorOptimizationTest.class
+sentiment/evaluation/StratifiedDataSplitterTest.class
+sentiment/evaluation/AUCCalculatorTest.class
+sentiment/api/SentimentControllerIntegrationTest.class

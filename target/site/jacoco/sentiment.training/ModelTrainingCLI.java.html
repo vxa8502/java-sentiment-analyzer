@@ -1,0 +1,347 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ModelTrainingCLI.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Java Sentiment Analysis</a> &gt; <a href="index.source.html" class="el_package">sentiment.training</a> &gt; <span class="el_source">ModelTrainingCLI.java</span></div><h1>ModelTrainingCLI.java</h1><pre class="source lang-java linenums">package sentiment.training;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.CommandLineRunner;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.context.annotation.ComponentScan;
+import org.springframework.context.annotation.Profile;
+import sentiment.models.AlgorithmType;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.Arrays;
+import java.util.List;
+
+/**
+ * Standalone application for pre-training sentiment analysis models.
+ *
+ * PURPOSE:
+ * ========
+ * This class provides a command-line interface for training models offline,
+ * before application deployment. This approach dramatically improves production
+ * startup time and enables better model lifecycle management.
+ *
+ * USAGE:
+ * ======
+ * Basic usage (trains all models with defaults):
+ *   java -cp sentiment-analyzer.jar sentiment.training.ModelTrainingCLI
+ *
+ * Custom data path:
+ *   java -cp sentiment-analyzer.jar sentiment.training.ModelTrainingCLI \
+ *     --data ./custom/dataset.csv
+ *
+ * Specific algorithm:
+ *   java -cp sentiment-analyzer.jar sentiment.training.ModelTrainingCLI \
+ *     --algorithm svm --data ./data/Reviews.csv --output ./models/
+ *
+ * Limit training samples:
+ *   java -cp sentiment-analyzer.jar sentiment.training.ModelTrainingCLI \
+ *     --max-samples 50000
+ *
+ * Train multiple algorithms:
+ *   java -cp sentiment-analyzer.jar sentiment.training.ModelTrainingCLI \
+ *     --algorithms svm,naive_bayes,random_forest
+ *
+ * MAVEN EXECUTION:
+ * ================
+ * mvn exec:java -Dexec.mainClass=&quot;sentiment.training.ModelTrainingCLI&quot; \
+ *   -Dexec.args=&quot;--data ./data/datasets/Reviews.csv --output ./models/&quot;
+ *
+ * INTEGRATION WITH BUILD:
+ * =======================
+ * Add to pom.xml for automatic model training during build:
+ * &lt;pre&gt;
+ * {@code
+ * &lt;plugin&gt;
+ *   &lt;groupId&gt;org.codehaus.mojo&lt;/groupId&gt;
+ *   &lt;artifactId&gt;exec-maven-plugin&lt;/artifactId&gt;
+ *   &lt;version&gt;3.1.0&lt;/version&gt;
+ *   &lt;executions&gt;
+ *     &lt;execution&gt;
+ *       &lt;id&gt;train-models&lt;/id&gt;
+ *       &lt;phase&gt;process-classes&lt;/phase&gt;
+ *       &lt;goals&gt;
+ *         &lt;goal&gt;java&lt;/goal&gt;
+ *       &lt;/goals&gt;
+ *       &lt;configuration&gt;
+ *         &lt;mainClass&gt;sentiment.training.ModelTrainingCLI&lt;/mainClass&gt;
+ *         &lt;arguments&gt;
+ *           &lt;argument&gt;--data&lt;/argument&gt;
+ *           &lt;argument&gt;./data/datasets/Reviews.csv&lt;/argument&gt;
+ *           &lt;argument&gt;--output&lt;/argument&gt;
+ *           &lt;argument&gt;./models/&lt;/argument&gt;
+ *         &lt;/arguments&gt;
+ *       &lt;/configuration&gt;
+ *     &lt;/execution&gt;
+ *   &lt;/executions&gt;
+ * &lt;/plugin&gt;
+ * }
+ * &lt;/pre&gt;
+ */
+@SpringBootApplication
+@ComponentScan(basePackages = {&quot;sentiment&quot;})
+@Profile(&quot;!test&quot;)
+public class ModelTrainingCLI implements CommandLineRunner {
+
+<span class="nc" id="L89">    private static final Logger logger = LoggerFactory.getLogger(ModelTrainingCLI.class);</span>
+
+    // Default configuration
+    private static final String DEFAULT_DATA_PATH = &quot;./data/datasets/Reviews.csv&quot;;
+    private static final String DEFAULT_OUTPUT_DIR = &quot;./models&quot;;
+    private static final int DEFAULT_MAX_SAMPLES = 10000;
+
+    private final ModelTrainer trainer;
+
+<span class="nc" id="L98">    public ModelTrainingCLI(ModelTrainer trainer) {</span>
+<span class="nc" id="L99">        this.trainer = trainer;</span>
+<span class="nc" id="L100">    }</span>
+
+    public static void main(String[] args) {
+<span class="nc" id="L103">        System.setProperty(&quot;spring.main.banner-mode&quot;, &quot;off&quot;);</span>
+<span class="nc" id="L104">        System.setProperty(&quot;logging.level.org.springframework&quot;, &quot;ERROR&quot;);</span>
+<span class="nc" id="L105">        System.setProperty(&quot;spring.main.web-application-type&quot;, &quot;none&quot;);</span>
+<span class="nc" id="L106">        System.setProperty(&quot;spring.profiles.active&quot;, &quot;training&quot;);</span>
+<span class="nc" id="L107">        SpringApplication.run(ModelTrainingCLI.class, args);</span>
+<span class="nc" id="L108">    }</span>
+
+    @Override
+    public void run(String... args) throws Exception {
+        try {
+<span class="nc" id="L113">            logger.info(&quot;========================================&quot;);</span>
+<span class="nc" id="L114">            logger.info(&quot;  Sentiment Model Training Tool&quot;);</span>
+<span class="nc" id="L115">            logger.info(&quot;========================================&quot;);</span>
+
+            // Parse command-line arguments
+<span class="nc" id="L118">            Config config = parseArguments(args);</span>
+
+            // Validate inputs
+<span class="nc" id="L121">            validateConfiguration(config);</span>
+
+            // Train models
+            List&lt;ModelTrainer.TrainingResult&gt; results;
+
+<span class="nc bnc" id="L126" title="All 2 branches missed.">            if (config.singleAlgorithm != null) {</span>
+                // Train single model
+<span class="nc" id="L128">                logger.info(&quot;Training single model: {}&quot;, config.singleAlgorithm.getDisplayName());</span>
+<span class="nc" id="L129">                String outputPath = Paths.get(config.outputDir,</span>
+<span class="nc" id="L130">                        config.singleAlgorithm.name().toLowerCase() + &quot;-model.ser&quot;).toString();</span>
+
+<span class="nc" id="L132">                ModelTrainer.TrainingResult result = trainer.trainAndSave(</span>
+                        config.dataPath,
+                        outputPath,
+                        config.singleAlgorithm,
+                        config.maxSamples
+                );
+
+<span class="nc" id="L139">                results = List.of(result);</span>
+
+<span class="nc" id="L141">            } else {</span>
+                // Train multiple models
+<span class="nc" id="L143">                logger.info(&quot;Training {} models: {}&quot;,</span>
+<span class="nc" id="L144">                        config.algorithms.size(),</span>
+<span class="nc" id="L145">                        config.algorithms.stream()</span>
+<span class="nc" id="L146">                                .map(AlgorithmType::getDisplayName)</span>
+<span class="nc" id="L147">                                .toList());</span>
+
+<span class="nc" id="L149">                results = trainer.trainMultipleModels(</span>
+                        config.dataPath,
+                        config.outputDir,
+                        config.algorithms,
+                        config.maxSamples
+                );
+            }
+
+            // Print summary
+<span class="nc" id="L158">            printSummary(results);</span>
+
+            // Exit with appropriate code
+<span class="nc" id="L161">            boolean allSucceeded = results.stream().allMatch(ModelTrainer.TrainingResult::isSuccess);</span>
+<span class="nc bnc" id="L162" title="All 2 branches missed.">            System.exit(allSucceeded ? 0 : 1);</span>
+
+<span class="nc" id="L164">        } catch (Exception e) {</span>
+<span class="nc" id="L165">            logger.error(&quot;Training failed with error: {}&quot;, e.getMessage(), e);</span>
+<span class="nc" id="L166">            System.err.println(&quot;ERROR: &quot; + e.getMessage());</span>
+<span class="nc" id="L167">            System.exit(1);</span>
+<span class="nc" id="L168">        }</span>
+<span class="nc" id="L169">    }</span>
+
+    private static Config parseArguments(String[] args) {
+<span class="nc" id="L172">        Config config = new Config();</span>
+
+<span class="nc bnc" id="L174" title="All 2 branches missed.">        for (int i = 0; i &lt; args.length; i++) {</span>
+<span class="nc bnc" id="L175" title="All 7 branches missed.">            switch (args[i]) {</span>
+                case &quot;--data&quot;, &quot;-d&quot;:
+<span class="nc bnc" id="L177" title="All 2 branches missed.">                    if (i + 1 &lt; args.length) {</span>
+<span class="nc" id="L178">                        config.dataPath = args[++i];</span>
+                    }
+                    break;
+
+                case &quot;--output&quot;, &quot;-o&quot;:
+<span class="nc bnc" id="L183" title="All 2 branches missed.">                    if (i + 1 &lt; args.length) {</span>
+<span class="nc" id="L184">                        config.outputDir = args[++i];</span>
+                    }
+                    break;
+
+                case &quot;--algorithm&quot;, &quot;-a&quot;:
+<span class="nc bnc" id="L189" title="All 2 branches missed.">                    if (i + 1 &lt; args.length) {</span>
+<span class="nc" id="L190">                        config.singleAlgorithm = parseAlgorithm(args[++i]);</span>
+                    }
+                    break;
+
+                case &quot;--algorithms&quot;:
+<span class="nc bnc" id="L195" title="All 2 branches missed.">                    if (i + 1 &lt; args.length) {</span>
+<span class="nc" id="L196">                        String[] algNames = args[++i].split(&quot;,&quot;);</span>
+<span class="nc" id="L197">                        config.algorithms = Arrays.stream(algNames)</span>
+<span class="nc" id="L198">                                .map(String::trim)</span>
+<span class="nc" id="L199">                                .map(ModelTrainingCLI::parseAlgorithm)</span>
+<span class="nc" id="L200">                                .toList();</span>
+<span class="nc" id="L201">                    }</span>
+                    break;
+
+                case &quot;--max-samples&quot;, &quot;-n&quot;:
+<span class="nc bnc" id="L205" title="All 2 branches missed.">                    if (i + 1 &lt; args.length) {</span>
+<span class="nc" id="L206">                        config.maxSamples = Integer.parseInt(args[++i]);</span>
+                    }
+                    break;
+
+                case &quot;--help&quot;, &quot;-h&quot;:
+<span class="nc" id="L211">                    printUsage();</span>
+<span class="nc" id="L212">                    System.exit(0);</span>
+<span class="nc" id="L213">                    break;</span>
+
+                default:
+<span class="nc" id="L216">                    System.err.println(&quot;Unknown argument: &quot; + args[i]);</span>
+<span class="nc" id="L217">                    printUsage();</span>
+<span class="nc" id="L218">                    System.exit(1);</span>
+            }
+        }
+
+<span class="nc" id="L222">        return config;</span>
+    }
+
+    private static AlgorithmType parseAlgorithm(String name) {
+<span class="nc bnc" id="L226" title="All 5 branches missed.">        return switch (name.toLowerCase()) {</span>
+<span class="nc" id="L227">            case &quot;svm&quot; -&gt; AlgorithmType.SVM;</span>
+<span class="nc" id="L228">            case &quot;naive_bayes&quot;, &quot;nb&quot; -&gt; AlgorithmType.NAIVE_BAYES;</span>
+<span class="nc" id="L229">            case &quot;random_forest&quot;, &quot;rf&quot; -&gt; AlgorithmType.RANDOM_FOREST;</span>
+<span class="nc" id="L230">            case &quot;logistic&quot;, &quot;logistic_regression&quot;, &quot;lr&quot; -&gt; AlgorithmType.LOGISTIC_REGRESSION;</span>
+<span class="nc" id="L231">            default -&gt; throw new IllegalArgumentException(&quot;Unknown algorithm: &quot; + name);</span>
+        };
+    }
+
+    private static void validateConfiguration(Config config) throws Exception {
+        // Check data file exists
+<span class="nc" id="L237">        Path dataPath = Paths.get(config.dataPath);</span>
+<span class="nc bnc" id="L238" title="All 2 branches missed.">        if (!Files.exists(dataPath)) {</span>
+<span class="nc" id="L239">            throw new IllegalArgumentException(&quot;Data file does not exist: &quot; + config.dataPath);</span>
+        }
+
+<span class="nc bnc" id="L242" title="All 2 branches missed.">        if (!Files.isReadable(dataPath)) {</span>
+<span class="nc" id="L243">            throw new IllegalArgumentException(&quot;Data file is not readable: &quot; + config.dataPath);</span>
+        }
+
+        // Create output directory if needed
+<span class="nc" id="L247">        Path outputDir = Paths.get(config.outputDir);</span>
+<span class="nc bnc" id="L248" title="All 2 branches missed.">        if (!Files.exists(outputDir)) {</span>
+<span class="nc" id="L249">            logger.info(&quot;Creating output directory: {}&quot;, config.outputDir);</span>
+<span class="nc" id="L250">            Files.createDirectories(outputDir);</span>
+        }
+
+        // Validate max samples
+<span class="nc bnc" id="L254" title="All 2 branches missed.">        if (config.maxSamples &lt; 0) {</span>
+<span class="nc" id="L255">            throw new IllegalArgumentException(&quot;max-samples must be &gt;= 0&quot;);</span>
+        }
+
+        // If no algorithms specified, use defaults
+<span class="nc bnc" id="L259" title="All 4 branches missed.">        if (config.singleAlgorithm == null &amp;&amp; config.algorithms.isEmpty()) {</span>
+<span class="nc" id="L260">            config.algorithms = Arrays.asList(</span>
+                    AlgorithmType.SVM,
+                    AlgorithmType.NAIVE_BAYES,
+                    AlgorithmType.RANDOM_FOREST
+            );
+<span class="nc" id="L265">            logger.info(&quot;No algorithms specified, using defaults: SVM, Naive Bayes, Random Forest&quot;);</span>
+        }
+<span class="nc" id="L267">    }</span>
+
+    private static void printSummary(List&lt;ModelTrainer.TrainingResult&gt; results) {
+<span class="nc" id="L270">        logger.info(&quot;&quot;);</span>
+<span class="nc" id="L271">        logger.info(&quot;========================================&quot;);</span>
+<span class="nc" id="L272">        logger.info(&quot;  Training Summary&quot;);</span>
+<span class="nc" id="L273">        logger.info(&quot;========================================&quot;);</span>
+
+<span class="nc" id="L275">        int successful = 0;</span>
+<span class="nc" id="L276">        int failed = 0;</span>
+<span class="nc" id="L277">        long totalTrainingTime = 0;</span>
+
+<span class="nc bnc" id="L279" title="All 2 branches missed.">        for (ModelTrainer.TrainingResult result : results) {</span>
+<span class="nc bnc" id="L280" title="All 2 branches missed.">            if (result.isSuccess()) {</span>
+<span class="nc" id="L281">                successful++;</span>
+<span class="nc" id="L282">                totalTrainingTime += result.getTrainingTimeMs();</span>
+<span class="nc" id="L283">                logger.info(&quot;✅ {} - train={}, val={}, test={} (total={}), trained in {:.2f}s, saved to {}&quot;,</span>
+<span class="nc" id="L284">                        result.getAlgorithm().getDisplayName(),</span>
+<span class="nc" id="L285">                        result.getTrainSampleCount(),</span>
+<span class="nc" id="L286">                        result.getValSampleCount(),</span>
+<span class="nc" id="L287">                        result.getTestSampleCount(),</span>
+<span class="nc" id="L288">                        result.getTotalSampleCount(),</span>
+<span class="nc" id="L289">                        result.getTrainingTimeMs() / 1000.0,</span>
+<span class="nc" id="L290">                        result.getOutputPath());</span>
+            } else {
+<span class="nc" id="L292">                failed++;</span>
+<span class="nc" id="L293">                logger.error(&quot;❌ {} - FAILED: {}&quot;,</span>
+<span class="nc" id="L294">                        result.getAlgorithm().getDisplayName(),</span>
+<span class="nc" id="L295">                        result.getErrorMessage());</span>
+            }
+<span class="nc" id="L297">        }</span>
+
+<span class="nc" id="L299">        logger.info(&quot;&quot;);</span>
+<span class="nc" id="L300">        logger.info(&quot;Total: {} successful, {} failed&quot;, successful, failed);</span>
+<span class="nc" id="L301">        logger.info(&quot;Total training time: {:.2f}s&quot;, totalTrainingTime / 1000.0);</span>
+<span class="nc" id="L302">        logger.info(&quot;========================================&quot;);</span>
+<span class="nc" id="L303">    }</span>
+
+    private static void printUsage() {
+<span class="nc" id="L306">        System.out.println(&quot;\nUsage: ModelTrainingCLI [options]&quot;);</span>
+<span class="nc" id="L307">        System.out.println(&quot;\nOptions:&quot;);</span>
+<span class="nc" id="L308">        System.out.println(&quot;  --data, -d &lt;path&gt;           Path to training data CSV file&quot;);</span>
+<span class="nc" id="L309">        System.out.println(&quot;                              (default: &quot; + DEFAULT_DATA_PATH + &quot;)&quot;);</span>
+<span class="nc" id="L310">        System.out.println(&quot;&quot;);</span>
+<span class="nc" id="L311">        System.out.println(&quot;  --output, -o &lt;dir&gt;          Output directory for trained models&quot;);</span>
+<span class="nc" id="L312">        System.out.println(&quot;                              (default: &quot; + DEFAULT_OUTPUT_DIR + &quot;)&quot;);</span>
+<span class="nc" id="L313">        System.out.println(&quot;&quot;);</span>
+<span class="nc" id="L314">        System.out.println(&quot;  --algorithm, -a &lt;name&gt;      Train single algorithm&quot;);</span>
+<span class="nc" id="L315">        System.out.println(&quot;                              Options: svm, naive_bayes, random_forest, logistic&quot;);</span>
+<span class="nc" id="L316">        System.out.println(&quot;&quot;);</span>
+<span class="nc" id="L317">        System.out.println(&quot;  --algorithms &lt;list&gt;         Train multiple algorithms (comma-separated)&quot;);</span>
+<span class="nc" id="L318">        System.out.println(&quot;                              Example: svm,naive_bayes,random_forest&quot;);</span>
+<span class="nc" id="L319">        System.out.println(&quot;&quot;);</span>
+<span class="nc" id="L320">        System.out.println(&quot;  --max-samples, -n &lt;num&gt;     Maximum training samples (0 = use all)&quot;);</span>
+<span class="nc" id="L321">        System.out.println(&quot;                              (default: &quot; + DEFAULT_MAX_SAMPLES + &quot;)&quot;);</span>
+<span class="nc" id="L322">        System.out.println(&quot;&quot;);</span>
+<span class="nc" id="L323">        System.out.println(&quot;  --help, -h                  Show this help message&quot;);</span>
+<span class="nc" id="L324">        System.out.println(&quot;&quot;);</span>
+<span class="nc" id="L325">        System.out.println(&quot;Examples:&quot;);</span>
+<span class="nc" id="L326">        System.out.println(&quot;  # Train all default models&quot;);</span>
+<span class="nc" id="L327">        System.out.println(&quot;  java -jar sentiment-analyzer.jar sentiment.training.ModelTrainingCLI&quot;);</span>
+<span class="nc" id="L328">        System.out.println(&quot;&quot;);</span>
+<span class="nc" id="L329">        System.out.println(&quot;  # Train only SVM with 50k samples&quot;);</span>
+<span class="nc" id="L330">        System.out.println(&quot;  java -jar sentiment-analyzer.jar sentiment.training.ModelTrainingCLI \\&quot;);</span>
+<span class="nc" id="L331">        System.out.println(&quot;    --algorithm svm --max-samples 50000&quot;);</span>
+<span class="nc" id="L332">        System.out.println(&quot;&quot;);</span>
+<span class="nc" id="L333">        System.out.println(&quot;  # Train specific algorithms&quot;);</span>
+<span class="nc" id="L334">        System.out.println(&quot;  java -jar sentiment-analyzer.jar sentiment.training.ModelTrainingCLI \\&quot;);</span>
+<span class="nc" id="L335">        System.out.println(&quot;    --algorithms svm,naive_bayes --data ./data/reviews.csv&quot;);</span>
+<span class="nc" id="L336">        System.out.println(&quot;&quot;);</span>
+<span class="nc" id="L337">    }</span>
+
+<span class="nc" id="L339">    private static class Config {</span>
+<span class="nc" id="L340">        String dataPath = DEFAULT_DATA_PATH;</span>
+<span class="nc" id="L341">        String outputDir = DEFAULT_OUTPUT_DIR;</span>
+<span class="nc" id="L342">        AlgorithmType singleAlgorithm = null;</span>
+<span class="nc" id="L343">        List&lt;AlgorithmType&gt; algorithms = List.of();</span>
+<span class="nc" id="L344">        int maxSamples = DEFAULT_MAX_SAMPLES;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

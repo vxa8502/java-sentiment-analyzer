@@ -1,0 +1,12 @@
+/Users/victoriaalabi/projects/java-sentiment-analyzer/src/test/java/sentiment/preprocessing/TextPreprocessorTest.java
+/Users/victoriaalabi/projects/java-sentiment-analyzer/src/test/java/sentiment/evaluation/StratifiedDataSplitterTest.java
+/Users/victoriaalabi/projects/java-sentiment-analyzer/src/test/java/sentiment/data/DatasetLoaderRegistryTest.java
+/Users/victoriaalabi/projects/java-sentiment-analyzer/src/test/java/sentiment/models/SVMBatchPredictorOptimizationTest.java
+/Users/victoriaalabi/projects/java-sentiment-analyzer/src/test/java/sentiment/evaluation/ClassifierEvaluationResultTest.java
+/Users/victoriaalabi/projects/java-sentiment-analyzer/src/test/java/sentiment/preprocessing/AdvancedTokenizerTest.java
+/Users/victoriaalabi/projects/java-sentiment-analyzer/src/test/java/sentiment/data/DatasetTest.java
+/Users/victoriaalabi/projects/java-sentiment-analyzer/src/test/java/sentiment/api/SentimentControllerIntegrationTest.java
+/Users/victoriaalabi/projects/java-sentiment-analyzer/src/test/java/sentiment/models/SVMClassifierTest.java
+/Users/victoriaalabi/projects/java-sentiment-analyzer/src/test/java/sentiment/evaluation/AUCCalculatorTest.java
+/Users/victoriaalabi/projects/java-sentiment-analyzer/src/test/java/sentiment/evaluation/CalibrationMetricsTest.java
+/Users/victoriaalabi/projects/java-sentiment-analyzer/src/test/java/sentiment/preprocessing/ContractionExpanderTest.java

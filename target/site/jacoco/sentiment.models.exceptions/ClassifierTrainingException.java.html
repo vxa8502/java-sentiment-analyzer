@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ClassifierTrainingException.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Java Sentiment Analysis</a> &gt; <a href="index.source.html" class="el_package">sentiment.models.exceptions</a> &gt; <span class="el_source">ClassifierTrainingException.java</span></div><h1>ClassifierTrainingException.java</h1><pre class="source lang-java linenums">package sentiment.models.exceptions;
+
+import sentiment.models.AlgorithmType;
+
+/**
+ * Exception thrown when classifier training fails.
+ * Includes detailed information about training data, parameters, and failure reasons.
+ *
+ * ✅ ENHANCED: Type-safe algorithm identification
+ */
+public class ClassifierTrainingException extends SentimentClassifierException {
+
+    private final int trainingInstances;
+    private final int features;
+    private final String[] classLabels;
+    private final TrainingFailureReason failureReason;
+
+<span class="nc" id="L18">    public enum TrainingFailureReason {</span>
+<span class="nc" id="L19">        INSUFFICIENT_DATA(&quot;Not enough training data&quot;),</span>
+<span class="nc" id="L20">        INVALID_DATA_FORMAT(&quot;Training data format is invalid&quot;),</span>
+<span class="nc" id="L21">        MEMORY_EXHAUSTED(&quot;Insufficient memory for training&quot;),</span>
+<span class="nc" id="L22">        ALGORITHM_CONVERGENCE(&quot;Algorithm failed to converge&quot;),</span>
+<span class="nc" id="L23">        PARAMETER_CONFIGURATION(&quot;Invalid algorithm parameters&quot;),</span>
+<span class="nc" id="L24">        DATA_PREPROCESSING(&quot;Data preprocessing failed&quot;),</span>
+<span class="nc" id="L25">        FEATURE_EXTRACTION(&quot;Feature extraction failed&quot;),</span>
+<span class="nc" id="L26">        UNKNOWN(&quot;Unknown training failure&quot;);</span>
+
+        private final String description;
+
+<span class="nc" id="L30">        TrainingFailureReason(String description) {</span>
+<span class="nc" id="L31">            this.description = description;</span>
+<span class="nc" id="L32">        }</span>
+
+<span class="nc" id="L34">        public String getDescription() { return description; }</span>
+    }
+
+    public ClassifierTrainingException(AlgorithmType algorithmType, String context,
+                                       int trainingInstances, int features,
+                                       String[] classLabels, TrainingFailureReason reason,
+                                       String technicalDetails, Throwable cause) {
+<span class="nc" id="L41">        super(algorithmType, context, determineRecoverability(reason),</span>
+<span class="nc" id="L42">                createUserMessage(reason, trainingInstances, features),</span>
+                technicalDetails, cause);
+<span class="nc" id="L44">        this.trainingInstances = trainingInstances;</span>
+<span class="nc" id="L45">        this.features = features;</span>
+<span class="nc bnc" id="L46" title="All 2 branches missed.">        this.classLabels = classLabels != null ? classLabels.clone() : new String[0];</span>
+<span class="nc" id="L47">        this.failureReason = reason;</span>
+<span class="nc" id="L48">    }</span>
+
+    private static boolean determineRecoverability(TrainingFailureReason reason) {
+<span class="nc bnc" id="L51" title="All 3 branches missed.">        switch (reason) {</span>
+            case INSUFFICIENT_DATA:
+            case INVALID_DATA_FORMAT:
+            case PARAMETER_CONFIGURATION:
+<span class="nc" id="L55">                return true; // User can fix these</span>
+            case MEMORY_EXHAUSTED:
+            case ALGORITHM_CONVERGENCE:
+<span class="nc" id="L58">                return false; // May require system changes</span>
+            default:
+<span class="nc" id="L60">                return false;</span>
+        }
+    }
+
+    private static String createUserMessage(TrainingFailureReason reason, int instances, int features) {
+<span class="nc" id="L65">        return String.format(&quot;Training failed: %s (Dataset: %d instances, %d features)&quot;,</span>
+<span class="nc" id="L66">                reason.getDescription(), instances, features);</span>
+    }
+
+<span class="nc" id="L69">    public int getTrainingInstances() { return trainingInstances; }</span>
+<span class="nc" id="L70">    public int getFeatures() { return features; }</span>
+<span class="nc" id="L71">    public String[] getClassLabels() { return classLabels.clone(); }</span>
+<span class="nc" id="L72">    public TrainingFailureReason getFailureReason() { return failureReason; }</span>
+
+    /**
+     * Provides specific recovery suggestions based on failure reason
+     */
+    public String getRecoverySuggestion() {
+<span class="nc bnc" id="L78" title="All 7 branches missed.">        switch (failureReason) {</span>
+            case INSUFFICIENT_DATA:
+<span class="nc" id="L80">                return &quot;Increase training dataset size. Recommended minimum: 100 instances per class.&quot;;</span>
+            case INVALID_DATA_FORMAT:
+<span class="nc" id="L82">                return &quot;Verify training data format and ensure proper preprocessing.&quot;;</span>
+            case PARAMETER_CONFIGURATION:
+<span class="nc" id="L84">                return &quot;Review algorithm parameters. Try default settings or parameter tuning.&quot;;</span>
+            case MEMORY_EXHAUSTED:
+<span class="nc" id="L86">                return &quot;Reduce dataset size, increase JVM heap size, or use feature selection.&quot;;</span>
+            case ALGORITHM_CONVERGENCE:
+<span class="nc" id="L88">                return &quot;Try different algorithm parameters or alternative algorithms.&quot;;</span>
+            case FEATURE_EXTRACTION:
+<span class="nc" id="L90">                return &quot;Check feature extraction pipeline and input data quality.&quot;;</span>
+            default:
+<span class="nc" id="L92">                return &quot;Check logs for detailed error information and contact support.&quot;;</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

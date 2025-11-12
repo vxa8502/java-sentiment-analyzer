@@ -1,0 +1,1110 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>TextPreprocessor.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Java Sentiment Analysis</a> &gt; <a href="index.source.html" class="el_package">sentiment.preprocessing</a> &gt; <span class="el_source">TextPreprocessor.java</span></div><h1>TextPreprocessor.java</h1><pre class="source lang-java linenums">package sentiment.preprocessing;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.Lazy;
+import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
+import sentiment.data.Dataset;
+import sentiment.util.ValidationUtils;
+import weka.core.Instances;
+
+import java.io.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.*;
+import java.util.regex.Pattern;
+import java.util.regex.Matcher;
+import java.util.stream.Collectors;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
+
+/**
+ * FIXED: Thread safety issue resolved with ReadWriteLock
+ *
+ * CIRCULAR DEPENDENCY FIX (PROPER SOLUTION):
+ * ==========================================
+ * Before:
+ *   TextPreprocessor → TFIDFFeatureExtractor → PreprocessingPipeline (TextPreprocessor)
+ *   ❌ CIRCULAR DEPENDENCY (fixed with @Lazy workaround)
+ *
+ * After:
+ *   TextPreprocessor implements TextCleaner interface
+ *   TFIDFFeatureExtractor depends on TextCleaner (not full PreprocessingPipeline)
+ *   ✅ CLEAN ARCHITECTURE - No circular dependency!
+ *
+ * WHY THIS IS BETTER:
+ * ===================
+ * 1. Interface Segregation Principle: TFIDFFeatureExtractor only needs cleaning methods,
+ *    not the full pipeline lifecycle (fit/transform/saveState/loadState)
+ * 2. No need for @Lazy workaround - proper dependency inversion
+ * 3. Clearer separation of concerns
+ * 4. Easier to test and mock
+ *
+ * EXPLICIT FIT/TRANSFORM WORKFLOW:
+ * - fit(data) trains the pipeline (called ONCE) - uses WRITE lock
+ * - transform(text) applies trained pipeline (thread-safe) - uses READ lock
+ *
+ * THREAD SAFETY:
+ * - Training phase: stateLock.writeLock() - exclusive access
+ * - Inference phase: stateLock.readLock() - concurrent reads safe
+ */
+@Component
+public class TextPreprocessor implements PreprocessingPipeline, TextCleaner {
+
+    private static final String VERSION = &quot;1.0.0&quot;;
+<span class="fc" id="L57">    private static final Logger logger = LoggerFactory.getLogger(TextPreprocessor.class);</span>
+
+    // Immutable configuration parameters - set via constructor
+    private final int minWordLength;
+    private final boolean preserveEmoticons;
+
+    // Clean dependency injection - NO circular dependency (fixed with @Lazy)
+    private final ContractionExpander contractionExpander;
+    private final AdvancedTokenizer advancedTokenizer;
+    private final IntelligentStopwordRemover stopwordRemover;
+
+    // Feature extractor injected with @Lazy to break circular dependency
+    private final TFIDFFeatureExtractor featureExtractor;
+
+    // Pipeline state management - THREAD-SAFE with ReadWriteLock
+<span class="fc" id="L72">    private final ReadWriteLock stateLock = new ReentrantReadWriteLock();</span>
+<span class="fc" id="L73">    private volatile boolean isFitted = false;</span>
+    private PipelineState pipelineState;
+
+    // Compiled regex patterns for efficiency
+<span class="fc" id="L77">    private static final Pattern URL_PATTERN = Pattern.compile(</span>
+            &quot;https?://[-\\w.]+(?:[:\\d]+)?(?:/[\\w/_.]*(?:\\?[\\w&amp;=%.]*)?(?:#[\\w.]*)?)?&quot;,
+            Pattern.CASE_INSENSITIVE
+    );
+
+<span class="fc" id="L82">    private static final Pattern EMAIL_PATTERN = Pattern.compile(</span>
+            &quot;\\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}\\b&quot;,
+            Pattern.CASE_INSENSITIVE
+    );
+
+<span class="fc" id="L87">    private static final Pattern MENTION_PATTERN = Pattern.compile(&quot;@[a-zA-Z0-9_]+&quot;);</span>
+<span class="fc" id="L88">    private static final Pattern HASHTAG_PATTERN = Pattern.compile(&quot;#[a-zA-Z0-9_]+&quot;);</span>
+<span class="fc" id="L89">    private static final Pattern HTML_PATTERN = Pattern.compile(&quot;&lt;[^&gt;]+&gt;&quot;);</span>
+<span class="fc" id="L90">    private static final Pattern EXTRA_WHITESPACE_PATTERN = Pattern.compile(&quot;\\s+&quot;);</span>
+<span class="fc" id="L91">    private static final Pattern REPEATED_CHARS_PATTERN = Pattern.compile(&quot;(.)\\1{3,}&quot;);</span>
+
+    // Emoticon patterns - preserve these for sentiment analysis
+<span class="fc" id="L94">    private static final Pattern POSITIVE_EMOTICONS = Pattern.compile(</span>
+            &quot;[:;=8][)\\]}&gt;D]|[)\\]}&gt;D][:;=8]|:\\)|;\\)|:D|:P|\\^_\\^|\\^\\^|&lt;3&quot;
+    );
+<span class="fc" id="L97">    private static final Pattern NEGATIVE_EMOTICONS = Pattern.compile(</span>
+            &quot;[:;=8][({&lt;\\[]|[({&lt;\\[][:;=8]|:\\(|;\\(|D:|&lt;/3|&gt;:\\(|:\\[&quot;
+    );
+
+    /**
+     * Constructor with dependency injection.
+     *
+     * ARCHITECTURE NOTE:
+     * ==================
+     * This class implements both PreprocessingPipeline and TextCleaner.
+     * TFIDFFeatureExtractor depends on TextCleaner interface (not PreprocessingPipeline),
+     * which breaks the circular dependency properly through interface segregation.
+     *
+     * Dependencies:
+     * - featureExtractor: For TF-IDF feature extraction (still uses @Lazy for compatibility)
+     * - contractionExpander: Expands contractions (&quot;don't&quot; → &quot;do not&quot;)
+     * - advancedTokenizer: Advanced tokenization logic
+     * - stopwordRemover: Intelligent stopword filtering
+     */
+    @Autowired
+    public TextPreprocessor(
+            @Lazy TFIDFFeatureExtractor featureExtractor,  // @Lazy kept for now (can be removed later)
+            ContractionExpander contractionExpander,
+            AdvancedTokenizer advancedTokenizer,
+            IntelligentStopwordRemover stopwordRemover,
+            @Value(&quot;${sentiment.preprocessing.min-word-length:2}&quot;) int minWordLength,
+<span class="fc" id="L123">            @Value(&quot;${sentiment.preprocessing.preserve-emoticons:true}&quot;) boolean preserveEmoticons) {</span>
+
+        // Validate configuration at construction time
+<span class="fc bfc" id="L126" title="All 2 branches covered.">        if (minWordLength &lt; 1) {</span>
+<span class="fc" id="L127">            throw new IllegalArgumentException(</span>
+                    &quot;Invalid minWordLength: &quot; + minWordLength + &quot;. Must be &gt;= 1&quot;);
+        }
+
+<span class="fc" id="L131">        this.featureExtractor = featureExtractor;</span>
+<span class="fc" id="L132">        this.contractionExpander = contractionExpander;</span>
+<span class="fc" id="L133">        this.advancedTokenizer = advancedTokenizer;</span>
+<span class="fc" id="L134">        this.stopwordRemover = stopwordRemover;</span>
+<span class="fc" id="L135">        this.minWordLength = minWordLength;</span>
+<span class="fc" id="L136">        this.preserveEmoticons = preserveEmoticons;</span>
+<span class="fc" id="L137">        this.pipelineState = new PipelineState();</span>
+
+<span class="fc" id="L139">        logger.info(&quot;TextPreprocessor initialized. Implements TextCleaner + PreprocessingPipeline. &quot; +</span>
+                        &quot;Thread safety: ReadWriteLock. &quot; +
+                        &quot;Configuration: minWordLength={}, preserveEmoticons={}&quot;,
+<span class="fc" id="L142">                minWordLength, preserveEmoticons);</span>
+<span class="fc" id="L143">    }</span>
+
+    // ==================== TRAINING PHASE ====================
+
+    /**
+     * TRAINING PHASE: Fit the preprocessing pipeline on training data.
+     *
+     * This method trains any stateful components and captures vocabulary statistics.
+     * Must be called ONCE before using transform().
+     *
+     * Thread safety: Uses WRITE lock - exclusive access during training
+     *
+     * @param data Training dataset
+     * @throws IllegalArgumentException if data is null or empty
+     * @throws IllegalStateException if pipeline is already fitted
+     */
+    @Override
+    public void fit(List&lt;Dataset&gt; data) {
+<span class="fc bfc" id="L161" title="All 4 branches covered.">        if (data == null || data.isEmpty()) {</span>
+<span class="fc" id="L162">            throw new IllegalArgumentException(&quot;Training data cannot be null or empty&quot;);</span>
+        }
+
+<span class="fc" id="L165">        stateLock.writeLock().lock();  // ✅ WRITE LOCK for training</span>
+        try {
+<span class="pc bpc" id="L167" title="1 of 2 branches missed.">            if (isFitted) {</span>
+<span class="nc" id="L168">                logger.warn(&quot;Pipeline already fitted. Refitting with new data.&quot;);</span>
+            }
+
+<span class="fc" id="L171">            logger.info(&quot;Fitting preprocessing pipeline on {} samples&quot;, data.size());</span>
+<span class="fc" id="L172">            long startTime = System.currentTimeMillis();</span>
+
+            try {
+                // Step 1: Preprocess all training texts
+<span class="fc" id="L176">                List&lt;String&gt; preprocessedTexts = new ArrayList&lt;&gt;();</span>
+<span class="fc bfc" id="L177" title="All 2 branches covered.">                for (Dataset dataset : data) {</span>
+<span class="fc" id="L178">                    String cleaned = cleanText(dataset.getText());</span>
+<span class="fc" id="L179">                    List&lt;String&gt; tokens = tokenize(cleaned);</span>
+<span class="fc" id="L180">                    List&lt;String&gt; filtered = removeStopwords(tokens);</span>
+<span class="fc" id="L181">                    preprocessedTexts.add(String.join(&quot; &quot;, filtered));</span>
+<span class="fc" id="L182">                }</span>
+
+                // Step 2: Extract and store vocabulary statistics with MI-based feature selection
+<span class="fc" id="L185">                pipelineState.captureVocabularyStatsWithPrincipledSelection(preprocessedTexts, data);</span>
+
+                // Step 3: Train feature extractor (now guaranteed to be available via @Lazy)
+<span class="fc" id="L188">                logger.info(&quot;Training TFIDFFeatureExtractor via @Lazy proxy&quot;);</span>
+<span class="fc" id="L189">                featureExtractor.fit(data);  // First call to proxy initializes real object</span>
+
+                // Step 4: Store configuration
+<span class="fc" id="L192">                pipelineState.storeConfiguration(this);</span>
+
+<span class="fc" id="L194">                isFitted = true;</span>
+<span class="fc" id="L195">                long duration = System.currentTimeMillis() - startTime;</span>
+
+<span class="fc" id="L197">                logger.info(&quot;Pipeline fitting completed in {}ms. Vocabulary size: {}, Fitted: {}&quot;,</span>
+<span class="fc" id="L198">                        duration, pipelineState.vocabularySize, isFitted);</span>
+
+<span class="nc" id="L200">            } catch (Exception e) {</span>
+<span class="nc" id="L201">                logger.error(&quot;Pipeline fitting failed: {}&quot;, e.getMessage(), e);</span>
+<span class="nc" id="L202">                throw new RuntimeException(&quot;Failed to fit preprocessing pipeline&quot;, e);</span>
+<span class="fc" id="L203">            }</span>
+
+        } finally {
+<span class="fc" id="L206">            stateLock.writeLock().unlock();  // ✅ Always release write lock</span>
+        }
+<span class="fc" id="L208">    }</span>
+
+    // ==================== INFERENCE PHASE ====================
+
+    /**
+     * INFERENCE PHASE: Transform a single text through the fitted pipeline.
+     *
+     * Thread-safe after fit() completes. Must call fit() before using this method.
+     *
+     * Thread safety: Uses READ lock - concurrent reads safe!
+     *
+     * @param text Input text to transform
+     * @return Preprocessed text
+     * @throws IllegalStateException if pipeline not fitted
+     * @throws IllegalArgumentException if text is null or empty
+     */
+    @Override
+    public String transform(String text) {
+<span class="fc bfc" id="L226" title="All 2 branches covered.">        if (ValidationUtils.isNullOrEmpty(text)) {</span>
+<span class="fc" id="L227">            logger.debug(&quot;Received null or empty text for transformation&quot;);</span>
+<span class="fc" id="L228">            return &quot;&quot;;</span>
+        }
+
+<span class="fc" id="L231">        stateLock.readLock().lock();  // ✅ READ LOCK for concurrent inference</span>
+        try {
+<span class="fc bfc" id="L233" title="All 2 branches covered.">            if (!isFitted) {</span>
+<span class="fc" id="L234">                throw new IllegalStateException(</span>
+                        &quot;Pipeline must be fitted before transforming text. Call fit() first.&quot;);
+            }
+
+<span class="fc" id="L238">            logger.debug(&quot;Transforming text through fitted pipeline: '{}'&quot;,</span>
+<span class="fc" id="L239">                    text.substring(0, Math.min(50, text.length())));</span>
+
+<span class="fc" id="L241">            return preprocessText(text);</span>
+
+        } finally {
+<span class="fc" id="L244">            stateLock.readLock().unlock();  // ✅ Always release read lock</span>
+        }
+    }
+
+    // ==================== CORE PREPROCESSING METHODS ====================
+
+    /**
+     * Clean text by removing noise, URLs, HTML, etc.
+     */
+    public String cleanText(String rawText) {
+<span class="fc bfc" id="L254" title="All 4 branches covered.">        if (rawText == null || rawText.trim().isEmpty()) {</span>
+<span class="fc" id="L255">            logger.warn(&quot;Received null or empty text for cleaning&quot;);</span>
+<span class="fc" id="L256">            return &quot;&quot;;</span>
+        }
+
+<span class="fc" id="L259">        String cleaned = rawText;</span>
+
+        // URLs and emails - use lowercase tokens to survive lowercasing step
+<span class="fc" id="L262">        cleaned = URL_PATTERN.matcher(cleaned).replaceAll(&quot; url_token &quot;);</span>
+<span class="fc" id="L263">        cleaned = EMAIL_PATTERN.matcher(cleaned).replaceAll(&quot; email_token &quot;);</span>
+
+        // Social media - use lowercase tokens
+<span class="fc" id="L266">        cleaned = MENTION_PATTERN.matcher(cleaned).replaceAll(&quot; mention_token &quot;);</span>
+<span class="fc" id="L267">        cleaned = HASHTAG_PATTERN.matcher(cleaned).replaceAll(match -&gt;</span>
+<span class="fc" id="L268">                &quot; hashtag_&quot; + match.group().substring(1).toLowerCase() + &quot; &quot;);</span>
+
+        // Emoticons (preserve if configured) - use lowercase tokens
+<span class="pc bpc" id="L271" title="1 of 2 branches missed.">        if (preserveEmoticons) {</span>
+<span class="fc" id="L272">            cleaned = POSITIVE_EMOTICONS.matcher(cleaned).replaceAll(&quot; positive_emoticon &quot;);</span>
+<span class="fc" id="L273">            cleaned = NEGATIVE_EMOTICONS.matcher(cleaned).replaceAll(&quot; negative_emoticon &quot;);</span>
+        }
+
+        // HTML tags
+<span class="fc" id="L277">        cleaned = HTML_PATTERN.matcher(cleaned).replaceAll(&quot; &quot;);</span>
+
+        // Expand contractions BEFORE lowercase
+<span class="fc" id="L280">        cleaned = contractionExpander.expand(cleaned);</span>
+
+        // Lowercase
+<span class="fc" id="L283">        cleaned = cleaned.toLowerCase();</span>
+
+        // Repeated characters
+<span class="fc" id="L286">        cleaned = REPEATED_CHARS_PATTERN.matcher(cleaned).replaceAll(&quot;$1$1&quot;);</span>
+
+        // Special characters
+<span class="fc" id="L289">        cleaned = cleaned.replaceAll(&quot;[^a-zA-Z0-9\\s_]&quot;, &quot; &quot;);</span>
+
+        // Whitespace
+<span class="fc" id="L292">        cleaned = EXTRA_WHITESPACE_PATTERN.matcher(cleaned).replaceAll(&quot; &quot;);</span>
+
+<span class="fc" id="L294">        return cleaned.trim();</span>
+    }
+
+    /**
+     * Tokenize using AdvancedTokenizer
+     */
+    public List&lt;String&gt; tokenize(String cleanedText) {
+<span class="pc bpc" id="L301" title="1 of 4 branches missed.">        if (cleanedText == null || cleanedText.trim().isEmpty()) {</span>
+<span class="fc" id="L302">            return new ArrayList&lt;&gt;();</span>
+        }
+
+<span class="fc" id="L305">        return advancedTokenizer.tokenize(cleanedText);</span>
+    }
+
+    /**
+     * Remove stopwords using IntelligentStopwordRemover
+     */
+    public List&lt;String&gt; removeStopwords(List&lt;String&gt; tokens) {
+<span class="pc bpc" id="L312" title="1 of 4 branches missed.">        if (tokens == null || tokens.isEmpty()) {</span>
+<span class="fc" id="L313">            return new ArrayList&lt;&gt;();</span>
+        }
+
+<span class="fc" id="L316">        return stopwordRemover.removeStopwords(tokens);</span>
+    }
+
+    /**
+     * Complete preprocessing pipeline
+     */
+    @Override
+    public String preprocessText(String rawText) {
+<span class="pc bpc" id="L324" title="2 of 4 branches missed.">        if (rawText == null || rawText.trim().isEmpty()) {</span>
+<span class="nc" id="L325">            return &quot;&quot;;</span>
+        }
+
+<span class="fc" id="L328">        String cleaned = cleanText(rawText);</span>
+<span class="fc" id="L329">        List&lt;String&gt; tokens = tokenize(cleaned);</span>
+<span class="fc" id="L330">        List&lt;String&gt; filtered = removeStopwords(tokens);</span>
+
+<span class="fc" id="L332">        return String.join(&quot; &quot;, filtered);</span>
+    }
+
+    // ==================== FEATURE EXTRACTION (DELEGATES) ====================
+
+    /**
+     * Extract features using TFIDFFeatureExtractor (accessed via @Lazy proxy)
+     */
+    public Instances extractFeatures(List&lt;Dataset&gt; data) {
+<span class="nc bnc" id="L341" title="All 4 branches missed.">        if (data == null || data.isEmpty()) {</span>
+<span class="nc" id="L342">            throw new IllegalArgumentException(&quot;Dataset cannot be null or empty&quot;);</span>
+        }
+
+<span class="nc" id="L345">        logger.info(&quot;Delegating feature extraction to TFIDFFeatureExtractor&quot;);</span>
+
+        // Access via @Lazy proxy - will initialize on first call
+<span class="nc" id="L348">        return featureExtractor.extractFeatures(data);</span>
+    }
+
+    /**
+     * Convert to Weka Instances using the integrated pipeline
+     */
+    public Instances convertToWekaInstances(List&lt;Dataset&gt; data) {
+<span class="nc bnc" id="L355" title="All 4 branches missed.">        if (data == null || data.isEmpty()) {</span>
+<span class="nc" id="L356">            throw new IllegalArgumentException(&quot;Dataset cannot be null or empty&quot;);</span>
+        }
+
+<span class="nc" id="L359">        logger.info(&quot;Converting {} samples to Weka Instances using integrated preprocessing pipeline&quot;, data.size());</span>
+<span class="nc" id="L360">        return featureExtractor.extractFeatures(data);</span>
+    }
+
+    /**
+     * Process multiple texts and extract features in one operation
+     */
+    public TFIDFFeatureExtractor.FeatureExtractionResult processAndExtractFeatures(List&lt;Dataset&gt; data) {
+<span class="nc bnc" id="L367" title="All 4 branches missed.">        if (data == null || data.isEmpty()) {</span>
+<span class="nc" id="L368">            throw new IllegalArgumentException(&quot;Dataset cannot be null or empty&quot;);</span>
+        }
+
+<span class="nc" id="L371">        logger.info(&quot;Processing and extracting features for {} datasets using integrated pipeline&quot;, data.size());</span>
+<span class="nc" id="L372">        return featureExtractor.extractFeaturesWithAnalysis(data);</span>
+    }
+
+    // ==================== STATE MANAGEMENT ====================
+
+    /**
+     * Save pipeline state to disk
+     */
+    @Override
+    public void saveState(Path path) throws IOException {
+<span class="nc" id="L382">        stateLock.readLock().lock();  // ✅ READ LOCK for safe state access</span>
+        try {
+<span class="nc bnc" id="L384" title="All 2 branches missed.">            if (!isFitted) {</span>
+<span class="nc" id="L385">                throw new IllegalStateException(&quot;Cannot save unfitted pipeline&quot;);</span>
+            }
+
+<span class="nc" id="L388">            logger.info(&quot;Saving pipeline state to: {}&quot;, path);</span>
+
+<span class="nc" id="L390">            Files.createDirectories(path.getParent());</span>
+
+<span class="nc" id="L392">            try (ObjectOutputStream oos = new ObjectOutputStream(</span>
+<span class="nc" id="L393">                    new BufferedOutputStream(Files.newOutputStream(path)))) {</span>
+
+<span class="nc" id="L395">                oos.writeObject(VERSION);</span>
+<span class="nc" id="L396">                oos.writeObject(pipelineState);</span>
+<span class="nc" id="L397">                oos.writeBoolean(isFitted);</span>
+<span class="nc" id="L398">                oos.writeInt(minWordLength);</span>
+<span class="nc" id="L399">                oos.writeBoolean(preserveEmoticons);</span>
+
+<span class="nc" id="L401">                logger.info(&quot;Pipeline state saved successfully&quot;);</span>
+            }
+
+        } finally {
+<span class="nc" id="L405">            stateLock.readLock().unlock();</span>
+        }
+<span class="nc" id="L407">    }</span>
+
+    /**
+     * Load pipeline state from disk
+     */
+    @Override
+    public void loadState(Path path) throws IOException {
+<span class="nc bnc" id="L414" title="All 2 branches missed.">        if (!Files.exists(path)) {</span>
+<span class="nc" id="L415">            throw new IllegalArgumentException(&quot;State file does not exist: &quot; + path);</span>
+        }
+
+<span class="nc" id="L418">        stateLock.writeLock().lock();  // ✅ WRITE LOCK for state modification</span>
+        try {
+<span class="nc" id="L420">            logger.info(&quot;Loading pipeline state from: {}&quot;, path);</span>
+
+<span class="nc" id="L422">            try (ObjectInputStream ois = new ObjectInputStream(</span>
+<span class="nc" id="L423">                    new BufferedInputStream(Files.newInputStream(path)))) {</span>
+
+<span class="nc" id="L425">                String savedVersion = (String) ois.readObject();</span>
+<span class="nc" id="L426">                pipelineState = (PipelineState) ois.readObject();</span>
+<span class="nc" id="L427">                isFitted = ois.readBoolean();</span>
+
+<span class="nc" id="L429">                int savedMinWordLength = ois.readInt();</span>
+<span class="nc" id="L430">                boolean savedPreserveEmoticons = ois.readBoolean();</span>
+
+<span class="nc bnc" id="L432" title="All 2 branches missed.">                if (savedMinWordLength != this.minWordLength) {</span>
+<span class="nc" id="L433">                    logger.warn(&quot;Loaded minWordLength differs from current config&quot;);</span>
+                }
+
+<span class="nc" id="L436">                logger.info(&quot;Pipeline state loaded. Vocabulary: {}, Fitted: {}&quot;,</span>
+<span class="nc" id="L437">                        pipelineState.vocabularySize, isFitted);</span>
+
+<span class="nc" id="L439">            } catch (ClassNotFoundException e) {</span>
+<span class="nc" id="L440">                throw new IOException(&quot;Incompatible pipeline state format&quot;, e);</span>
+<span class="nc" id="L441">            }</span>
+
+        } finally {
+<span class="nc" id="L444">            stateLock.writeLock().unlock();</span>
+        }
+<span class="nc" id="L446">    }</span>
+
+    /**
+     * Reset pipeline to unfitted state
+     */
+    public void reset() {
+<span class="fc" id="L452">        stateLock.writeLock().lock();  // ✅ WRITE LOCK for state reset</span>
+        try {
+<span class="fc" id="L454">            isFitted = false;</span>
+<span class="fc" id="L455">            pipelineState = new PipelineState();</span>
+<span class="fc" id="L456">            featureExtractor.reset();</span>
+<span class="fc" id="L457">            logger.info(&quot;Pipeline reset to unfitted state&quot;);</span>
+        } finally {
+<span class="fc" id="L459">            stateLock.writeLock().unlock();</span>
+        }
+<span class="fc" id="L461">    }</span>
+
+    // ==================== STATE ACCESS ====================
+
+    @Override
+    public String getVersion() {
+<span class="nc" id="L467">        return VERSION;</span>
+    }
+
+    /**
+     * Check if pipeline is fitted and ready for transformation
+     */
+    public boolean isFitted() {
+<span class="fc" id="L474">        return isFitted;  // volatile read is safe</span>
+    }
+
+    /**
+     * Get pipeline state information (thread-safe)
+     */
+    public PipelineState getPipelineState() {
+<span class="fc" id="L481">        stateLock.readLock().lock();  // ✅ READ LOCK for safe access</span>
+        try {
+<span class="fc" id="L483">            return pipelineState;</span>
+        } finally {
+<span class="fc" id="L485">            stateLock.readLock().unlock();</span>
+        }
+    }
+
+    /**
+     * Get comprehensive version information for all pipeline components
+     */
+    public PipelineVersionInfo getVersionInfo() {
+<span class="nc" id="L493">        return new PipelineVersionInfo(</span>
+                VERSION,
+<span class="nc" id="L495">                contractionExpander.getVersion(),</span>
+<span class="nc" id="L496">                advancedTokenizer.getVersion(),</span>
+<span class="nc" id="L497">                stopwordRemover.getVersion(),</span>
+<span class="nc" id="L498">                featureExtractor.getVersion()</span>
+        );
+    }
+
+    /**
+     * Get comprehensive preprocessing statistics using all components
+     */
+    public PreprocessingStats getPreprocessingStats(List&lt;Dataset&gt; data) {
+<span class="nc bnc" id="L506" title="All 4 branches missed.">        if (data == null || data.isEmpty()) {</span>
+<span class="nc" id="L507">            return new PreprocessingStats(0, 0, 0, 0, new CleaningMetrics(), null, null, null);</span>
+        }
+
+<span class="nc" id="L510">        int totalTexts = data.size();</span>
+<span class="nc" id="L511">        int totalOriginalWords = 0;</span>
+<span class="nc" id="L512">        int totalCleanedWords = 0;</span>
+<span class="nc" id="L513">        int totalFilteredWords = 0;</span>
+<span class="nc" id="L514">        CleaningMetrics aggregatedMetrics = new CleaningMetrics();</span>
+
+<span class="nc" id="L516">        String sampleText = data.get(0).getText();</span>
+<span class="nc" id="L517">        AdvancedTokenizer.TokenizationAnalysis tokenAnalysis =</span>
+<span class="nc" id="L518">                advancedTokenizer.analyzeTokenization(cleanText(sampleText));</span>
+
+<span class="nc" id="L520">        IntelligentStopwordRemover.StopwordAnalysis stopwordAnalysis =</span>
+<span class="nc" id="L521">                stopwordRemover.analyzeStopwordRemoval(tokenize(cleanText(sampleText)));</span>
+
+<span class="nc" id="L523">        TFIDFFeatureExtractor.FeatureConfig featureConfig = featureExtractor.getConfiguration();</span>
+
+<span class="nc bnc" id="L525" title="All 2 branches missed.">        for (Dataset dataset : data) {</span>
+<span class="nc" id="L526">            String originalText = dataset.getText();</span>
+<span class="nc" id="L527">            String cleanedText = cleanText(originalText);</span>
+<span class="nc" id="L528">            List&lt;String&gt; tokens = tokenize(cleanedText);</span>
+<span class="nc" id="L529">            List&lt;String&gt; filtered = removeStopwords(tokens);</span>
+
+<span class="nc" id="L531">            totalOriginalWords += originalText.split(&quot;\\s+&quot;).length;</span>
+<span class="nc" id="L532">            totalCleanedWords += tokens.size();</span>
+<span class="nc" id="L533">            totalFilteredWords += filtered.size();</span>
+<span class="nc" id="L534">        }</span>
+
+<span class="nc" id="L536">        return new PreprocessingStats(</span>
+                totalTexts,
+                totalOriginalWords,
+                totalCleanedWords,
+                totalFilteredWords,
+                aggregatedMetrics,
+                tokenAnalysis,
+                stopwordAnalysis,
+                featureConfig
+        );
+    }
+
+    /**
+     * Process a single text through the complete pipeline
+     */
+    public String processSingleText(String rawText) {
+<span class="nc bnc" id="L552" title="All 4 branches missed.">        if (rawText == null || rawText.trim().isEmpty()) {</span>
+<span class="nc" id="L553">            return &quot;&quot;;</span>
+        }
+
+<span class="nc" id="L556">        logger.debug(&quot;Processing single text through integrated pipeline&quot;);</span>
+<span class="nc" id="L557">        String result = preprocessText(rawText);</span>
+
+<span class="nc" id="L559">        logger.debug(&quot;Single text processing complete: '{}' -&gt; '{}'&quot;,</span>
+<span class="nc" id="L560">                rawText.substring(0, Math.min(30, rawText.length())),</span>
+<span class="nc" id="L561">                result.substring(0, Math.min(30, result.length())));</span>
+
+<span class="nc" id="L563">        return result;</span>
+    }
+
+    /**
+     * Get the current preprocessing pipeline summary
+     */
+    public PipelineSummary getPipelineSummary() {
+<span class="nc" id="L570">        return new PipelineSummary(</span>
+<span class="nc" id="L571">                this.getClass().getSimpleName(),</span>
+<span class="nc" id="L572">                contractionExpander.getStats(),</span>
+<span class="nc" id="L573">                advancedTokenizer.getClass().getSimpleName(),</span>
+<span class="nc" id="L574">                stopwordRemover.getConfigurationSummary(),</span>
+<span class="nc" id="L575">                featureExtractor.getConfiguration()</span>
+        );
+    }
+
+    // ==================== PIPELINE STATE CLASS ====================
+
+    /**
+     * Serializable pipeline state for persistence
+     */
+<span class="fc" id="L584">    public static class PipelineState implements Serializable {</span>
+        private static final long serialVersionUID = 1L;
+
+<span class="fc" id="L587">        public int vocabularySize = 0;</span>
+<span class="fc" id="L588">        public Map&lt;String, Integer&gt; vocabularyFrequencies = new HashMap&lt;&gt;();</span>
+<span class="fc" id="L589">        public long fittingTimestamp = 0;</span>
+<span class="fc" id="L590">        public int trainingSampleCount = 0;</span>
+
+        // Configuration snapshot
+<span class="fc" id="L593">        public int minWordLength = 2;</span>
+<span class="fc" id="L594">        public boolean preserveEmoticons = true;</span>
+
+        /**
+         * DEPRECATED: Frequency-based vocabulary capture without feature selection.
+         * Use captureVocabularyStatsWithPrincipledSelection() instead.
+         */
+        @Deprecated
+        public void captureVocabularyStats(List&lt;String&gt; preprocessedTexts) {
+<span class="nc" id="L602">            Set&lt;String&gt; uniqueTokens = new HashSet&lt;&gt;();</span>
+<span class="nc" id="L603">            Map&lt;String, Integer&gt; frequencies = new HashMap&lt;&gt;();</span>
+
+<span class="nc bnc" id="L605" title="All 2 branches missed.">            for (String text : preprocessedTexts) {</span>
+<span class="nc" id="L606">                String[] tokens = text.split(&quot;\\s+&quot;);</span>
+<span class="nc bnc" id="L607" title="All 2 branches missed.">                for (String token : tokens) {</span>
+<span class="nc bnc" id="L608" title="All 2 branches missed.">                    if (!token.isEmpty()) {</span>
+<span class="nc" id="L609">                        uniqueTokens.add(token);</span>
+<span class="nc" id="L610">                        frequencies.merge(token, 1, Integer::sum);</span>
+                    }
+                }
+<span class="nc" id="L613">            }</span>
+
+<span class="nc" id="L615">            this.vocabularySize = uniqueTokens.size();</span>
+<span class="nc" id="L616">            this.vocabularyFrequencies = frequencies;</span>
+<span class="nc" id="L617">            this.fittingTimestamp = System.currentTimeMillis();</span>
+<span class="nc" id="L618">            this.trainingSampleCount = preprocessedTexts.size();</span>
+<span class="nc" id="L619">        }</span>
+
+        /**
+         * Principled vocabulary capture with Mutual Information-based feature selection.
+         *
+         * THEORETICAL FOUNDATION:
+         * ======================
+         * Mutual Information I(X;Y) measures how much knowing feature X reduces uncertainty about class Y.
+         *
+         * I(X;Y) = H(Y) - H(Y|X)
+         * where:
+         *   H(Y) = entropy of class distribution
+         *   H(Y|X) = conditional entropy of class given feature
+         *
+         * This is provably optimal for feature selection because:
+         * 1. It directly quantifies discriminative power
+         * 2. It's invariant to feature scaling
+         * 3. It handles both positive and negative class associations
+         *
+         * Unlike frequency-based selection which discards rare but potentially discriminative terms,
+         * MI-based selection preserves features that reduce classification uncertainty.
+         *
+         * @param preprocessedTexts Preprocessed text samples
+         * @param originalDatasets Original datasets with labels
+         */
+        public void captureVocabularyStatsWithPrincipledSelection(
+                List&lt;String&gt; preprocessedTexts,
+                List&lt;Dataset&gt; originalDatasets) {
+
+<span class="pc bpc" id="L648" title="1 of 2 branches missed.">            if (preprocessedTexts.size() != originalDatasets.size()) {</span>
+<span class="nc" id="L649">                throw new IllegalArgumentException(</span>
+                    &quot;Preprocessed texts and datasets must have same size&quot;);
+            }
+
+<span class="fc" id="L653">            logger.info(&quot;Computing vocabulary statistics with MI-based feature selection&quot;);</span>
+
+            // Step 1: Precompute document token sets (EFFICIENCY FIX)
+            // This avoids 500M substring scans for large vocabularies
+<span class="fc" id="L657">            List&lt;Set&lt;String&gt;&gt; docTokenSets = new ArrayList&lt;&gt;(preprocessedTexts.size());</span>
+<span class="fc" id="L658">            Map&lt;String, Integer&gt; frequencies = new HashMap&lt;&gt;();</span>
+
+<span class="fc bfc" id="L660" title="All 2 branches covered.">            for (String text : preprocessedTexts) {</span>
+<span class="fc" id="L661">                String[] tokens = text.split(&quot;\\s+&quot;);</span>
+<span class="fc" id="L662">                Set&lt;String&gt; tokenSet = new HashSet&lt;&gt;();</span>
+
+<span class="fc bfc" id="L664" title="All 2 branches covered.">                for (String token : tokens) {</span>
+<span class="pc bpc" id="L665" title="1 of 2 branches missed.">                    if (!token.isEmpty()) {</span>
+<span class="fc" id="L666">                        tokenSet.add(token);</span>
+<span class="fc" id="L667">                        frequencies.merge(token, 1, Integer::sum);</span>
+                    }
+                }
+
+<span class="fc" id="L671">                docTokenSets.add(tokenSet);</span>
+<span class="fc" id="L672">            }</span>
+
+<span class="fc" id="L674">            logger.info(&quot;Initial vocabulary size: {}&quot;, frequencies.size());</span>
+
+            // Step 2: Compute mutual information for each term
+<span class="fc" id="L677">            Map&lt;String, Double&gt; mutualInformation = new HashMap&lt;&gt;();</span>
+<span class="fc bfc" id="L678" title="All 2 branches covered.">            for (String term : frequencies.keySet()) {</span>
+<span class="fc" id="L679">                double mi = computeMutualInformation(term, docTokenSets, originalDatasets);</span>
+<span class="fc" id="L680">                mutualInformation.put(term, mi);</span>
+<span class="fc" id="L681">            }</span>
+
+            // Step 3: Apply vocabulary size limit with MI-based selection
+<span class="fc" id="L684">            final int MAX_VOCAB_SIZE = 50000;</span>
+
+<span class="pc bpc" id="L686" title="1 of 2 branches missed.">            if (frequencies.size() &gt; MAX_VOCAB_SIZE) {</span>
+<span class="nc" id="L687">                logger.warn(&quot;Vocabulary size {} exceeds limit {}. Selecting top-{} by mutual information&quot;,</span>
+<span class="nc" id="L688">                           frequencies.size(), MAX_VOCAB_SIZE, MAX_VOCAB_SIZE);</span>
+
+                // Select top-k features by INFORMATION GAIN, not frequency
+<span class="nc" id="L691">                this.vocabularyFrequencies = mutualInformation.entrySet().stream()</span>
+<span class="nc" id="L692">                    .sorted(Map.Entry.&lt;String, Double&gt;comparingByValue().reversed())</span>
+<span class="nc" id="L693">                    .limit(MAX_VOCAB_SIZE)</span>
+<span class="nc" id="L694">                    .collect(Collectors.toMap(</span>
+                        Map.Entry::getKey,
+<span class="nc" id="L696">                        e -&gt; frequencies.get(e.getKey()),  // Store frequency, not MI</span>
+<span class="nc" id="L697">                        (e1, e2) -&gt; e1,</span>
+                        LinkedHashMap::new
+                    ));
+
+<span class="nc" id="L701">                this.vocabularySize = MAX_VOCAB_SIZE;</span>
+
+                // Step 4: Report information loss
+<span class="nc" id="L704">                double totalMI = mutualInformation.values().stream()</span>
+<span class="nc" id="L705">                    .mapToDouble(Double::doubleValue).sum();</span>
+<span class="nc" id="L706">                double retainedMI = vocabularyFrequencies.keySet().stream()</span>
+<span class="nc" id="L707">                    .mapToDouble(mutualInformation::get).sum();</span>
+
+<span class="nc" id="L709">                logger.info(&quot;Feature selection retained {:.2f}% of mutual information ({:.4f} / {:.4f})&quot;,</span>
+<span class="nc" id="L710">                           100.0 * retainedMI / totalMI, retainedMI, totalMI);</span>
+
+                // Report some statistics about discarded features
+<span class="nc" id="L713">                long discardedFeatures = frequencies.size() - MAX_VOCAB_SIZE;</span>
+<span class="nc" id="L714">                logger.info(&quot;Discarded {} features with low discriminative power&quot;, discardedFeatures);</span>
+
+<span class="nc" id="L716">            } else {</span>
+                // No feature selection needed
+<span class="fc" id="L718">                this.vocabularySize = frequencies.size();</span>
+<span class="fc" id="L719">                this.vocabularyFrequencies = frequencies;</span>
+<span class="fc" id="L720">                logger.info(&quot;Vocabulary size {} within limit. No feature selection applied.&quot;,</span>
+<span class="fc" id="L721">                           this.vocabularySize);</span>
+            }
+
+<span class="fc" id="L724">            this.fittingTimestamp = System.currentTimeMillis();</span>
+<span class="fc" id="L725">            this.trainingSampleCount = preprocessedTexts.size();</span>
+<span class="fc" id="L726">        }</span>
+
+        /**
+         * Compute Mutual Information between a term and class labels.
+         *
+         * I(term; class) = H(class) - H(class|term)
+         *
+         * This quantifies how much knowing whether the term appears reduces uncertainty
+         * about the class label.
+         *
+         * MATHEMATICAL DERIVATION:
+         * ========================
+         * MI = Σ_x Σ_y P(x,y) * log(P(x,y) / (P(x) * P(y)))
+         *
+         * where:
+         *   x ∈ {term present, term absent}
+         *   y ∈ {positive, negative, neutral, ...}
+         *
+         * @param term The term to evaluate
+         * @param docTokenSets Precomputed token sets for each document (CORRECTNESS FIX)
+         * @param originalDatasets Original datasets with labels
+         * @return Mutual information score (higher = more discriminative)
+         */
+        private double computeMutualInformation(
+                String term,
+                List&lt;Set&lt;String&gt;&gt; docTokenSets,
+                List&lt;Dataset&gt; originalDatasets) {
+
+<span class="fc" id="L754">            int totalDocs = docTokenSets.size();</span>
+
+            // Count documents with/without term for each class
+<span class="fc" id="L757">            int withTerm = 0;</span>
+<span class="fc" id="L758">            int withoutTerm = 0;</span>
+<span class="fc" id="L759">            Map&lt;String, Integer&gt; classGivenTerm = new HashMap&lt;&gt;();</span>
+<span class="fc" id="L760">            Map&lt;String, Integer&gt; classGivenNoTerm = new HashMap&lt;&gt;();</span>
+<span class="fc" id="L761">            Map&lt;String, Integer&gt; classTotal = new HashMap&lt;&gt;();</span>
+
+<span class="fc bfc" id="L763" title="All 2 branches covered.">            for (int i = 0; i &lt; totalDocs; i++) {</span>
+                // CORRECTNESS FIX: Use proper token matching, not substring matching
+                // Previously: preprocessedTexts.get(i).contains(term)
+                // This was incorrect because &quot;good&quot; would match &quot;goodness&quot;, &quot;goody&quot;, etc.
+<span class="fc" id="L767">                boolean hasTerm = docTokenSets.get(i).contains(term);</span>
+<span class="fc" id="L768">                String label = originalDatasets.get(i).getSentiment().toString();</span>
+
+<span class="fc" id="L770">                classTotal.merge(label, 1, Integer::sum);</span>
+
+<span class="fc bfc" id="L772" title="All 2 branches covered.">                if (hasTerm) {</span>
+<span class="fc" id="L773">                    withTerm++;</span>
+<span class="fc" id="L774">                    classGivenTerm.merge(label, 1, Integer::sum);</span>
+                } else {
+<span class="fc" id="L776">                    withoutTerm++;</span>
+<span class="fc" id="L777">                    classGivenNoTerm.merge(label, 1, Integer::sum);</span>
+                }
+            }
+
+            // Compute mutual information
+<span class="fc" id="L782">            double mi = 0.0;</span>
+
+            // For each class
+<span class="fc bfc" id="L785" title="All 2 branches covered.">            for (String classLabel : classTotal.keySet()) {</span>
+<span class="fc" id="L786">                int n11 = classGivenTerm.getOrDefault(classLabel, 0);  // term present, class present</span>
+<span class="fc" id="L787">                int n10 = withTerm - n11;                               // term present, class absent</span>
+<span class="fc" id="L788">                int n01 = classGivenNoTerm.getOrDefault(classLabel, 0); // term absent, class present</span>
+<span class="fc" id="L789">                int n00 = withoutTerm - n01;                            // term absent, class absent</span>
+
+                // Compute MI contribution for this class
+<span class="fc" id="L792">                mi += computeMIComponent(n11, n10, n01, n00, totalDocs);</span>
+<span class="fc" id="L793">            }</span>
+
+<span class="fc" id="L795">            return Math.max(0.0, mi);  // MI should be non-negative</span>
+        }
+
+        /**
+         * Compute MI component for a 2x2 contingency table.
+         *
+         * This implements the formula:
+         * MI = Σ_i Σ_j (n_ij / N) * log((N * n_ij) / (row_i * col_j))
+         *
+         * @param n11 Count of (term present, class present)
+         * @param n10 Count of (term present, class absent)
+         * @param n01 Count of (term absent, class present)
+         * @param n00 Count of (term absent, class absent)
+         * @param total Total number of documents
+         * @return MI contribution from this contingency table
+         */
+        private double computeMIComponent(int n11, int n10, int n01, int n00, int total) {
+<span class="fc" id="L812">            double mi = 0.0;</span>
+
+            // Row and column totals
+<span class="fc" id="L815">            int row1 = n11 + n10;  // term present</span>
+<span class="fc" id="L816">            int row0 = n01 + n00;  // term absent</span>
+<span class="fc" id="L817">            int col1 = n11 + n01;  // class present</span>
+<span class="fc" id="L818">            int col0 = n10 + n00;  // class absent</span>
+
+            // Add each cell's contribution to MI
+<span class="fc" id="L821">            mi += addMITerm(n11, row1, col1, total);</span>
+<span class="fc" id="L822">            mi += addMITerm(n10, row1, col0, total);</span>
+<span class="fc" id="L823">            mi += addMITerm(n01, row0, col1, total);</span>
+<span class="fc" id="L824">            mi += addMITerm(n00, row0, col0, total);</span>
+
+<span class="fc" id="L826">            return mi;</span>
+        }
+
+        /**
+         * Add a single term to the MI calculation with proper handling of edge cases.
+         *
+         * Handles the case where n_ij = 0 (since 0 * log(0) = 0 by convention in information theory)
+         *
+         * @param nij Count in cell (i,j)
+         * @param rowTotal Total for row i
+         * @param colTotal Total for column j
+         * @param total Overall total
+         * @return Contribution of this cell to MI
+         */
+        private double addMITerm(int nij, int rowTotal, int colTotal, int total) {
+<span class="pc bpc" id="L841" title="2 of 6 branches missed.">            if (nij == 0 || rowTotal == 0 || colTotal == 0) {</span>
+<span class="fc" id="L842">                return 0.0;  // 0 * log(0) = 0 by convention</span>
+            }
+
+<span class="fc" id="L845">            double expected = (double) rowTotal * colTotal / total;</span>
+
+            // Add epsilon smoothing for numerical stability when expected is near-zero
+<span class="pc bpc" id="L848" title="1 of 2 branches missed.">            if (expected &lt; 1e-10) {</span>
+<span class="nc" id="L849">                return 0.0;</span>
+            }
+
+<span class="fc" id="L852">            double pij = (double) nij / total;</span>
+
+            // MI contribution: P(i,j) * log(P(i,j) / (P(i) * P(j)))
+<span class="fc" id="L855">            return pij * Math.log(nij / expected);</span>
+        }
+
+        public void storeConfiguration(TextPreprocessor preprocessor) {
+<span class="fc" id="L859">            this.minWordLength = preprocessor.minWordLength;</span>
+<span class="fc" id="L860">            this.preserveEmoticons = preprocessor.preserveEmoticons;</span>
+<span class="fc" id="L861">        }</span>
+
+        @Override
+        public String toString() {
+<span class="nc" id="L865">            return String.format(&quot;PipelineState{vocab=%d, samples=%d, timestamp=%d}&quot;,</span>
+<span class="nc" id="L866">                    vocabularySize, trainingSampleCount, fittingTimestamp);</span>
+        }
+    }
+
+    public static class PreprocessingStats {
+        public final int totalTexts;
+        public final int originalWords;
+        public final int cleanedWords;
+        public final int filteredWords;
+        public final CleaningMetrics cleaningMetrics;
+        public final AdvancedTokenizer.TokenizationAnalysis tokenizationAnalysis;
+        public final IntelligentStopwordRemover.StopwordAnalysis stopwordAnalysis;
+        public final TFIDFFeatureExtractor.FeatureConfig featureConfig;
+
+        public PreprocessingStats(int totalTexts, int originalWords, int cleanedWords,
+                                  int filteredWords, CleaningMetrics cleaningMetrics,
+                                  AdvancedTokenizer.TokenizationAnalysis tokenizationAnalysis,
+                                  IntelligentStopwordRemover.StopwordAnalysis stopwordAnalysis,
+<span class="nc" id="L884">                                  TFIDFFeatureExtractor.FeatureConfig featureConfig) {</span>
+<span class="nc" id="L885">            this.totalTexts = totalTexts;</span>
+<span class="nc" id="L886">            this.originalWords = originalWords;</span>
+<span class="nc" id="L887">            this.cleanedWords = cleanedWords;</span>
+<span class="nc" id="L888">            this.filteredWords = filteredWords;</span>
+<span class="nc" id="L889">            this.cleaningMetrics = cleaningMetrics;</span>
+<span class="nc" id="L890">            this.tokenizationAnalysis = tokenizationAnalysis;</span>
+<span class="nc" id="L891">            this.stopwordAnalysis = stopwordAnalysis;</span>
+<span class="nc" id="L892">            this.featureConfig = featureConfig;</span>
+<span class="nc" id="L893">        }</span>
+
+        @Override
+        public String toString() {
+<span class="nc" id="L897">            return String.format(</span>
+                    &quot;PreprocessingStats{texts=%d, originalWords=%d, cleanedWords=%d, filteredWords=%d, &quot; +
+                            &quot;cleaning=%s, tokenization=%s, stopwords=%s, features=%s}&quot;,
+<span class="nc" id="L900">                    totalTexts, originalWords, cleanedWords, filteredWords, cleaningMetrics,</span>
+                    tokenizationAnalysis, stopwordAnalysis, featureConfig
+            );
+        }
+
+        public double getCompressionRatio() {
+<span class="nc bnc" id="L906" title="All 2 branches missed.">            return originalWords &gt; 0 ? (double) filteredWords / originalWords : 0.0;</span>
+        }
+
+        public double getTokenizationEfficiency() {
+<span class="nc bnc" id="L910" title="All 2 branches missed.">            return originalWords &gt; 0 ? (double) cleanedWords / originalWords : 0.0;</span>
+        }
+
+        public double getStopwordFilteringRatio() {
+<span class="nc bnc" id="L914" title="All 2 branches missed.">            return cleanedWords &gt; 0 ? (double) filteredWords / cleanedWords : 0.0;</span>
+        }
+    }
+
+    public static class PipelineSummary {
+        public final String preprocessorName;
+        public final ContractionExpander.ContractionStats contractionStats;
+        public final String tokenizerName;
+        public final String stopwordConfig;
+        public final TFIDFFeatureExtractor.FeatureConfig featureConfig;
+
+        public PipelineSummary(String preprocessorName,
+                               ContractionExpander.ContractionStats contractionStats,
+                               String tokenizerName, String stopwordConfig,
+<span class="nc" id="L928">                               TFIDFFeatureExtractor.FeatureConfig featureConfig) {</span>
+<span class="nc" id="L929">            this.preprocessorName = preprocessorName;</span>
+<span class="nc" id="L930">            this.contractionStats = contractionStats;</span>
+<span class="nc" id="L931">            this.tokenizerName = tokenizerName;</span>
+<span class="nc" id="L932">            this.stopwordConfig = stopwordConfig;</span>
+<span class="nc" id="L933">            this.featureConfig = featureConfig;</span>
+<span class="nc" id="L934">        }</span>
+
+        @Override
+        public String toString() {
+<span class="nc" id="L938">            return String.format(</span>
+                    &quot;PipelineSummary{preprocessor=%s, contractions=%s, tokenizer=%s, &quot; +
+                            &quot;stopwords=%s, features=%s}&quot;,
+                    preprocessorName, contractionStats, tokenizerName, stopwordConfig, featureConfig
+            );
+        }
+    }
+
+<span class="nc" id="L946">    public static class CleaningMetrics {</span>
+<span class="nc" id="L947">        public int urlsFound = 0;</span>
+<span class="nc" id="L948">        public int emailsFound = 0;</span>
+<span class="nc" id="L949">        public int mentionsFound = 0;</span>
+<span class="nc" id="L950">        public int hashtagsFound = 0;</span>
+<span class="nc" id="L951">        public int htmlTagsFound = 0;</span>
+<span class="nc" id="L952">        public boolean contractionsExpanded = false;</span>
+<span class="nc" id="L953">        public boolean repeatedCharsFound = false;</span>
+<span class="nc" id="L954">        public int positiveMoods = 0;</span>
+<span class="nc" id="L955">        public int negativeMoods = 0;</span>
+
+        @Override
+        public String toString() {
+<span class="nc" id="L959">            return String.format(</span>
+                    &quot;CleaningMetrics{urls=%d, emails=%d, mentions=%d, hashtags=%d, html=%d, &quot; +
+                            &quot;contractions=%s, repeated=%s, +mood=%d, -mood=%d}&quot;,
+<span class="nc" id="L962">                    urlsFound, emailsFound, mentionsFound, hashtagsFound, htmlTagsFound,</span>
+<span class="nc" id="L963">                    contractionsExpanded, repeatedCharsFound, positiveMoods, negativeMoods</span>
+            );
+        }
+    }
+
+    public static class PipelineVersionInfo {
+        public final String preprocessorVersion;
+        public final String contractionExpanderVersion;
+        public final String tokenizerVersion;
+        public final String stopwordRemoverVersion;
+        public final String featureExtractorVersion;
+
+        public PipelineVersionInfo(String preprocessorVersion,
+                                   String contractionExpanderVersion,
+                                   String tokenizerVersion,
+                                   String stopwordRemoverVersion,
+<span class="nc" id="L979">                                   String featureExtractorVersion) {</span>
+<span class="nc" id="L980">            this.preprocessorVersion = preprocessorVersion;</span>
+<span class="nc" id="L981">            this.contractionExpanderVersion = contractionExpanderVersion;</span>
+<span class="nc" id="L982">            this.tokenizerVersion = tokenizerVersion;</span>
+<span class="nc" id="L983">            this.stopwordRemoverVersion = stopwordRemoverVersion;</span>
+<span class="nc" id="L984">            this.featureExtractorVersion = featureExtractorVersion;</span>
+<span class="nc" id="L985">        }</span>
+
+        @Override
+        public String toString() {
+<span class="nc" id="L989">            return String.format(</span>
+                    &quot;PipelineVersionInfo{preprocessor=%s, contractionExpander=%s, &quot; +
+                            &quot;tokenizer=%s, stopwordRemover=%s, featureExtractor=%s}&quot;,
+                    preprocessorVersion, contractionExpanderVersion, tokenizerVersion,
+                    stopwordRemoverVersion, featureExtractorVersion
+            );
+        }
+
+        /**
+         * Get a compact version string for the entire pipeline
+         */
+        public String getCompactVersion() {
+<span class="nc" id="L1001">            return String.format(&quot;Pipeline-v%s (CE:%s|TOK:%s|SW:%s|FE:%s)&quot;,</span>
+                    preprocessorVersion, contractionExpanderVersion, tokenizerVersion,
+                    stopwordRemoverVersion, featureExtractorVersion);
+        }
+    }
+
+    // ========== Demonstration and Testing Methods ==========
+
+    public void demonstrateIntegratedPipeline(String sampleText) {
+<span class="nc" id="L1010">        logger.info(&quot;=== Integrated Text Preprocessing Pipeline Demonstration ===&quot;);</span>
+<span class="nc" id="L1011">        logger.info(&quot;Original text: '{}'&quot;, sampleText);</span>
+<span class="nc" id="L1012">        logger.info(&quot;Pipeline fitted: {}&quot;, isFitted);</span>
+
+<span class="nc" id="L1014">        PipelineSummary summary = getPipelineSummary();</span>
+<span class="nc" id="L1015">        logger.info(&quot;Pipeline summary: {}&quot;, summary);</span>
+
+<span class="nc" id="L1017">        logger.info(&quot;\n--- Step 1: Text Cleaning ---&quot;);</span>
+<span class="nc" id="L1018">        String cleaned = cleanText(sampleText);</span>
+<span class="nc" id="L1019">        logger.info(&quot;Cleaned: '{}'&quot;, cleaned);</span>
+
+<span class="nc" id="L1021">        logger.info(&quot;\n--- Step 2: Advanced Tokenization ---&quot;);</span>
+<span class="nc" id="L1022">        advancedTokenizer.demonstrateTokenization(cleaned);</span>
+
+<span class="nc" id="L1024">        logger.info(&quot;\n--- Step 3: Intelligent Stopword Removal ---&quot;);</span>
+<span class="nc" id="L1025">        List&lt;String&gt; tokens = tokenize(cleaned);</span>
+<span class="nc" id="L1026">        stopwordRemover.demonstrateStopwordRemoval(String.join(&quot; &quot;, tokens));</span>
+
+<span class="nc" id="L1028">        logger.info(&quot;\n--- Step 4: Complete Preprocessing ---&quot;);</span>
+<span class="nc" id="L1029">        String finalPreprocessed = preprocessText(sampleText);</span>
+<span class="nc" id="L1030">        logger.info(&quot;Final preprocessed result: '{}'&quot;, finalPreprocessed);</span>
+
+<span class="nc" id="L1032">        logger.info(&quot;\n--- Step 5: Feature Extraction Configuration ---&quot;);</span>
+<span class="nc" id="L1033">        TFIDFFeatureExtractor.FeatureConfig featureConfig = featureExtractor.getConfiguration();</span>
+<span class="nc" id="L1034">        logger.info(&quot;Feature extraction will use: {}&quot;, featureConfig);</span>
+
+<span class="nc" id="L1036">        logger.info(&quot;=== End Integrated Pipeline Demonstration ===&quot;);</span>
+<span class="nc" id="L1037">    }</span>
+
+    public void demonstrateCleaning(String sampleText) {
+<span class="nc" id="L1040">        logger.info(&quot;=== Text Cleaning Demonstration (Integrated Pipeline) ===&quot;);</span>
+<span class="nc" id="L1041">        logger.info(&quot;Original: '{}'&quot;, sampleText);</span>
+
+<span class="nc" id="L1043">        String cleaned = cleanText(sampleText);</span>
+<span class="nc" id="L1044">        logger.info(&quot;Cleaned:  '{}'&quot;, cleaned);</span>
+
+<span class="nc" id="L1046">        List&lt;String&gt; tokens = tokenize(cleaned);</span>
+<span class="nc" id="L1047">        logger.info(&quot;Advanced Tokens: {}&quot;, tokens);</span>
+
+<span class="nc" id="L1049">        List&lt;String&gt; filtered = removeStopwords(tokens);</span>
+<span class="nc" id="L1050">        logger.info(&quot;Filtered: {}&quot;, filtered);</span>
+
+<span class="nc" id="L1052">        logger.info(&quot;Final:    '{}'&quot;, String.join(&quot; &quot;, filtered));</span>
+<span class="nc" id="L1053">        logger.info(&quot;=== End Demonstration ===&quot;);</span>
+<span class="nc" id="L1054">    }</span>
+
+    /**
+     * Demonstrate the fit/transform workflow
+     */
+    public void demonstrateFitTransform(List&lt;Dataset&gt; trainingData, String newText) {
+<span class="nc" id="L1060">        logger.info(&quot;=== Fit/Transform Workflow Demonstration ===&quot;);</span>
+
+<span class="nc" id="L1062">        logger.info(&quot;Step 1: Initial state - Fitted: {}&quot;, isFitted);</span>
+
+<span class="nc" id="L1064">        logger.info(&quot;Step 2: Fitting pipeline on {} training samples&quot;, trainingData.size());</span>
+<span class="nc" id="L1065">        fit(trainingData);</span>
+
+<span class="nc" id="L1067">        logger.info(&quot;Step 3: Pipeline state after fitting - Fitted: {}&quot;, isFitted);</span>
+<span class="nc" id="L1068">        logger.info(&quot;  Vocabulary size: {}&quot;, pipelineState.vocabularySize);</span>
+<span class="nc" id="L1069">        logger.info(&quot;  Training samples: {}&quot;, pipelineState.trainingSampleCount);</span>
+
+<span class="nc" id="L1071">        logger.info(&quot;Step 4: Transforming new text: '{}'&quot;,</span>
+<span class="nc" id="L1072">                newText.substring(0, Math.min(50, newText.length())));</span>
+<span class="nc" id="L1073">        String transformed = transform(newText);</span>
+<span class="nc" id="L1074">        logger.info(&quot;  Transformed result: '{}'&quot;, transformed);</span>
+
+<span class="nc" id="L1076">        logger.info(&quot;=== End Fit/Transform Demonstration ===&quot;);</span>
+<span class="nc" id="L1077">    }</span>
+
+    /**
+     * Demonstrate state persistence
+     */
+    public void demonstrateStatePersistence(Path savePath, Path loadPath) throws IOException {
+<span class="nc" id="L1083">        logger.info(&quot;=== State Persistence Demonstration ===&quot;);</span>
+
+<span class="nc" id="L1085">        logger.info(&quot;Step 1: Current state - Fitted: {}&quot;, isFitted);</span>
+<span class="nc bnc" id="L1086" title="All 2 branches missed.">        if (isFitted) {</span>
+<span class="nc" id="L1087">            logger.info(&quot;  Saving state to: {}&quot;, savePath);</span>
+<span class="nc" id="L1088">            saveState(savePath);</span>
+<span class="nc" id="L1089">            logger.info(&quot;  State saved successfully&quot;);</span>
+        } else {
+<span class="nc" id="L1091">            logger.warn(&quot;  Cannot save - pipeline not fitted&quot;);</span>
+        }
+
+<span class="nc" id="L1094">        logger.info(&quot;Step 2: Resetting pipeline&quot;);</span>
+<span class="nc" id="L1095">        reset();</span>
+<span class="nc" id="L1096">        logger.info(&quot;  After reset - Fitted: {}&quot;, isFitted);</span>
+
+<span class="nc bnc" id="L1098" title="All 2 branches missed.">        if (Files.exists(loadPath)) {</span>
+<span class="nc" id="L1099">            logger.info(&quot;Step 3: Loading state from: {}&quot;, loadPath);</span>
+<span class="nc" id="L1100">            loadState(loadPath);</span>
+<span class="nc" id="L1101">            logger.info(&quot;  State loaded - Fitted: {}&quot;, isFitted);</span>
+<span class="nc" id="L1102">            logger.info(&quot;  Vocabulary size: {}&quot;, pipelineState.vocabularySize);</span>
+        } else {
+<span class="nc" id="L1104">            logger.warn(&quot;  Load path does not exist: {}&quot;, loadPath);</span>
+        }
+
+<span class="nc" id="L1107">        logger.info(&quot;=== End State Persistence Demonstration ===&quot;);</span>
+<span class="nc" id="L1108">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

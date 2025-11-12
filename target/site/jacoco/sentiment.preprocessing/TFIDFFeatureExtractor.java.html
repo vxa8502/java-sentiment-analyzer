@@ -1,0 +1,731 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>TFIDFFeatureExtractor.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Java Sentiment Analysis</a> &gt; <a href="index.source.html" class="el_package">sentiment.preprocessing</a> &gt; <span class="el_source">TFIDFFeatureExtractor.java</span></div><h1>TFIDFFeatureExtractor.java</h1><pre class="source lang-java linenums">package sentiment.preprocessing;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
+import sentiment.data.Dataset;
+import sentiment.util.ValidationUtils;
+import weka.core.*;
+import weka.core.tokenizers.NGramTokenizer;
+import weka.filters.Filter;
+import weka.filters.unsupervised.attribute.StringToWordVector;
+import weka.filters.unsupervised.attribute.Normalize;
+
+import java.util.*;
+import java.util.stream.Collectors;
+
+/**
+ * REFACTORED: Now extends FilterTrainingTemplate base class.
+ *
+ * CIRCULAR DEPENDENCY FIX:
+ * ========================
+ * ✅ Now depends on TextCleaner interface (not PreprocessingPipeline)
+ * ✅ Follows Interface Segregation Principle
+ * ✅ Only requires cleaning methods (cleanText, tokenize, removeStopwords)
+ * ✅ No circular dependency with TextPreprocessor
+ *
+ * BENEFITS OF REFACTORING:
+ * ========================
+ * ✅ ~200 lines of boilerplate removed
+ * ✅ State management logic inherited from base
+ * ✅ Thread-safety guarantees enforced by template
+ * ✅ Consistent behavior with WekaInstancesConverter
+ * ✅ Focus on WHAT (filter config) not HOW (state management)
+ *
+ * WHAT THIS CLASS NOW DOES:
+ * =========================
+ * 1. Configure Weka filters (StringToWordVector, Normalize)
+ * 2. Implement training logic (doFit)
+ * 3. Implement inference logic (transform using executeInference)
+ * 4. Provide feature extraction analysis
+ *
+ * WHAT THE BASE CLASS HANDLES:
+ * ============================
+ * 1. Thread-safe state management (ReadWriteLock)
+ * 2. State machine enforcement (UNINITIALIZED -&gt; TRAINING -&gt; READY)
+ * 3. Training phase protection (write lock)
+ * 4. Inference phase concurrency (read lock)
+ * 5. Error handling and state transitions
+ * 6. Reset and cleanup logic
+ */
+@Component
+public class TFIDFFeatureExtractor extends FilterTrainingTemplate&lt;Instances&gt; {
+
+    private static final String VERSION = &quot;1.0.0&quot;;
+<span class="fc" id="L57">    private static final Logger logger = LoggerFactory.getLogger(TFIDFFeatureExtractor.class);</span>
+
+    // Immutable configuration
+    private final int maxFeatures;
+    private final int minTermFreq;
+    private final double maxTermFreq;
+    private final boolean useTfIdf;
+    private final boolean useBigrams;
+    private final boolean useTrigrams;
+    private final boolean normalizeFeatures;
+    private final boolean outputWordCounts;
+
+    // CIRCULAR DEPENDENCY FIX: Depend on TextCleaner, not PreprocessingPipeline
+    // This follows the Interface Segregation Principle - we only need cleaning methods
+    private final TextCleaner textCleaner;
+
+    // Trained filters (mutable, but immutable after training)
+    private StringToWordVector stringToWordVectorFilter;
+    private Normalize normalizationFilter;
+
+    // Training metadata
+    private VocabularyStats vocabularyStats;
+    private Instances trainingStructure;
+
+    @Autowired
+    public TFIDFFeatureExtractor(
+            TextCleaner textCleaner,  // FIXED: Use TextCleaner instead of PreprocessingPipeline
+            @Value(&quot;${sentiment.features.max-features:5000}&quot;) int maxFeatures,
+            @Value(&quot;${sentiment.features.min-term-freq:2}&quot;) int minTermFreq,
+            @Value(&quot;${sentiment.features.max-term-freq:0.9}&quot;) double maxTermFreq,
+            @Value(&quot;${sentiment.features.use-tfidf:true}&quot;) boolean useTfIdf,
+            @Value(&quot;${sentiment.features.use-bigrams:true}&quot;) boolean useBigrams,
+            @Value(&quot;${sentiment.features.use-trigrams:false}&quot;) boolean useTrigrams,
+            @Value(&quot;${sentiment.features.normalize-features:true}&quot;) boolean normalizeFeatures,
+<span class="nc" id="L91">            @Value(&quot;${sentiment.features.output-word-counts:true}&quot;) boolean outputWordCounts) {</span>
+
+<span class="nc" id="L93">        validateConfiguration(maxFeatures, minTermFreq, maxTermFreq);</span>
+
+<span class="nc" id="L95">        this.textCleaner = textCleaner;</span>
+<span class="nc" id="L96">        this.maxFeatures = maxFeatures;</span>
+<span class="nc" id="L97">        this.minTermFreq = minTermFreq;</span>
+<span class="nc" id="L98">        this.maxTermFreq = maxTermFreq;</span>
+<span class="nc" id="L99">        this.useTfIdf = useTfIdf;</span>
+<span class="nc" id="L100">        this.useBigrams = useBigrams;</span>
+<span class="nc" id="L101">        this.useTrigrams = useTrigrams;</span>
+<span class="nc" id="L102">        this.normalizeFeatures = normalizeFeatures;</span>
+<span class="nc" id="L103">        this.outputWordCounts = outputWordCounts;</span>
+
+<span class="nc" id="L105">        logger.info(&quot;TFIDFFeatureExtractor initialized. Configuration: maxFeatures={}, &quot; +</span>
+                        &quot;minTermFreq={}, useTfIdf={}, useBigrams={}&quot;,
+<span class="nc" id="L107">                maxFeatures, minTermFreq, useTfIdf, useBigrams);</span>
+<span class="nc" id="L108">    }</span>
+
+    // ==================== TEMPLATE METHOD IMPLEMENTATIONS ====================
+
+    /**
+     * SUBCLASS HOOK: Implement TF-IDF specific training logic.
+     * Called by base class fit() within write lock.
+     */
+    @Override
+    protected Instances doFit(List&lt;Dataset&gt; datasets) throws Exception {
+<span class="nc" id="L118">        logger.info(&quot;Training TF-IDF filters on {} samples&quot;, datasets.size());</span>
+
+        // Step 1: Preprocess all training texts
+<span class="nc" id="L121">        List&lt;Dataset&gt; preprocessedDatasets = preprocessAllTexts(datasets);</span>
+
+        // Step 2: Create raw Weka instances
+<span class="nc" id="L124">        Instances rawInstances = createRawInstances(preprocessedDatasets);</span>
+<span class="nc" id="L125">        this.trainingStructure = new Instances(rawInstances, 0);  // Store structure</span>
+
+        // Step 3: Train StringToWordVector filter
+<span class="nc" id="L128">        trainFeatureFilter(rawInstances);</span>
+
+        // Step 4: Apply TF-IDF transformation
+<span class="nc" id="L131">        Instances tfidfInstances = Filter.useFilter(rawInstances, stringToWordVectorFilter);</span>
+
+        // Step 5: Train normalization filter if enabled
+        Instances finalInstances;
+<span class="nc bnc" id="L135" title="All 2 branches missed.">        if (normalizeFeatures) {</span>
+<span class="nc" id="L136">            trainNormalizationFilter(tfidfInstances);</span>
+<span class="nc" id="L137">            finalInstances = Filter.useFilter(tfidfInstances, normalizationFilter);</span>
+        } else {
+<span class="nc" id="L139">            finalInstances = tfidfInstances;</span>
+        }
+
+        // Step 6: Generate statistics
+<span class="nc" id="L143">        generateFeatureStats(finalInstances);</span>
+
+<span class="nc" id="L145">        logger.info(&quot;TF-IDF training complete. Vocabulary: {} terms&quot;, vocabularyStats.numFeatures);</span>
+<span class="nc" id="L146">        return finalInstances;</span>
+    }
+
+    /**
+     * SUBCLASS HOOK: Clear TF-IDF specific resources.
+     * Called by base class reset() within write lock.
+     */
+    @Override
+    protected void doClearResources() {
+<span class="nc" id="L155">        stringToWordVectorFilter = null;</span>
+<span class="nc" id="L156">        normalizationFilter = null;</span>
+<span class="nc" id="L157">        vocabularyStats = null;</span>
+<span class="nc" id="L158">        trainingStructure = null;</span>
+<span class="nc" id="L159">    }</span>
+
+    /**
+     * SUBCLASS HOOK: Provide logger instance to base class.
+     */
+    @Override
+    protected Logger getLogger() {
+<span class="nc" id="L166">        return logger;</span>
+    }
+
+    // ==================== INFERENCE METHODS (THREAD-SAFE) ====================
+
+    /**
+     * Transform a single text using trained filters.
+     * Thread-safe after fit() completes.
+     */
+    public Instance transform(String text) {
+<span class="nc" id="L176">        ValidationUtils.requireNonEmpty(text);</span>
+
+        // Use base class executeInference for thread-safe execution
+<span class="nc" id="L179">        return executeInference(() -&gt; {</span>
+<span class="nc" id="L180">            logger.debug(&quot;INFERENCE: Transforming text (thread-safe): '{}'&quot;,</span>
+<span class="nc" id="L181">                    text.substring(0, Math.min(50, text.length())));</span>
+
+<span class="nc" id="L183">            String preprocessedText = textCleaner.preprocessText(text);</span>
+<span class="nc" id="L184">            Instances singleInstanceSet = createSingleInstanceSet(preprocessedText);</span>
+
+            // Apply trained filters (thread-safe: Filter.useFilter creates new Instances)
+<span class="nc" id="L187">            Instances transformed = Filter.useFilter(singleInstanceSet, stringToWordVectorFilter);</span>
+
+<span class="nc bnc" id="L189" title="All 4 branches missed.">            if (normalizeFeatures &amp;&amp; normalizationFilter != null) {</span>
+<span class="nc" id="L190">                transformed = Filter.useFilter(transformed, normalizationFilter);</span>
+            }
+
+<span class="nc" id="L193">            return transformed.instance(0);</span>
+        });
+    }
+
+    /**
+     * Transform multiple texts using trained filters.
+     * Thread-safe batch transformation.
+     */
+    public Instances transform(List&lt;String&gt; texts) {
+<span class="nc bnc" id="L202" title="All 4 branches missed.">        if (texts == null || texts.isEmpty()) {</span>
+<span class="nc" id="L203">            throw new IllegalArgumentException(&quot;Texts cannot be null or empty&quot;);</span>
+        }
+
+<span class="nc" id="L206">        return executeInference(() -&gt; {</span>
+<span class="nc" id="L207">            logger.info(&quot;INFERENCE: Batch transforming {} texts (thread-safe)&quot;, texts.size());</span>
+
+            // Create batch instances
+<span class="nc" id="L210">            List&lt;Dataset&gt; tempDatasets = texts.stream()</span>
+<span class="nc" id="L211">                    .map(text -&gt; new Dataset.Builder(text, Dataset.SentimentLabel.NEUTRAL).build())</span>
+<span class="nc" id="L212">                    .collect(Collectors.toList());</span>
+
+<span class="nc" id="L214">            List&lt;Dataset&gt; preprocessed = preprocessAllTexts(tempDatasets);</span>
+<span class="nc" id="L215">            Instances rawInstances = createRawInstances(preprocessed);</span>
+
+            // Apply trained filters
+<span class="nc" id="L218">            Instances transformed = Filter.useFilter(rawInstances, stringToWordVectorFilter);</span>
+<span class="nc bnc" id="L219" title="All 4 branches missed.">            if (normalizeFeatures &amp;&amp; normalizationFilter != null) {</span>
+<span class="nc" id="L220">                transformed = Filter.useFilter(transformed, normalizationFilter);</span>
+            }
+
+<span class="nc" id="L223">            logger.info(&quot;INFERENCE complete: {} texts -&gt; {} features&quot;,</span>
+<span class="nc" id="L224">                    texts.size(), transformed.numAttributes() - 1);</span>
+
+<span class="nc" id="L226">            return transformed;</span>
+        });
+    }
+
+    // ==================== TRAINING HELPER METHODS ====================
+
+    private List&lt;Dataset&gt; preprocessAllTexts(List&lt;Dataset&gt; datasets) {
+<span class="nc" id="L233">        logger.debug(&quot;Preprocessing {} texts for feature extraction&quot;, datasets.size());</span>
+<span class="nc" id="L234">        return datasets.stream()</span>
+<span class="nc" id="L235">                .map(dataset -&gt; {</span>
+<span class="nc" id="L236">                    String preprocessedText = textCleaner.preprocessText(dataset.getText());</span>
+<span class="nc" id="L237">                    return new Dataset.Builder(preprocessedText, dataset.getSentiment())</span>
+<span class="nc" id="L238">                            .id(dataset.getId())</span>
+<span class="nc" id="L239">                            .confidence(dataset.getConfidence())</span>
+<span class="nc" id="L240">                            .source(dataset.getSource())</span>
+<span class="nc" id="L241">                            .timestamp(dataset.getTimestamp())</span>
+<span class="nc" id="L242">                            .build();</span>
+                })
+<span class="nc" id="L244">                .collect(Collectors.toList());</span>
+    }
+
+    private Instances createRawInstances(List&lt;Dataset&gt; datasets) {
+<span class="nc" id="L248">        logger.debug(&quot;Creating raw Weka instances from {} preprocessed datasets&quot;, datasets.size());</span>
+
+<span class="nc" id="L250">        ArrayList&lt;Attribute&gt; attributes = new ArrayList&lt;&gt;();</span>
+<span class="nc" id="L251">        attributes.add(new Attribute(&quot;text&quot;, (ArrayList&lt;String&gt;) null));</span>
+
+<span class="nc" id="L253">        ArrayList&lt;String&gt; classValues = new ArrayList&lt;&gt;(Arrays.asList(&quot;positive&quot;, &quot;negative&quot;, &quot;neutral&quot;));</span>
+<span class="nc" id="L254">        attributes.add(new Attribute(&quot;sentiment&quot;, classValues));</span>
+
+<span class="nc" id="L256">        Instances instances = new Instances(&quot;SentimentDataRaw&quot;, attributes, datasets.size());</span>
+<span class="nc" id="L257">        instances.setClassIndex(instances.numAttributes() - 1);</span>
+
+<span class="nc bnc" id="L259" title="All 2 branches missed.">        for (Dataset dataset : datasets) {</span>
+<span class="nc" id="L260">            DenseInstance instance = new DenseInstance(2);</span>
+<span class="nc" id="L261">            instance.setValue(attributes.get(0), dataset.getText());</span>
+<span class="nc" id="L262">            instance.setValue(attributes.get(1), dataset.getSentiment().getDisplayName());</span>
+<span class="nc" id="L263">            instance.setDataset(instances);</span>
+<span class="nc" id="L264">            instances.add(instance);</span>
+<span class="nc" id="L265">        }</span>
+
+<span class="nc" id="L267">        return instances;</span>
+    }
+
+    private Instances createSingleInstanceSet(String preprocessedText) {
+<span class="nc" id="L271">        ArrayList&lt;Attribute&gt; attributes = new ArrayList&lt;&gt;();</span>
+<span class="nc" id="L272">        attributes.add(new Attribute(&quot;text&quot;, (ArrayList&lt;String&gt;) null));</span>
+
+<span class="nc" id="L274">        ArrayList&lt;String&gt; classValues = new ArrayList&lt;&gt;(Arrays.asList(&quot;positive&quot;, &quot;negative&quot;, &quot;neutral&quot;, &quot;unknown&quot;));</span>
+<span class="nc" id="L275">        attributes.add(new Attribute(&quot;sentiment&quot;, classValues));</span>
+
+<span class="nc" id="L277">        Instances singleSet = new Instances(&quot;SingleText&quot;, attributes, 1);</span>
+<span class="nc" id="L278">        singleSet.setClassIndex(singleSet.numAttributes() - 1);</span>
+
+<span class="nc" id="L280">        DenseInstance instance = new DenseInstance(2);</span>
+<span class="nc" id="L281">        instance.setValue(attributes.get(0), preprocessedText);</span>
+<span class="nc" id="L282">        instance.setValue(attributes.get(1), &quot;unknown&quot;);</span>
+<span class="nc" id="L283">        instance.setDataset(singleSet);</span>
+<span class="nc" id="L284">        singleSet.add(instance);</span>
+
+<span class="nc" id="L286">        return singleSet;</span>
+    }
+
+    private void trainFeatureFilter(Instances rawInstances) throws Exception {
+<span class="nc" id="L290">        logger.info(&quot;Training TF-IDF filter: maxFeatures={}, minTermFreq={}, useTfIdf={}&quot;,</span>
+<span class="nc" id="L291">                maxFeatures, minTermFreq, useTfIdf);</span>
+
+<span class="nc" id="L293">        stringToWordVectorFilter = new StringToWordVector();</span>
+<span class="nc" id="L294">        stringToWordVectorFilter.setAttributeIndices(&quot;first&quot;);</span>
+<span class="nc" id="L295">        stringToWordVectorFilter.setWordsToKeep(maxFeatures);</span>
+<span class="nc" id="L296">        stringToWordVectorFilter.setMinTermFreq(minTermFreq);</span>
+<span class="nc" id="L297">        stringToWordVectorFilter.setDoNotOperateOnPerClassBasis(false);</span>
+<span class="nc" id="L298">        stringToWordVectorFilter.setLowerCaseTokens(true);</span>
+<span class="nc" id="L299">        stringToWordVectorFilter.setOutputWordCounts(outputWordCounts);</span>
+
+<span class="nc bnc" id="L301" title="All 2 branches missed.">        if (useTfIdf) {</span>
+<span class="nc" id="L302">            stringToWordVectorFilter.setTFTransform(true);</span>
+<span class="nc" id="L303">            stringToWordVectorFilter.setIDFTransform(true);</span>
+<span class="nc" id="L304">            logger.debug(&quot;TF-IDF transformation enabled&quot;);</span>
+        }
+
+<span class="nc bnc" id="L307" title="All 4 branches missed.">        if (useBigrams || useTrigrams) {</span>
+<span class="nc" id="L308">            NGramTokenizer ngramTokenizer = new NGramTokenizer();</span>
+<span class="nc" id="L309">            ngramTokenizer.setNGramMinSize(1);</span>
+
+<span class="nc bnc" id="L311" title="All 2 branches missed.">            if (useTrigrams) {</span>
+<span class="nc" id="L312">                ngramTokenizer.setNGramMaxSize(3);</span>
+<span class="nc" id="L313">                logger.debug(&quot;N-gram tokenizer configured for unigrams, bigrams, and trigrams&quot;);</span>
+<span class="nc bnc" id="L314" title="All 2 branches missed.">            } else if (useBigrams) {</span>
+<span class="nc" id="L315">                ngramTokenizer.setNGramMaxSize(2);</span>
+<span class="nc" id="L316">                logger.debug(&quot;N-gram tokenizer configured for unigrams and bigrams&quot;);</span>
+            }
+
+<span class="nc" id="L319">            stringToWordVectorFilter.setTokenizer(ngramTokenizer);</span>
+        }
+
+<span class="nc" id="L322">        stringToWordVectorFilter.setInputFormat(rawInstances);</span>
+<span class="nc" id="L323">        logger.info(&quot;Feature filter training complete&quot;);</span>
+<span class="nc" id="L324">    }</span>
+
+    private void trainNormalizationFilter(Instances tfidfInstances) throws Exception {
+<span class="nc" id="L327">        logger.info(&quot;Training Normalize filter&quot;);</span>
+<span class="nc" id="L328">        normalizationFilter = new Normalize();</span>
+<span class="nc" id="L329">        normalizationFilter.setInputFormat(tfidfInstances);</span>
+<span class="nc" id="L330">        logger.info(&quot;Normalize filter trained&quot;);</span>
+<span class="nc" id="L331">    }</span>
+
+    private void generateFeatureStats(Instances instances) {
+<span class="nc" id="L334">        int numFeatures = instances.numAttributes() - 1;</span>
+<span class="nc" id="L335">        int numInstances = instances.numInstances();</span>
+
+<span class="nc" id="L337">        int totalValues = numFeatures * numInstances;</span>
+<span class="nc" id="L338">        int nonZeroValues = 0;</span>
+
+<span class="nc bnc" id="L340" title="All 2 branches missed.">        for (int i = 0; i &lt; numInstances; i++) {</span>
+<span class="nc" id="L341">            Instance instance = instances.instance(i);</span>
+<span class="nc bnc" id="L342" title="All 2 branches missed.">            for (int j = 0; j &lt; numFeatures; j++) {</span>
+<span class="nc bnc" id="L343" title="All 2 branches missed.">                if (instance.value(j) != 0) {</span>
+<span class="nc" id="L344">                    nonZeroValues++;</span>
+                }
+            }
+        }
+
+<span class="nc bnc" id="L349" title="All 2 branches missed.">        double sparsity = totalValues &gt; 0 ? 1.0 - (double) nonZeroValues / totalValues : 0.0;</span>
+
+<span class="nc" id="L351">        vocabularyStats = new VocabularyStats(</span>
+                numFeatures, numInstances, sparsity,
+<span class="nc" id="L353">                calculateAverageDocumentLength(instances),</span>
+<span class="nc" id="L354">                calculateVocabularyDistribution(instances)</span>
+        );
+
+<span class="nc" id="L357">        logger.info(&quot;Feature statistics: {}&quot;, vocabularyStats);</span>
+<span class="nc" id="L358">    }</span>
+
+    private double calculateAverageDocumentLength(Instances instances) {
+<span class="nc bnc" id="L361" title="All 2 branches missed.">        if (instances.numInstances() == 0) return 0.0;</span>
+
+<span class="nc" id="L363">        double totalLength = 0;</span>
+<span class="nc" id="L364">        int numFeatures = instances.numAttributes() - 1;</span>
+
+<span class="nc bnc" id="L366" title="All 2 branches missed.">        for (int i = 0; i &lt; instances.numInstances(); i++) {</span>
+<span class="nc" id="L367">            Instance instance = instances.instance(i);</span>
+<span class="nc" id="L368">            int documentLength = 0;</span>
+
+<span class="nc bnc" id="L370" title="All 2 branches missed.">            for (int j = 0; j &lt; numFeatures; j++) {</span>
+<span class="nc bnc" id="L371" title="All 2 branches missed.">                if (instance.value(j) &gt; 0) {</span>
+<span class="nc" id="L372">                    documentLength++;</span>
+                }
+            }
+<span class="nc" id="L375">            totalLength += documentLength;</span>
+        }
+
+<span class="nc" id="L378">        return totalLength / instances.numInstances();</span>
+    }
+
+    private Map&lt;String, Double&gt; calculateVocabularyDistribution(Instances instances) {
+<span class="nc" id="L382">        Map&lt;String, Double&gt; distribution = new HashMap&lt;&gt;();</span>
+<span class="nc" id="L383">        int numFeatures = instances.numAttributes() - 1;</span>
+
+<span class="nc bnc" id="L385" title="All 2 branches missed.">        if (numFeatures == 0) return distribution;</span>
+
+<span class="nc" id="L387">        double[] termCounts = new double[numFeatures];</span>
+
+<span class="nc bnc" id="L389" title="All 2 branches missed.">        for (int i = 0; i &lt; instances.numInstances(); i++) {</span>
+<span class="nc" id="L390">            Instance instance = instances.instance(i);</span>
+<span class="nc bnc" id="L391" title="All 2 branches missed.">            for (int j = 0; j &lt; numFeatures; j++) {</span>
+<span class="nc bnc" id="L392" title="All 2 branches missed.">                if (instance.value(j) &gt; 0) {</span>
+<span class="nc" id="L393">                    termCounts[j]++;</span>
+                }
+            }
+        }
+
+<span class="nc" id="L398">        double numDocs = instances.numInstances();</span>
+<span class="nc" id="L399">        Arrays.sort(termCounts);</span>
+
+<span class="nc" id="L401">        distribution.put(&quot;min_doc_freq&quot;, termCounts[0] / numDocs);</span>
+<span class="nc" id="L402">        distribution.put(&quot;max_doc_freq&quot;, termCounts[numFeatures - 1] / numDocs);</span>
+<span class="nc" id="L403">        distribution.put(&quot;median_doc_freq&quot;, termCounts[numFeatures / 2] / numDocs);</span>
+<span class="nc" id="L404">        distribution.put(&quot;mean_doc_freq&quot;, Arrays.stream(termCounts).average().orElse(0.0) / numDocs);</span>
+
+<span class="nc" id="L406">        return distribution;</span>
+    }
+
+    // ==================== CONFIGURATION AND UTILITIES ====================
+
+    private void validateConfiguration(int maxFeatures, int minTermFreq, double maxTermFreq) {
+<span class="nc bnc" id="L412" title="All 2 branches missed.">        if (maxFeatures &lt;= 0) {</span>
+<span class="nc" id="L413">            throw new IllegalArgumentException(&quot;maxFeatures must be &gt; 0, got: &quot; + maxFeatures);</span>
+        }
+<span class="nc bnc" id="L415" title="All 2 branches missed.">        if (minTermFreq &lt; 1) {</span>
+<span class="nc" id="L416">            throw new IllegalArgumentException(&quot;minTermFreq must be &gt;= 1, got: &quot; + minTermFreq);</span>
+        }
+<span class="nc bnc" id="L418" title="All 4 branches missed.">        if (maxTermFreq &lt;= 0 || maxTermFreq &gt; 1.0) {</span>
+<span class="nc" id="L419">            throw new IllegalArgumentException(&quot;maxTermFreq must be in (0, 1], got: &quot; + maxTermFreq);</span>
+        }
+<span class="nc" id="L421">    }</span>
+
+    public String getVersion() {
+<span class="nc" id="L424">        return VERSION;</span>
+    }
+
+    public FeatureConfig getConfiguration() {
+<span class="nc" id="L428">        return new FeatureConfig(maxFeatures, minTermFreq, maxTermFreq,</span>
+                useTfIdf, useBigrams, useTrigrams, normalizeFeatures, outputWordCounts);
+    }
+
+    public VocabularyStats getVocabularyStats() {
+        // Thread-safe: read within inference context if needed
+<span class="nc" id="L434">        return executeInference(() -&gt; vocabularyStats);</span>
+    }
+
+    @Override
+    protected String getSubclassDiagnostics() {
+<span class="nc" id="L439">        StringBuilder diag = new StringBuilder();</span>
+<span class="nc" id="L440">        diag.append(&quot;=== TFIDFFeatureExtractor Specific Diagnostics ===\n&quot;);</span>
+<span class="nc" id="L441">        diag.append(String.format(&quot;StringToWordVector filter: %s\n&quot;,</span>
+<span class="nc bnc" id="L442" title="All 2 branches missed.">                stringToWordVectorFilter != null ? &quot;trained&quot; : &quot;null&quot;));</span>
+<span class="nc" id="L443">        diag.append(String.format(&quot;Normalization filter: %s\n&quot;,</span>
+<span class="nc bnc" id="L444" title="All 2 branches missed.">                normalizationFilter != null ? &quot;trained&quot; : &quot;null&quot;));</span>
+<span class="nc" id="L445">        diag.append(String.format(&quot;Configuration: maxFeatures=%d, minTermFreq=%d, useTfIdf=%s\n&quot;,</span>
+<span class="nc" id="L446">                maxFeatures, minTermFreq, useTfIdf));</span>
+<span class="nc bnc" id="L447" title="All 2 branches missed.">        if (vocabularyStats != null) {</span>
+<span class="nc" id="L448">            diag.append(String.format(&quot;Vocabulary stats: %s\n&quot;, vocabularyStats));</span>
+        }
+<span class="nc" id="L450">        return diag.toString();</span>
+    }
+
+    // ==================== ANALYSIS METHODS ====================
+
+    /**
+     * Extract features with comprehensive analysis.
+     * Thread-safe after fit() completes.
+     */
+    public FeatureExtractionResult extractFeaturesWithAnalysis(List&lt;Dataset&gt; datasets) {
+<span class="nc bnc" id="L460" title="All 4 branches missed.">        if (datasets == null || datasets.isEmpty()) {</span>
+<span class="nc" id="L461">            throw new IllegalArgumentException(&quot;Datasets cannot be null or empty&quot;);</span>
+        }
+
+<span class="nc" id="L464">        return executeInference(() -&gt; {</span>
+<span class="nc" id="L465">            logger.info(&quot;Extracting features with analysis for {} datasets&quot;, datasets.size());</span>
+
+            // Transform using trained filters
+<span class="nc" id="L468">            List&lt;String&gt; texts = datasets.stream()</span>
+<span class="nc" id="L469">                    .map(Dataset::getText)</span>
+<span class="nc" id="L470">                    .collect(Collectors.toList());</span>
+<span class="nc" id="L471">            Instances features = transform(texts);</span>
+
+            // Perform analysis
+<span class="nc" id="L474">            VocabularyAnalysis vocabAnalysis = analyzeVocabulary(features);</span>
+<span class="nc" id="L475">            FeatureQualityMetrics qualityMetrics = assessFeatureQuality(features);</span>
+
+<span class="nc" id="L477">            return new FeatureExtractionResult(features, vocabAnalysis,</span>
+                    qualityMetrics, vocabularyStats);
+        });
+    }
+
+    /**
+     * Analyze vocabulary composition.
+     */
+    private VocabularyAnalysis analyzeVocabulary(Instances instances) {
+<span class="nc" id="L486">        int numFeatures = instances.numAttributes() - 1;</span>
+<span class="nc" id="L487">        List&lt;String&gt; topFeatures = new ArrayList&lt;&gt;();</span>
+
+<span class="nc bnc" id="L489" title="All 2 branches missed.">        for (int i = 0; i &lt; Math.min(20, numFeatures); i++) {</span>
+<span class="nc" id="L490">            topFeatures.add(instances.attribute(i).name());</span>
+        }
+
+<span class="nc" id="L493">        long unigramCount = topFeatures.stream()</span>
+<span class="nc bnc" id="L494" title="All 2 branches missed.">                .filter(name -&gt; !name.contains(&quot; &quot;))</span>
+<span class="nc" id="L495">                .count();</span>
+<span class="nc" id="L496">        long bigramCount = topFeatures.stream()</span>
+<span class="nc bnc" id="L497" title="All 2 branches missed.">                .filter(name -&gt; name.split(&quot; &quot;).length == 2)</span>
+<span class="nc" id="L498">                .count();</span>
+<span class="nc" id="L499">        long trigramCount = topFeatures.stream()</span>
+<span class="nc bnc" id="L500" title="All 2 branches missed.">                .filter(name -&gt; name.split(&quot; &quot;).length == 3)</span>
+<span class="nc" id="L501">                .count();</span>
+
+<span class="nc" id="L503">        return new VocabularyAnalysis(numFeatures, topFeatures,</span>
+                (int) unigramCount, (int) bigramCount, (int) trigramCount);
+    }
+
+    /**
+     * Assess feature quality metrics.
+     */
+    private FeatureQualityMetrics assessFeatureQuality(Instances instances) {
+<span class="nc" id="L511">        int numFeatures = instances.numAttributes() - 1;</span>
+<span class="nc" id="L512">        int numInstances = instances.numInstances();</span>
+
+<span class="nc" id="L514">        double[] featureDensities = new double[numFeatures];</span>
+<span class="nc" id="L515">        double[] featureVariances = new double[numFeatures];</span>
+
+<span class="nc bnc" id="L517" title="All 2 branches missed.">        for (int j = 0; j &lt; numFeatures; j++) {</span>
+<span class="nc" id="L518">            double[] values = new double[numInstances];</span>
+<span class="nc bnc" id="L519" title="All 2 branches missed.">            for (int i = 0; i &lt; numInstances; i++) {</span>
+<span class="nc" id="L520">                values[i] = instances.instance(i).value(j);</span>
+            }
+
+<span class="nc bnc" id="L523" title="All 2 branches missed.">            long nonZeroCount = Arrays.stream(values).filter(v -&gt; v != 0).count();</span>
+<span class="nc" id="L524">            featureDensities[j] = (double) nonZeroCount / numInstances;</span>
+
+<span class="nc" id="L526">            double mean = Arrays.stream(values).average().orElse(0.0);</span>
+<span class="nc" id="L527">            featureVariances[j] = Arrays.stream(values)</span>
+<span class="nc" id="L528">                    .map(v -&gt; Math.pow(v - mean, 2))</span>
+<span class="nc" id="L529">                    .average().orElse(0.0);</span>
+        }
+
+<span class="nc" id="L532">        double avgDensity = Arrays.stream(featureDensities).average().orElse(0.0);</span>
+<span class="nc" id="L533">        double avgVariance = Arrays.stream(featureVariances).average().orElse(0.0);</span>
+
+<span class="nc" id="L535">        int highVarianceFeatures = (int) Arrays.stream(featureVariances)</span>
+<span class="nc bnc" id="L536" title="All 2 branches missed.">                .filter(v -&gt; v &gt; avgVariance * 1.5).count();</span>
+
+<span class="nc" id="L538">        return new FeatureQualityMetrics(avgDensity, avgVariance, highVarianceFeatures);</span>
+    }
+
+    /**
+     * Demonstrate feature extraction with sample data.
+     */
+    public void demonstrateFeatureExtraction(List&lt;String&gt; sampleTexts, List&lt;String&gt; sentiments) {
+<span class="nc bnc" id="L545" title="All 2 branches missed.">        if (sampleTexts.size() != sentiments.size()) {</span>
+<span class="nc" id="L546">            throw new IllegalArgumentException(&quot;Sample texts and sentiments must have same size&quot;);</span>
+        }
+
+<span class="nc" id="L549">        logger.info(&quot;=== TF-IDF Feature Extraction Demonstration ===&quot;);</span>
+<span class="nc" id="L550">        logger.info(&quot;Current filter state: {}&quot;, getFilterState());</span>
+
+<span class="nc" id="L552">        List&lt;Dataset&gt; sampleDatasets = new ArrayList&lt;&gt;();</span>
+<span class="nc bnc" id="L553" title="All 2 branches missed.">        for (int i = 0; i &lt; sampleTexts.size(); i++) {</span>
+<span class="nc" id="L554">            Dataset.SentimentLabel sentiment = Dataset.SentimentLabel.fromString(sentiments.get(i));</span>
+<span class="nc" id="L555">            sampleDatasets.add(new Dataset.Builder(sampleTexts.get(i), sentiment)</span>
+<span class="nc" id="L556">                    .id(&quot;demo_&quot; + i)</span>
+<span class="nc" id="L557">                    .build());</span>
+        }
+
+<span class="nc" id="L560">        FeatureExtractionResult result = extractFeaturesWithAnalysis(sampleDatasets);</span>
+
+<span class="nc" id="L562">        logger.info(&quot;Sample data: {} texts&quot;, sampleTexts.size());</span>
+<span class="nc" id="L563">        logger.info(&quot;Features extracted: {}&quot;, result.instances.numAttributes() - 1);</span>
+<span class="nc" id="L564">        logger.info(&quot;Final filter state: {}&quot;, getFilterState());</span>
+<span class="nc" id="L565">        logger.info(&quot;Vocabulary analysis: {}&quot;, result.vocabularyAnalysis);</span>
+<span class="nc" id="L566">        logger.info(&quot;Quality metrics: {}&quot;, result.qualityMetrics);</span>
+<span class="nc" id="L567">        logger.info(&quot;Vocabulary stats: {}&quot;, result.vocabularyStats);</span>
+
+<span class="nc bnc" id="L569" title="All 2 branches missed.">        for (int i = 0; i &lt; Math.min(3, result.instances.numInstances()); i++) {</span>
+<span class="nc" id="L570">            Instance instance = result.instances.instance(i);</span>
+<span class="nc" id="L571">            logger.info(&quot;Sample {}: {} non-zero features&quot;, i, countNonZeroFeatures(instance));</span>
+        }
+
+<span class="nc" id="L574">        logger.info(&quot;=== End Feature Extraction Demonstration ===&quot;);</span>
+<span class="nc" id="L575">    }</span>
+
+    private int countNonZeroFeatures(Instance instance) {
+<span class="nc" id="L578">        int count = 0;</span>
+<span class="nc bnc" id="L579" title="All 2 branches missed.">        for (int i = 0; i &lt; instance.numAttributes() - 1; i++) {</span>
+<span class="nc bnc" id="L580" title="All 2 branches missed.">            if (instance.value(i) != 0) {</span>
+<span class="nc" id="L581">                count++;</span>
+            }
+        }
+<span class="nc" id="L584">        return count;</span>
+    }
+
+    // ==================== DATA CLASSES ====================
+
+    public static class FeatureExtractionResult {
+        public final Instances instances;
+        public final VocabularyAnalysis vocabularyAnalysis;
+        public final FeatureQualityMetrics qualityMetrics;
+        public final VocabularyStats vocabularyStats;
+
+        public FeatureExtractionResult(Instances instances, VocabularyAnalysis vocabularyAnalysis,
+<span class="nc" id="L596">                                       FeatureQualityMetrics qualityMetrics, VocabularyStats vocabularyStats) {</span>
+<span class="nc" id="L597">            this.instances = instances;</span>
+<span class="nc" id="L598">            this.vocabularyAnalysis = vocabularyAnalysis;</span>
+<span class="nc" id="L599">            this.qualityMetrics = qualityMetrics;</span>
+<span class="nc" id="L600">            this.vocabularyStats = vocabularyStats;</span>
+<span class="nc" id="L601">        }</span>
+    }
+
+    public static class VocabularyAnalysis {
+        public final int totalFeatures;
+        public final List&lt;String&gt; topFeatures;
+        public final int unigramCount;
+        public final int bigramCount;
+        public final int trigramCount;
+
+        public VocabularyAnalysis(int totalFeatures, List&lt;String&gt; topFeatures,
+<span class="nc" id="L612">                                  int unigramCount, int bigramCount, int trigramCount) {</span>
+<span class="nc" id="L613">            this.totalFeatures = totalFeatures;</span>
+<span class="nc" id="L614">            this.topFeatures = topFeatures;</span>
+<span class="nc" id="L615">            this.unigramCount = unigramCount;</span>
+<span class="nc" id="L616">            this.bigramCount = bigramCount;</span>
+<span class="nc" id="L617">            this.trigramCount = trigramCount;</span>
+<span class="nc" id="L618">        }</span>
+
+        @Override
+        public String toString() {
+<span class="nc" id="L622">            return String.format(&quot;VocabAnalysis{features=%d, unigrams=%d, bigrams=%d, trigrams=%d, top=%s}&quot;,</span>
+<span class="nc" id="L623">                    totalFeatures, unigramCount, bigramCount, trigramCount,</span>
+<span class="nc" id="L624">                    topFeatures.stream().limit(5).collect(Collectors.toList()));</span>
+        }
+    }
+
+    public static class FeatureQualityMetrics {
+        public final double averageDensity;
+        public final double averageVariance;
+        public final int highVarianceFeatures;
+
+<span class="nc" id="L633">        public FeatureQualityMetrics(double averageDensity, double averageVariance, int highVarianceFeatures) {</span>
+<span class="nc" id="L634">            this.averageDensity = averageDensity;</span>
+<span class="nc" id="L635">            this.averageVariance = averageVariance;</span>
+<span class="nc" id="L636">            this.highVarianceFeatures = highVarianceFeatures;</span>
+<span class="nc" id="L637">        }</span>
+
+        @Override
+        public String toString() {
+<span class="nc" id="L641">            return String.format(&quot;QualityMetrics{density=%.3f, variance=%.3f, highVarFeatures=%d}&quot;,</span>
+<span class="nc" id="L642">                    averageDensity, averageVariance, highVarianceFeatures);</span>
+        }
+    }
+
+    public static class VocabularyStats {
+        public final int numFeatures;
+        public final int numDocuments;
+        public final double sparsity;
+        public final double averageDocumentLength;
+        public final Map&lt;String, Double&gt; distribution;
+
+        public VocabularyStats(int numFeatures, int numDocuments, double sparsity,
+<span class="nc" id="L654">                               double averageDocumentLength, Map&lt;String, Double&gt; distribution) {</span>
+<span class="nc" id="L655">            this.numFeatures = numFeatures;</span>
+<span class="nc" id="L656">            this.numDocuments = numDocuments;</span>
+<span class="nc" id="L657">            this.sparsity = sparsity;</span>
+<span class="nc" id="L658">            this.averageDocumentLength = averageDocumentLength;</span>
+<span class="nc" id="L659">            this.distribution = distribution;</span>
+<span class="nc" id="L660">        }</span>
+
+        @Override
+        public String toString() {
+<span class="nc" id="L664">            return String.format(&quot;VocabStats{features=%d, docs=%d, sparsity=%.3f, avgDocLen=%.1f}&quot;,</span>
+<span class="nc" id="L665">                    numFeatures, numDocuments, sparsity, averageDocumentLength);</span>
+        }
+    }
+
+    public static class FeatureConfig {
+        public final int maxFeatures;
+        public final int minTermFreq;
+        public final double maxTermFreq;
+        public final boolean useTfIdf;
+        public final boolean useBigrams;
+        public final boolean useTrigrams;
+        public final boolean normalizeFeatures;
+        public final boolean outputWordCounts;
+
+        public FeatureConfig(int maxFeatures, int minTermFreq, double maxTermFreq,
+                             boolean useTfIdf, boolean useBigrams, boolean useTrigrams,
+<span class="nc" id="L681">                             boolean normalizeFeatures, boolean outputWordCounts) {</span>
+<span class="nc" id="L682">            this.maxFeatures = maxFeatures;</span>
+<span class="nc" id="L683">            this.minTermFreq = minTermFreq;</span>
+<span class="nc" id="L684">            this.maxTermFreq = maxTermFreq;</span>
+<span class="nc" id="L685">            this.useTfIdf = useTfIdf;</span>
+<span class="nc" id="L686">            this.useBigrams = useBigrams;</span>
+<span class="nc" id="L687">            this.useTrigrams = useTrigrams;</span>
+<span class="nc" id="L688">            this.normalizeFeatures = normalizeFeatures;</span>
+<span class="nc" id="L689">            this.outputWordCounts = outputWordCounts;</span>
+<span class="nc" id="L690">        }</span>
+
+        @Override
+        public String toString() {
+<span class="nc" id="L694">            return String.format(&quot;FeatureConfig{maxFeatures=%d, minTermFreq=%d, maxTermFreq=%.2f, &quot; +</span>
+                            &quot;tfidf=%s, bigrams=%s, trigrams=%s, normalize=%s, wordCounts=%s}&quot;,
+<span class="nc" id="L696">                    maxFeatures, minTermFreq, maxTermFreq, useTfIdf, useBigrams,</span>
+<span class="nc" id="L697">                    useTrigrams, normalizeFeatures, outputWordCounts);</span>
+        }
+    }
+
+    // ==================== LEGACY API (DEPRECATED) ====================
+
+    /**
+     * @deprecated Use explicit fit() then transform() workflow instead.
+     */
+    @Deprecated
+    public Instances extractFeatures(List&lt;Dataset&gt; datasets) {
+<span class="nc" id="L708">        logger.warn(&quot;DEPRECATED: extractFeatures() mixes training and inference. &quot; +</span>
+                &quot;Use fit() for training, then transform() for inference.&quot;);
+
+<span class="nc bnc" id="L711" title="All 2 branches missed.">        if (!isReady()) {</span>
+<span class="nc" id="L712">            return fit(datasets);</span>
+        }
+
+        // Already trained, just transform
+<span class="nc" id="L716">        List&lt;String&gt; texts = datasets.stream()</span>
+<span class="nc" id="L717">                .map(Dataset::getText)</span>
+<span class="nc" id="L718">                .collect(Collectors.toList());</span>
+<span class="nc" id="L719">        return transform(texts);</span>
+    }
+
+    /**
+     * @deprecated Use transform(text) instead
+     */
+    @Deprecated
+    public Instance transformSingleText(String text) {
+<span class="nc" id="L727">        logger.warn(&quot;DEPRECATED: Use transform(text) instead&quot;);</span>
+<span class="nc" id="L728">        return transform(text);</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>
