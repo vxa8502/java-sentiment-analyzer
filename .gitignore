@@ -9,3 +9,34 @@
   *.jar
   EOF
 
+# Build artifacts
+target/
+*.jar
+*.class
+*.war
+
+# IDE files
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Large data files (use Git LFS instead)
+*.csv
+*.tsv
+data/raw/
+*.model
+*.bin
+
+# Environment files
+.env
+application-local.properties
