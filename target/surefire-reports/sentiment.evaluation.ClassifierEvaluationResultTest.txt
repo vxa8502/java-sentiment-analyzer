@@ -1,4 +1,0 @@
--------------------------------------------------------------------------------
-Test set: sentiment.evaluation.ClassifierEvaluationResultTest
--------------------------------------------------------------------------------
-Tests run: 26, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.020 s -- in sentiment.evaluation.ClassifierEvaluationResultTest
