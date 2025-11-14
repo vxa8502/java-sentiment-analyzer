@@ -5,31 +5,30 @@ import java.util.List;
 
 /**
  * Core contract for sentiment classification algorithms.
- *
- * DESIGN PRINCIPLE: Single Responsibility
- * ========================================
+ * <br>
  * This interface focuses ONLY on essential training and prediction operations.
- *
+ * <br>
  * Evaluation → ClassifierEvaluator
+ * <br>
  * Persistence → ClassifierPersistence
- *
+ * <br>
  * This follows Interface Segregation Principle (ISP):
+ * <br>
+ * - Smaller, specific interfaces instead of a large comprehensive one
+ * <br>
  * - Clients depend only on methods they use
- * - Not all classifiers need evaluation/persistence
- * - Clear separation of concerns
- *
- * @author Sentiment Analysis Team
- * @since 2.0
  */
 public interface SentimentClassifier {
 
     /**
      * Trains the classifier on raw training data.
-     *
+     * <p>
      * The classifier handles the complete pipeline:
-     * 1. Fits preprocessing pipeline (TextPreprocessor)
-     * 2. Fits feature extraction (WekaInstancesConverter)
-     * 3. Trains classification model (SVM, Naive Bayes, etc.)
+     * <ol>
+     *   <li>Fits preprocessing pipeline (TextPreprocessor)</li>
+     *   <li>Fits feature extraction (WekaInstancesConverter)</li>
+     *   <li>Trains classification model (SVM, Naive Bayes, etc.)</li>
+     * </ol>
      *
      * @param trainingData Raw Dataset objects to train on
      * @throws Exception if training fails due to data issues or algorithm problems
@@ -39,7 +38,7 @@ public interface SentimentClassifier {
 
     /**
      * Classifies a single text string and returns the predicted sentiment label.
-     *
+     * <br>
      * The input text will be automatically preprocessed using the same pipeline
      * as training data.
      *
@@ -53,10 +52,10 @@ public interface SentimentClassifier {
 
     /**
      * Returns classification probabilities for all possible sentiment classes.
-     *
+     * <br>
      * Provides confidence scores for each sentiment category, enabling
      * threshold-based filtering and uncertainty quantification.
-     *
+     * <br>
      * Array format: [negative_prob, positive_prob] for binary classification
      *              [negative_prob, neutral_prob, positive_prob] for 3-class
      *
@@ -77,10 +76,10 @@ public interface SentimentClassifier {
 
     /**
      * Returns the algorithm type for this classifier (type-safe enum).
-     *
+     * <br>
      * PRIMARY METHOD for algorithm identification with compile-time type safety.
      * Used internally by exception handling, logging, and model comparison.
-     *
+     * <br>
      * Examples: AlgorithmType.SVM, AlgorithmType.NAIVE_BAYES, AlgorithmType.RANDOM_FOREST
      *
      * @return Type-safe algorithm identifier
@@ -89,12 +88,12 @@ public interface SentimentClassifier {
 
     /**
      * Returns the algorithm name/type for this classifier (convenience method).
-     *
+     * <br>
      * CONVENIENCE WRAPPER around getAlgorithmType() for backward compatibility
      * and user-facing displays. Equivalent to getAlgorithmType().getDisplayName().
-     *
+     *<br>
      * Examples: "SVM (SMO)", "Naive Bayes", "Random Forest"
-     *
+     * <br>
      * @return Human-readable algorithm name
      */
     default String getAlgorithmName() {
@@ -103,7 +102,7 @@ public interface SentimentClassifier {
 
     /**
      * Returns the supported sentiment classes for this classifier.
-     *
+     * <br>
      * Useful for validation and UI generation. Order should match
      * the probability array returned by getClassificationProbabilities().
      *
@@ -114,7 +113,7 @@ public interface SentimentClassifier {
 
     /**
      * Helper method to ensure classifier has been trained before use.
-     *
+     * <p>
      * Should be called by all methods that require a trained model.
      * Provides consistent error messaging across implementations.
      *

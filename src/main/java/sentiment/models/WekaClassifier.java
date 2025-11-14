@@ -7,7 +7,7 @@ import java.util.concurrent.Callable;
 
 /**
  * Extended interface for sentiment classifiers based on Weka.
- *
+ * <br>
  * WHY THIS EXISTS:
  * ================
  * Batch prediction operations need access to:
@@ -60,7 +60,7 @@ public interface WekaClassifier extends SentimentClassifier {
 
     /**
      * Executes an inference task in a thread-safe context.
-     *
+     * <br>
      * This method handles proper read-locking for concurrent inference
      * while ensuring no training operations are in progress.
      *

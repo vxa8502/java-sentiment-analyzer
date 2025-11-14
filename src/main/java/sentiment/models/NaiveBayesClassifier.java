@@ -16,51 +16,33 @@ import java.util.*;
 
 /**
  * Naive Bayes sentiment classifier using Weka's NaiveBayes implementation.
- *
- * MODEL SELECTION RATIONALE:
- * ==========================
+ * <br>
+ * <br>
  * Naive Bayes is a fast, probabilistic classifier ideal for baseline comparisons:
- *
+ * <br>
+ * <br>
  * 1. Computational Efficiency: Extremely fast training and inference, making it excellent
  *    for real-time applications and large-scale text classification.
- *
+ * <br>
  * 2. Probabilistic Interpretation: Provides well-calibrated probability estimates that
  *    are interpretable and useful for confidence thresholding.
- *
+ * <br>
  * 3. Small Data Performance: Works well even with limited training data due to its
  *    strong independence assumptions, which reduce parameter space.
- *
+ * <br>
  * 4. Baseline Benchmark: Industry-standard baseline for text classification, making it
  *    valuable for comparing against more complex models.
- *
+ * <br>
  * 5. Low Memory Footprint: Requires minimal memory as it only stores feature probabilities,
  *    not entire training instances.
- *
+ * <br>
+ * <br>
  * Limitations:
- * - Feature Independence Assumption: Assumes features are conditionally independent given
- *   the class, which is often violated in text (e.g., "not good" vs "good").
- * - Less Accurate for Complex Patterns: May underperform on datasets where feature
- *   interactions are critical for correct classification.
- *
- * Trade-offs vs. SVM:
- * + Faster training (10-100x speedup on large datasets)
- * + Lower memory usage
- * + Better calibrated probabilities
- * - Lower accuracy on complex patterns (typically 3-5% lower than SVM)
- * - Sensitive to irrelevant features
- *
- * ARCHITECTURE:
- * =============
- * Follows the same pipeline as SVMClassifier:
- * 1. Accepts raw List<Dataset> in train()
- * 2. Fits preprocessor (text cleaning, tokenization)
- * 3. Fits feature extractor (TF-IDF vectorization)
- * 4. Trains Naive Bayes on transformed features
- *
- * THREAD SAFETY:
- * ==============
- * - Training: Exclusive write lock (modifies model state)
- * - Inference: Concurrent read lock (thread-safe predictions)
+ * <br>
+ * - Assumes features are conditionally independent given the class, which is often violated in text (e.g., "not good" vs "good").
+ *  <br>
+ * - May underperform on datasets where feature interactions are critical for correct classification.
+ * <br>
  */
 public class NaiveBayesClassifier extends ClassifierTrainingTemplate<ClassifierEvaluationResult>
         implements ClassifierEvaluator, WekaClassifier {
