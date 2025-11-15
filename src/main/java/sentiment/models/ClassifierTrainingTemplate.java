@@ -42,21 +42,18 @@ public abstract class ClassifierTrainingTemplate<T> implements SentimentClassifi
 
     /**
      * Training data structure containing schema only (no instances).
-     * <p>
      * Used for feature count and instance validation during inference.
      */
     protected Instances trainingDataStructure;
 
     /**
      * Supported class labels (e.g., {@code ["positive", "negative", "neutral"]}).
-     * <p>
      * Populated during training from the Weka class attribute.
      */
     protected String[] supportedClasses;
 
     /**
      * Feature converter for Weka instances.
-     * <p>
      * Subclasses should set this field if they use {@link WekaInstancesConverter}.
      */
     protected WekaInstancesConverter converter;
@@ -458,7 +455,7 @@ public abstract class ClassifierTrainingTemplate<T> implements SentimentClassifi
         }
     }
 
-    // ==================== WEKA HELPER METHODS ====================
+    // WEKA HELPER METHODS
 
     /**
      * Formats probability distribution as a human-readable string.
@@ -482,13 +479,6 @@ public abstract class ClassifierTrainingTemplate<T> implements SentimentClassifi
      * This is a convenience method that centralizes the common pattern of
      * logging probability distributions in classification methods across all
      * classifier implementations.
-     * <p>
-     * <b>Usage in subclasses:</b>
-     * <pre>
-     * double[] probs = classifier.distributionForInstance(instance);
-     * return logProbabilityDistribution(probs);
-     * </pre>
-     *
      * @param probs probability array to log and return
      * @return the same probability array (for convenient return statements)
      */
@@ -646,7 +636,7 @@ public abstract class ClassifierTrainingTemplate<T> implements SentimentClassifi
         return this.getClass().getSimpleName();
     }
 
-    // ==================== CONSOLIDATED WEKA TRAINING HELPERS ====================
+    // CONSOLIDATED WEKA TRAINING HELPERS
 
     /**
      * Finalizes training by storing metadata required for inference.
@@ -735,11 +725,10 @@ public abstract class ClassifierTrainingTemplate<T> implements SentimentClassifi
         void train(Instances data) throws Exception;
     }
 
-    // ==================== CONSOLIDATED INFERENCE METHODS ====================
+    // CONSOLIDATED INFERENCE METHODS
 
     /**
      * Classifies text and returns the predicted sentiment label.
-     * <p>
      * This method provides thread-safe inference via read lock protection.
      *
      * @param text input text to classify
@@ -767,7 +756,6 @@ public abstract class ClassifierTrainingTemplate<T> implements SentimentClassifi
 
     /**
      * Returns classification probabilities for all classes.
-     * <p>
      * This method provides thread-safe inference via read lock protection.
      *
      * @param text input text to classify
@@ -835,7 +823,6 @@ public abstract class ClassifierTrainingTemplate<T> implements SentimentClassifi
 
     /**
      * Performs evaluation and builds the result object.
-     * <p>
      * Common evaluation logic extracted from all classifier implementations.
      *
      * @param testData test Instances
@@ -875,11 +862,10 @@ public abstract class ClassifierTrainingTemplate<T> implements SentimentClassifi
         return executeInference((InferenceTask<R>) task::call);
     }
 
-    // ==================== PERSISTENCE SUPPORT ====================
+    // PERSISTENCE SUPPORT
 
     /**
      * Returns the training data structure for persistence operations.
-     * <p>
      * Package-private to allow {@code WekaModelPersistence} access.
      *
      * @return training data structure containing schema only (no instances)
@@ -890,7 +876,6 @@ public abstract class ClassifierTrainingTemplate<T> implements SentimentClassifi
 
     /**
      * Sets training metadata after loading from persistence.
-     * <p>
      * Package-private to allow {@code WekaModelPersistence} access.
      *
      * @param structure training data structure

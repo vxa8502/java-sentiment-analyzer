@@ -3,66 +3,29 @@ package sentiment.evaluation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.*;
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 
 /**
- * ARIA'S MATHEMATICAL RIGOR: Probability Calibration Assessment
- * ==============================================================
+ * Computes probability calibration metrics for classification models.
+ * <p>
+ * A well-calibrated model produces predicted probabilities that match observed frequencies.
+ * For example, among predictions with 70% confidence, approximately 70% should be correct.
+ * High accuracy does not guarantee good calibration, particularly for models like SVMs.
+ * </p>
  *
- * "Accuracy is not enough. Your model must know WHEN it is certain and WHEN it is not."
- *
- * CALIBRATION PROBLEM:
- * ====================
- * A model is well-calibrated if:
- * - When it predicts 70% probability, it's correct ~70% of the time
- * - When it predicts 90% probability, it's correct ~90% of the time
- *
- * Many classifiers (especially SVMs) are NOT well-calibrated out-of-the-box.
- * High accuracy ≠ good calibration.
- *
- * METRICS:
- * ========
- *
- * 1. Brier Score:
- *    BS = (1/n) Σ(p_predicted - y_actual)²
- *    - Range: [0, 1], lower is better
- *    - 0 = perfect calibration
- *    - Measures both calibration and refinement (discrimination)
- *
- * 2. Expected Calibration Error (ECE):
- *    ECE = Σ (n_b / n) |acc(b) - conf(b)|
- *    - Bins predictions by confidence
- *    - Measures gap between confidence and accuracy per bin
- *    - Range: [0, 1], lower is better
- *
- * 3. Maximum Calibration Error (MCE):
- *    MCE = max_b |acc(b) - conf(b)|
- *    - Worst-case calibration error across bins
- *
- * 4. Reliability Diagram:
- *    Visual: Plot predicted probability vs. actual frequency
- *    Well-calibrated models lie on diagonal line
- *
- * USAGE:
- * ======
- * ```java
- * // After classification
- * double[] predictedProbs = {...};  // Predicted probabilities for positive class
- * int[] actualLabels = {...};       // 0 or 1
- *
- * CalibrationMetrics metrics = CalibrationMetrics.compute(
- *     predictedProbs, actualLabels, 10
- * );
- *
- * System.out.printf("Brier Score: %.4f (lower is better)\n", metrics.brierScore);
- * System.out.printf("ECE: %.4f\n", metrics.expectedCalibrationError);
- *
- * metrics.printReliabilityDiagram();
- * ```
- *
- * @author Aria (Mathematical Foundations Mentor)
+ * <b>Calibration Metrics</b>
+ * <ul>
+ *   <li><b>Brier Score:</b> Mean squared error between predicted probabilities and actual outcomes.
+ *       Formula: BS = (1/n) Σ(p<sub>predicted</sub> - y<sub>actual</sub>)². Range: [0, 1], lower is better.</li>
+ *   <li><b>Expected Calibration Error (ECE):</b> Weighted average of calibration errors across confidence bins.
+ *       Formula: ECE = Σ (n<sub>b</sub> / n) |acc(b) - conf(b)|. Range: [0, 1], lower is better.</li>
+ *   <li><b>Maximum Calibration Error (MCE):</b> Worst-case calibration error across all bins.
+ *       Formula: MCE = max<sub>b</sub> |acc(b) - conf(b)|.</li>
+ *   <li><b>Reliability Diagram:</b> Visual representation plotting predicted probability vs. actual frequency.
+ *       Well-calibrated models align with the diagonal.</li>
+ * </ul>
  */
 public class CalibrationMetrics {
 
@@ -98,12 +61,14 @@ public class CalibrationMetrics {
     }
 
     /**
-     * Compute calibration metrics for binary classification.
+     * Computes calibration metrics for binary classification.
      *
-     * @param predictedProbs Predicted probabilities for positive class [0, 1]
-     * @param actualLabels Actual labels (0 or 1)
-     * @param numBins Number of bins for ECE and reliability diagram (typically 10)
-     * @return CalibrationMetrics
+     * @param predictedProbs predicted probabilities for the positive class, values in [0, 1]
+     * @param actualLabels actual binary labels (0 or 1)
+     * @param numBins number of bins for ECE and reliability diagram (typically 10)
+     * @return computed calibration metrics
+     * @throws IllegalArgumentException if arrays have different lengths, numBins &lt; 2,
+     *         probabilities are out of range, or labels are not binary
      */
     public static CalibrationMetrics compute(
             double[] predictedProbs,
@@ -121,16 +86,7 @@ public class CalibrationMetrics {
         int n = predictedProbs.length;
 
         // Validate inputs
-        for (int i = 0; i < n; i++) {
-            if (predictedProbs[i] < 0.0 || predictedProbs[i] > 1.0) {
-                throw new IllegalArgumentException(
-                        String.format("Predicted probability out of range: %.3f", predictedProbs[i]));
-            }
-            if (actualLabels[i] != 0 && actualLabels[i] != 1) {
-                throw new IllegalArgumentException(
-                        String.format("Label must be 0 or 1, got: %d", actualLabels[i]));
-            }
-        }
+        validateInputs(predictedProbs, actualLabels, n);
 
         // 1. Compute Brier Score
         double brierScore = computeBrierScore(predictedProbs, actualLabels);
@@ -155,16 +111,17 @@ public class CalibrationMetrics {
     }
 
     /**
-     * Compute calibration metrics for multi-class classification.
+     * Computes calibration metrics for multi-class classification using one-vs-rest approach.
+     * <p>
+     * Calibration is computed separately for each class in a one-vs-rest fashion, then
+     * Brier score, ECE, and MCE are averaged across all classes.
+     * </p>
      *
-     * APPROACH:
-     * - Compute one-vs-rest calibration for each class
-     * - Average Brier score and ECE across classes
-     *
-     * @param predictedProbs Predicted probabilities [n_samples x n_classes]
-     * @param actualLabels Actual class indices [0, n_classes-1]
-     * @param numBins Number of bins for ECE
-     * @return CalibrationMetrics (averaged across classes)
+     * @param predictedProbs predicted probability matrix [n_samples × n_classes]
+     * @param actualLabels actual class indices in range [0, n_classes-1]
+     * @param numBins number of bins for ECE computation
+     * @return calibration metrics averaged across all classes
+     * @throws IllegalArgumentException if sample counts do not match
      */
     public static CalibrationMetrics computeMultiClass(
             double[][] predictedProbs,
@@ -222,9 +179,34 @@ public class CalibrationMetrics {
     }
 
     /**
-     * Compute Brier Score.
+     * Validates input arrays for calibration computation.
      *
-     * BS = (1/n) Σ(p_predicted - y_actual)²
+     * @param predictedProbs predicted probabilities
+     * @param actualLabels actual binary labels
+     * @param n number of samples
+     * @throws IllegalArgumentException if probabilities are out of range or labels are not binary
+     */
+    private static void validateInputs(double[] predictedProbs, int[] actualLabels, int n) {
+        for (int i = 0; i < n; i++) {
+            if (predictedProbs[i] < 0.0 || predictedProbs[i] > 1.0) {
+                throw new IllegalArgumentException(
+                        String.format("Predicted probability out of range: %.3f", predictedProbs[i]));
+            }
+            if (actualLabels[i] != 0 && actualLabels[i] != 1) {
+                throw new IllegalArgumentException(
+                        String.format("Label must be 0 or 1, got: %d", actualLabels[i]));
+            }
+        }
+    }
+
+    /**
+     * Computes the Brier score:
+     * <br>
+     * BS = (1/n) Σ(p<sub>predicted</sub> - y<sub>actual</sub>)².
+     *
+     * @param predictedProbs predicted probabilities
+     * @param actualLabels actual binary labels
+     * @return Brier score in range [0, 1]
      */
     private static double computeBrierScore(double[] predictedProbs, int[] actualLabels) {
         double sum = 0.0;
@@ -236,9 +218,15 @@ public class CalibrationMetrics {
     }
 
     /**
-     * Create calibration bins.
+     * Creates calibration bins and assigns predictions to them.
+     * <p>
+     * Bins partition the probability space: [0.0, 0.1), [0.1, 0.2), ..., [0.9, 1.0].
+     * </p>
      *
-     * Bins: [0.0-0.1), [0.1-0.2), ..., [0.9-1.0]
+     * @param predictedProbs predicted probabilities
+     * @param actualLabels actual binary labels
+     * @param numBins number of bins to create
+     * @return list of calibration bins with assigned samples
      */
     private static List<CalibrationBin> createCalibrationBins(
             double[] predictedProbs,
@@ -268,9 +256,11 @@ public class CalibrationMetrics {
     }
 
     /**
-     * Compute Expected Calibration Error (ECE).
+     * Computes Expected Calibration Error (ECE): Σ (n<sub>b</sub> / n) |acc(b) - conf(b)|.
      *
-     * ECE = Σ (n_b / n) |acc(b) - conf(b)|
+     * @param bins calibration bins
+     * @param totalSamples total number of samples
+     * @return ECE in range [0, 1]
      */
     private static double computeECE(List<CalibrationBin> bins, int totalSamples) {
         double ece = 0.0;
@@ -287,9 +277,12 @@ public class CalibrationMetrics {
     }
 
     /**
-     * Compute Maximum Calibration Error (MCE).
+     * Computes Maximum Calibration Error (MCE):
+     * <br>
+     * max<sub>b</sub> |acc(b) - conf(b)|.
      *
-     * MCE = max_b |acc(b) - conf(b)|
+     * @param bins calibration bins
+     * @return MCE, the maximum calibration error across all bins
      */
     private static double computeMCE(List<CalibrationBin> bins) {
         return bins.stream()
@@ -299,7 +292,7 @@ public class CalibrationMetrics {
                 .orElse(0.0);
     }
 
-    // ==================== GETTERS ====================
+    // GETTERS
 
     public double getBrierScore() {
         return brierScore;
@@ -325,22 +318,27 @@ public class CalibrationMetrics {
         return bins;
     }
 
-    // ==================== VISUALIZATION ====================
+    public int getNumBins() {
+        return numBins;
+    }
+
+    // VISUALIZATION
 
     /**
-     * Print reliability diagram to console.
-     *
-     * Shows predicted confidence vs. actual accuracy per bin.
-     * Well-calibrated models have points near the diagonal.
+     * Prints a text-based reliability diagram to the console.
+     * <p>
+     * Displays predicted confidence vs. actual accuracy for each bin, along with
+     * the calibration gap. Well-calibrated models show small gaps (points near diagonal).
+     * Also prints overall Brier score, ECE, and MCE.
+     * </p>
      */
+    @SuppressWarnings("unused")
     public void printReliabilityDiagram() {
-        System.out.println("\n=== Reliability Diagram ===");
+        System.out.println("\n Reliability Diagram ");
         System.out.println("Bin          Confidence  Accuracy  Gap      Samples");
         System.out.println("-".repeat(60));
 
-        for (int i = 0; i < bins.size(); i++) {
-            CalibrationBin bin = bins.get(i);
-
+        for (CalibrationBin bin : bins) {
             if (bin.count == 0) {
                 System.out.printf("[%.1f-%.1f]   (no samples)%n",
                         bin.lowerBound, bin.upperBound);
@@ -373,10 +371,14 @@ public class CalibrationMetrics {
         );
     }
 
-    // ==================== NESTED CLASSES ====================
+    // NESTED CLASSES
 
     /**
-     * A single bin in the reliability diagram.
+     * Represents a single confidence bin in the reliability diagram.
+     * <p>
+     * Each bin spans a probability range and accumulates predictions falling within
+     * that range, tracking average confidence and accuracy for calibration assessment.
+     * </p>
      */
     public static class CalibrationBin {
         private final double lowerBound;
@@ -409,10 +411,12 @@ public class CalibrationMetrics {
             return count;
         }
 
+        @SuppressWarnings("unused")
         public double getLowerBound() {
             return lowerBound;
         }
 
+        @SuppressWarnings("unused")
         public double getUpperBound() {
             return upperBound;
         }

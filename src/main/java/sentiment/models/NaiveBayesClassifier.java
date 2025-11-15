@@ -3,9 +3,7 @@ package sentiment.models;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import weka.classifiers.bayes.NaiveBayes;
-import weka.classifiers.Evaluation;
 import weka.core.Instances;
-import weka.core.Instance;
 import sentiment.preprocessing.TextPreprocessor;
 import sentiment.preprocessing.WekaInstancesConverter;
 import sentiment.evaluation.ClassifierEvaluationResult;
@@ -16,33 +14,10 @@ import java.util.*;
 
 /**
  * Naive Bayes sentiment classifier using Weka's NaiveBayes implementation.
- * <br>
- * <br>
- * Naive Bayes is a fast, probabilistic classifier ideal for baseline comparisons:
- * <br>
- * <br>
- * 1. Computational Efficiency: Extremely fast training and inference, making it excellent
- *    for real-time applications and large-scale text classification.
- * <br>
- * 2. Probabilistic Interpretation: Provides well-calibrated probability estimates that
- *    are interpretable and useful for confidence thresholding.
- * <br>
- * 3. Small Data Performance: Works well even with limited training data due to its
- *    strong independence assumptions, which reduce parameter space.
- * <br>
- * 4. Baseline Benchmark: Industry-standard baseline for text classification, making it
- *    valuable for comparing against more complex models.
- * <br>
- * 5. Low Memory Footprint: Requires minimal memory as it only stores feature probabilities,
- *    not entire training instances.
- * <br>
- * <br>
- * Limitations:
- * <br>
- * - Assumes features are conditionally independent given the class, which is often violated in text (e.g., "not good" vs "good").
- *  <br>
- * - May underperform on datasets where feature interactions are critical for correct classification.
- * <br>
+ * <p>
+ * A fast, probabilistic classifier ideal for baseline comparisons and real-time applications.
+ * Assumes conditional independence between features (often violated in text),
+ * therefore may underperform when feature interactions are critical.
  */
 public class NaiveBayesClassifier extends ClassifierTrainingTemplate<ClassifierEvaluationResult>
         implements ClassifierEvaluator, WekaClassifier {
@@ -54,10 +29,13 @@ public class NaiveBayesClassifier extends ClassifierTrainingTemplate<ClassifierE
     private NaiveBayes naiveBayes;
 
     private final TextPreprocessor preprocessor;
-    // NOTE: converter, trainingDataStructure, supportedClasses now inherited from base class
 
     /**
-     * Creates a new thread-safe Naive Bayes classifier with default configuration.
+     * Creates a Naive Bayes classifier with default configuration.
+     *
+     * @param preprocessor text preprocessor for feature extraction
+     * @param converter instances converter for Weka format transformation
+     * @throws IllegalArgumentException if any parameter is null
      */
     public NaiveBayesClassifier(TextPreprocessor preprocessor, WekaInstancesConverter converter) {
         if (preprocessor == null || converter == null) {
@@ -73,6 +51,11 @@ public class NaiveBayesClassifier extends ClassifierTrainingTemplate<ClassifierE
 
     /**
      * Creates classifier with custom NaiveBayes configuration.
+     *
+     * @param preprocessor text preprocessor for feature extraction
+     * @param converter instances converter for Weka format transformation
+     * @param customNaiveBayes pre-configured NaiveBayes instance
+     * @throws IllegalArgumentException if any parameter is null
      */
     public NaiveBayesClassifier(TextPreprocessor preprocessor, WekaInstancesConverter converter,
                                  NaiveBayes customNaiveBayes) {
@@ -123,9 +106,8 @@ public class NaiveBayesClassifier extends ClassifierTrainingTemplate<ClassifierE
         return preprocessor;
     }
 
-    // NOTE: getTrainingInstanceCount() and getFeatureCount() now inherited from base class
 
-    // ==================== TEMPLATE METHOD IMPLEMENTATIONS ====================
+    // TEMPLATE METHOD IMPLEMENTATIONS
 
     @Override
     protected ClassifierEvaluationResult doTrain(List<Dataset> rawDatasets) throws Exception {
@@ -152,7 +134,7 @@ public class NaiveBayesClassifier extends ClassifierTrainingTemplate<ClassifierE
         doClearResources();
     }
 
-    // ==================== TRAINING HELPERS ====================
+    // TRAINING HELPERS
 
     private void performModelTraining(Instances trainingData) throws Exception {
         logger.info("Training Naive Bayes model on {} instances", trainingData.numInstances());
@@ -161,26 +143,28 @@ public class NaiveBayesClassifier extends ClassifierTrainingTemplate<ClassifierE
         this.instanceStructureValidated = false;
     }
 
-    // NOTE: classify(), getClassificationProbabilities(), evaluate() now inherited from base class
-
-    // ==================== MODEL SUMMARY ====================
+    // MODEL SUMMARY
 
     @Override
     public String getModelSummary() {
         requireTrained();
 
         return String.format(
-                "=== Naive Bayes Classifier Summary ===\n\n" +
-                        "Algorithm: %s\n" +
-                        "State: %s\n\n" +
-                        "Training: %d instances, %d features\n" +
-                        "Classes: %d (%s)\n" +
-                        "Training Time: %dms\n" +
-                        "Vocabulary: %d terms\n\n" +
-                        "Performance Characteristics:\n" +
-                        "  - Fast training and inference\n" +
-                        "  - Probabilistic predictions\n" +
-                        "  - Low memory footprint",
+                """
+                        Naive Bayes Classifier Summary
+                        
+                        Algorithm: %s
+                        State: %s
+                        
+                        Training: %d instances, %d features
+                        Classes: %d (%s)
+                        Training Time: %dms
+                        Vocabulary: %d terms
+                        
+                        Performance Characteristics:
+                          - Fast training and inference
+                          - Probabilistic predictions
+                          - Low memory footprint""",
                 AlgorithmType.NAIVE_BAYES.getDisplayName(),
                 classifierState,
                 getTrainingInstanceCount(),
@@ -195,11 +179,12 @@ public class NaiveBayesClassifier extends ClassifierTrainingTemplate<ClassifierE
     @Override
     protected String getSubclassDiagnostics() {
         return String.format(
-                "=== NaiveBayesClassifier Diagnostics ===\n" +
-                        "NaiveBayes: %s\n" +
-                        "Training: %d instances, %d features\n" +
-                        "Supported classes: %s\n" +
-                        "Instance validation cached: %s",
+                """
+                        NaiveBayesClassifier Diagnostics
+                        NaiveBayes: %s
+                        Training: %d instances, %d features
+                        Supported classes: %s
+                        Instance validation cached: %s""",
                 naiveBayes != null ? "initialized" : "null",
                 getTrainingInstanceCount(),
                 getFeatureCount(),
@@ -208,36 +193,23 @@ public class NaiveBayesClassifier extends ClassifierTrainingTemplate<ClassifierE
         );
     }
 
-    // ==================== ACCESSORS ====================
+    // ACCESSORS
 
-    /**
-     * Get the underlying Naive Bayes classifier.
-     * Used for testing and advanced configuration.
-     */
-    public NaiveBayes getNaiveBayes() {
-        return naiveBayes;
-    }
-
-    // NOTE: setNaiveBayes(), getTrainingStructure(), setTrainingMetadata() removed
-    // Persistence now uses abstract methods from ClassifierTrainingTemplate
-
-    // NOTE: getPreprocessor() implemented above to satisfy abstract method
 
     public WekaInstancesConverter getConverter() {
         return converter;
     }
 
-    // ==================== WEKA CLASSIFIER INTERFACE ====================
+    // WEKA CLASSIFIER INTERFACE
 
     /**
-     * Gets the underlying Weka classifier for batch operations.
+     * Returns the underlying Weka classifier for batch operations.
      *
-     * @return The NaiveBayes classifier as base Classifier type
+     * @return the NaiveBayes classifier as base Classifier type
      */
     @Override
     public weka.classifiers.Classifier getWekaClassifier() {
         return naiveBayes;
     }
 
-    // NOTE: executeInference(Callable) now inherited from base class
 }
