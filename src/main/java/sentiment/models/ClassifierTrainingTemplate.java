@@ -3,6 +3,7 @@ package sentiment.models;
 import org.slf4j.Logger;
 import sentiment.data.Dataset;
 import sentiment.PipelineState;
+import sentiment.TrainingTemplate;
 import sentiment.preprocessing.TextPreprocessor;
 import sentiment.preprocessing.WekaInstancesConverter;
 import sentiment.util.ValidationUtils;
@@ -10,32 +11,36 @@ import weka.classifiers.Evaluation;
 import weka.core.Instance;
 import weka.core.Instances;
 
-import javax.annotation.PreDestroy;
 import java.util.*;
-import java.util.concurrent.locks.ReadWriteLock;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
  * Template base class implementing common classifier training/inference logic.
- * Uses Template Method pattern - subclasses implement {@link #doTrain(List)} and {@link #doClearResources()}.
  * <p>
- * Provides thread-safe state management via ReadWriteLock:
+ * Extends {@link TrainingTemplate} to provide unified state management and lifecycle control.
+ * Uses Template Method pattern - subclasses implement {@link #doTrain(List)} and {@link #doClearResources()}.
+ *
+ * <h3>Design Pattern</h3>
+ * <p>Inherits from TrainingTemplate:
  * <ul>
- *   <li>Training: write lock (exclusive, call ONCE at startup)</li>
- *   <li>Inference: read lock (concurrent, thread-safe after training)</li>
- *   <li>State machine: UNINITIALIZED → TRAINING → READY (or ERROR on failure)</li>
+ *   <li>Thread-safe state management using {@code ReadWriteLock}</li>
+ *   <li>State machine enforcement (UNINITIALIZED → TRAINING → READY)</li>
+ *   <li>Training phase protection (write lock)</li>
+ *   <li>Inference phase concurrency (read lock)</li>
+ * </ul>
+ *
+ * <p>Adds classifier-specific features:
+ * <ul>
+ *   <li>Weka integration ({@link weka.classifiers.Classifier})</li>
+ *   <li>Training data structure management</li>
+ *   <li>Class label support</li>
+ *   <li>Feature extraction pipeline</li>
+ *   <li>Evaluation and metrics</li>
+ *   <li>Model persistence support</li>
  * </ul>
  *
  * @param <T> type of training result (optional, can be {@link Void})
  */
-public abstract class ClassifierTrainingTemplate<T> implements SentimentClassifier {
-
-    // Thread-safe state management
-    protected final ReadWriteLock stateLock = new ReentrantReadWriteLock();
-    protected volatile PipelineState classifierState = PipelineState.UNINITIALIZED;
-
-    // Performance tracking
-    protected volatile long lastTrainingTimeMs = 0;
+public abstract class ClassifierTrainingTemplate<T> extends TrainingTemplate<T> implements SentimentClassifier {
 
     // WEKA-SPECIFIC SHARED STATE
     // Subclasses that use Weka should populate these fields during training
@@ -62,128 +67,17 @@ public abstract class ClassifierTrainingTemplate<T> implements SentimentClassifi
 
     /**
      * Trains the classifier on the provided training data.
-     * NOT DESIGNED for concurrent training calls - call ONCE during initialization.
-     * After successful completion, inference methods become thread-safe for concurrent access.
+     * <p>
+     * Implements {@link SentimentClassifier#train(List)} by delegating to
+     * {@link TrainingTemplate#trainInternal(List)}.
+     *
      * @param trainingData the training datasets
-     * @throws IllegalStateException if already training or in error state
-     * @throws IllegalArgumentException if {@code trainingData} is {@code null} or empty
      * @throws Exception if training fails
      */
     @Override
-    public final void train(List<Dataset> trainingData) throws Exception {
-        validateTrainInput(trainingData);
-
-        stateLock.writeLock().lock(); // EXCLUSIVE ACCESS
-        try {
-            validateStateBeforeTraining();
-
-            getLogger().info("Starting TRAINING phase on {} samples. State: {} -> TRAINING",
-                    trainingData.size(), classifierState);
-            long startTime = System.currentTimeMillis();
-
-            // ENFORCED transition: current -> TRAINING
-            transitionToState(PipelineState.TRAINING);
-
-            try {
-                // ★ SUBCLASS HOOK: Implement specific classifier training logic
-                doTrain(trainingData);
-
-                // ENFORCED transition: TRAINING -> READY (success)
-                transitionToState(PipelineState.READY);
-
-                this.lastTrainingTimeMs = System.currentTimeMillis() - startTime;
-                getLogger().info("TRAINING completed successfully in {}ms. State: TRAINING -> READY. " +
-                        "NOW THREAD-SAFE for concurrent inference.", lastTrainingTimeMs);
-
-            } catch (Exception e) {
-                // ENFORCED transition: TRAINING -> ERROR (failure)
-                transitionToState(PipelineState.ERROR);
-                getLogger().error("TRAINING failed. State: TRAINING -> ERROR", e);
-                throw new Exception("Failed to train classifier: " + e.getMessage(), e);
-            }
-
-        } finally {
-            stateLock.writeLock().unlock(); // Always release!
-        }
+    public void train(List<Dataset> trainingData) throws Exception {
+        trainInternal(trainingData);
     }
-
-    // TEMPLATE METHOD: INFERENCE PHASE
-
-    /**
-     * Executes an inference task with thread-safe read lock protection.
-     * <p>
-     * This method allows multiple concurrent reads while ensuring no state modifications
-     * occur during inference. The read lock permits concurrent execution by multiple threads.
-     * @param <R> the return type of the inference task
-     * @param task lambda containing inference logic
-     * @return result of the inference task
-     * @throws Exception if inference fails or classifier is not ready
-     */
-    protected final <R> R executeInference(InferenceTask<R> task) throws Exception {
-        stateLock.readLock().lock(); // CONCURRENT READS ALLOWED
-        try {
-            validateReadyForInference();
-            return task.execute();
-
-        } catch (IllegalStateException e) {
-            throw e; // Re-throw state errors
-        } catch (Exception e) {
-            getLogger().error("Inference failed in state {}", classifierState, e);
-            throw new Exception("Failed to execute inference: " + e.getMessage(), e);
-        } finally {
-            stateLock.readLock().unlock(); // Always release!
-        }
-    }
-
-    /**
-     * Functional interface for inference tasks that may throw checked exceptions.
-     * <p>
-     * This interface allows lambdas to throw checked exceptions, which are then
-     * propagated by {@link #executeInference(InferenceTask)}.
-     *
-     * @param <R> the return type of the inference task
-     */
-    @FunctionalInterface
-    protected interface InferenceTask<R> {
-        /**
-         * Executes the inference task.
-         *
-         * @return the result of the inference
-         * @throws Exception if the inference fails
-         */
-        R execute() throws Exception;
-    }
-
-    // ABSTRACT METHODS FOR SUBCLASSES
-
-    /**
-     * Implements algorithm-specific classifier training logic.
-     * <p>
-     * This method is called by {@link #train(List)} and is protected by a write lock,
-     * so thread safety is not required.
-     *
-     * @param trainingData the training datasets
-     * @return training result (may be {@code null} if no result is needed)
-     * @throws Exception if training fails (will transition to ERROR state)
-     */
-    protected abstract T doTrain(List<Dataset> trainingData) throws Exception;
-
-    /**
-     * Implements algorithm-specific resource cleanup logic.
-     * <p>
-     * This method is called by {@link #reset()} and is protected by a write lock,
-     * so thread safety is not required.
-     */
-    protected abstract void doClearResources();
-
-    /**
-     * Provides the logger instance for this classifier.
-     * <p>
-     * Required for consistent logging across template and subclass implementations.
-     *
-     * @return the logger instance
-     */
-    protected abstract Logger getLogger();
 
     /**
      * Returns the underlying Weka classifier instance.
@@ -212,194 +106,42 @@ public abstract class ClassifierTrainingTemplate<T> implements SentimentClassifi
      */
     public abstract TextPreprocessor getPreprocessor();
 
-    // STATE MANAGEMENT
-
     /**
-     * Enforces validated state transitions.
-     * <p>
-     * All state changes must go through this method to ensure valid transitions
-     * according to the state machine.
+     * Returns the component type for logging.
      *
-     * @param newState the target state
-     * @throws IllegalStateException if the transition is invalid
+     * @return "classifier"
      */
-    private void transitionToState(PipelineState newState) {
-        PipelineState oldState = classifierState;
-        oldState.validateTransition(newState); // Throws if invalid
-        classifierState = newState;
-        getLogger().debug("State transition: {} -> {}", oldState, newState);
+    @Override
+    protected final String getComponentType() {
+        return "classifier";
     }
 
-    /**
-     * Validates that the classifier is ready for inference operations.
-     *
-     * @throws IllegalStateException if not in READY state
-     */
-    protected void validateReadyForInference() {
-        if (classifierState != PipelineState.READY) {
-            throw new IllegalStateException(
-                    "Cannot perform inference - not trained. Current state: " + classifierState +
-                            ". Call train() with training data first.");
-        }
-    }
-
-    /**
-     * Validates that the current state allows training to start.
-     *
-     * @throws IllegalStateException if already training or trained
-     */
-    private void validateStateBeforeTraining() {
-        if (classifierState == PipelineState.TRAINING) {
-            throw new IllegalStateException(
-                    "Training already in progress. Current state: " + classifierState);
-        }
-
-        if (classifierState == PipelineState.READY) {
-            getLogger().warn("Classifier already trained. Call reset() before retraining.");
-            throw new IllegalStateException(
-                    "Already trained. Current state: " + classifierState + ". Call reset() first.");
-        }
-    }
-
-    /**
-     * Validates training input parameters.
-     *
-     * @param trainingData the training data to validate
-     * @throws IllegalArgumentException if {@code trainingData} is {@code null} or empty
-     */
-    private void validateTrainInput(List<Dataset> trainingData) {
-        if (trainingData == null || trainingData.isEmpty()) {
-            throw new IllegalArgumentException("Training data cannot be null or empty");
-        }
-    }
-
-    // RESET AND CLEANUP
-
-    /**
-     * Resets the classifier to UNINITIALIZED state.
-     * <p>
-     * This method is <b>NOT thread-safe</b> and should only be called during
-     * application shutdown,
-     * controlled retraining scenarios,
-     * error recovery.
-     */
-    public void reset() {
-        stateLock.writeLock().lock(); // EXCLUSIVE ACCESS
-        try {
-            getLogger().info("Resetting classifier from state: {}", classifierState);
-
-            // Clear subclass resources
-            doClearResources();
-
-            // Reset timing
-            lastTrainingTimeMs = 0;
-
-            // Transition to UNINITIALIZED
-            if (classifierState != PipelineState.UNINITIALIZED) {
-                if (classifierState == PipelineState.TRAINING) {
-                    transitionToState(PipelineState.ERROR);
-                }
-                transitionToState(PipelineState.UNINITIALIZED);
-            }
-
-            getLogger().info("Reset complete. New state: {}", classifierState);
-
-        } finally {
-            stateLock.writeLock().unlock(); // Always release!
-        }
-    }
-
-    /**
-     * Performs automatic cleanup when the bean is destroyed.
-     * <p>
-     * Spring calls this method via {@link PreDestroy} annotation.
-     */
-    @SuppressWarnings("unused") // Called by Spring framework via @PreDestroy
-    @PreDestroy
-    public void cleanup() {
-        getLogger().info("Cleaning up classifier resources");
-        reset();
-    }
-
-    // READ-ONLY STATE ACCESS
+    // READ-ONLY STATE ACCESS (inherited from base, but providing classifier-specific aliases)
 
     /**
      * Returns the current classifier state.
      * <p>
+     * Convenience method that delegates to {@link #getState()}.
      * Thread-safe via volatile read.
      *
      * @return the current {@link PipelineState}
      */
     @SuppressWarnings("unused") // Public API for external consumers
     public PipelineState getClassifierState() {
-        return classifierState;
+        return getState();
     }
 
     /**
      * Checks if the classifier is ready for inference.
      * <p>
+     * Implements {@link SentimentClassifier#isTrained()}.
      * Thread-safe via volatile read.
      *
      * @return {@code true} if the classifier is trained and ready, {@code false} otherwise
      */
     @Override
     public boolean isTrained() {
-        return classifierState == PipelineState.READY;
-    }
-
-    /**
-     * Returns the time taken for the last training operation.
-     * <p>
-     * Thread-safe via volatile read.
-     *
-     * @return training time in milliseconds
-     */
-    public long getLastTrainingTimeMs() {
-        return lastTrainingTimeMs;
-    }
-
-    /**
-     * Returns comprehensive diagnostics information about the classifier state.
-     * <p>
-     * Includes current state, state description, capabilities, and training time.
-     * Subclass-specific diagnostics can be added via {@link #getSubclassDiagnostics()}.
-     *
-     * @return formatted diagnostics string
-     */
-    @SuppressWarnings("unused") // Public API for monitoring and debugging
-    public String getDiagnostics() {
-        stateLock.readLock().lock();
-        try {
-            StringBuilder diag = new StringBuilder();
-            diag.append("Classifier Training Template Diagnostics \n");
-            diag.append(String.format("Current state: %s\n", classifierState));
-            diag.append(String.format("State description: %s\n", classifierState.getDescription()));
-            diag.append(String.format("Is ready: %s\n", classifierState.isReady()));
-            diag.append(String.format("Can start training: %s\n", classifierState.canStartTraining()));
-            diag.append(String.format("Is error: %s\n", classifierState.isError()));
-            diag.append(String.format("Last training time: %d ms\n", lastTrainingTimeMs));
-
-            // Subclass diagnostics
-            String subclassDiag = getSubclassDiagnostics();
-            if (subclassDiag != null && !subclassDiag.isEmpty()) {
-                diag.append("\n").append(subclassDiag);
-            }
-
-            return diag.toString();
-        } finally {
-            stateLock.readLock().unlock();
-        }
-    }
-
-    /**
-     * Provides additional subclass-specific diagnostics.
-     * <p>
-     * Subclasses can override this method to add their own diagnostic information.
-     *
-     * @return subclass diagnostics string, or empty string if none
-     */
-    protected String getSubclassDiagnostics() {
-        return "";
+        return isReady();
     }
 
     // WEKA TRAINING DATA VALIDATION
@@ -885,4 +627,6 @@ public abstract class ClassifierTrainingTemplate<T> implements SentimentClassifi
         this.trainingDataStructure = structure;
         this.supportedClasses = classes.clone();
     }
+
+    // Lock access methods (acquireWriteLock, releaseWriteLock) inherited from TrainingTemplate base class
 }

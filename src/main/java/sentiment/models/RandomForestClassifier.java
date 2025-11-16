@@ -251,7 +251,7 @@ public class RandomForestClassifier extends ClassifierTrainingTemplate<Classifie
                         "  - Robust to irrelevant features\n" +
                         "  - Captures non-linear patterns",
                 AlgorithmType.RANDOM_FOREST.getDisplayName(),
-                classifierState,
+                getState(),
                 randomForest.getNumIterations(),
                 randomForest.getMaxDepth() == 0 ? "Unlimited" : String.valueOf(randomForest.getMaxDepth()),
                 getTrainingInstanceCount(),

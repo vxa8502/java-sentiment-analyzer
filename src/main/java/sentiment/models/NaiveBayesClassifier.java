@@ -166,7 +166,7 @@ public class NaiveBayesClassifier extends ClassifierTrainingTemplate<ClassifierE
                           - Probabilistic predictions
                           - Low memory footprint""",
                 AlgorithmType.NAIVE_BAYES.getDisplayName(),
-                classifierState,
+                getState(),
                 getTrainingInstanceCount(),
                 getFeatureCount(),
                 supportedClasses.length,

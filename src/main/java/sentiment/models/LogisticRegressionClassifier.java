@@ -225,7 +225,7 @@ public class LogisticRegressionClassifier extends ClassifierTrainingTemplate<Cla
                         "  - Interpretable feature weights\n" +
                         "  - Well-calibrated probabilities",
                 AlgorithmType.LOGISTIC_REGRESSION.getDisplayName(),
-                classifierState,
+                getState(),
                 getTrainingInstanceCount(),
                 getFeatureCount(),
                 supportedClasses.length,

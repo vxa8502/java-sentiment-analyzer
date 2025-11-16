@@ -176,7 +176,7 @@ public class TFIDFFeatureExtractor extends FilterTrainingTemplate<Instances> {
         ValidationUtils.requireNonEmpty(text);
 
         // Use base class executeInference for thread-safe execution
-        return executeInference(() -> {
+        return executeFilterInference(() -> {
             logger.debug("INFERENCE: Transforming text (thread-safe): '{}'",
                     text.substring(0, Math.min(50, text.length())));
 
@@ -203,7 +203,7 @@ public class TFIDFFeatureExtractor extends FilterTrainingTemplate<Instances> {
             throw new IllegalArgumentException("Texts cannot be null or empty");
         }
 
-        return executeInference(() -> {
+        return executeFilterInference(() -> {
             logger.info("INFERENCE: Batch transforming {} texts (thread-safe)", texts.size());
 
             // Create batch instances
@@ -431,7 +431,7 @@ public class TFIDFFeatureExtractor extends FilterTrainingTemplate<Instances> {
 
     public VocabularyStats getVocabularyStats() {
         // Thread-safe: read within inference context if needed
-        return executeInference(() -> vocabularyStats);
+        return executeFilterInference(() -> vocabularyStats);
     }
 
     @Override
@@ -461,7 +461,7 @@ public class TFIDFFeatureExtractor extends FilterTrainingTemplate<Instances> {
             throw new IllegalArgumentException("Datasets cannot be null or empty");
         }
 
-        return executeInference(() -> {
+        return executeFilterInference(() -> {
             logger.info("Extracting features with analysis for {} datasets", datasets.size());
 
             // Transform using trained filters

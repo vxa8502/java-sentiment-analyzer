@@ -170,7 +170,7 @@ public class WekaInstancesConverter extends FilterTrainingTemplate<Instances> {
         ValidationUtils.requireNonEmpty(text);
 
         // Use base class executeInference for thread-safe execution
-        return executeInference(() -> {
+        return executeFilterInference(() -> {
             logger.debug("INFERENCE: Transforming single text (thread-safe): '{}'",
                     text.substring(0, Math.min(50, text.length())));
 
@@ -198,7 +198,7 @@ public class WekaInstancesConverter extends FilterTrainingTemplate<Instances> {
             throw new IllegalArgumentException("Texts cannot be null or empty");
         }
 
-        return executeInference(() -> {
+        return executeFilterInference(() -> {
             logger.info("INFERENCE: Batch transforming {} texts (thread-safe)", texts.length);
 
             Instances batchInstances = new Instances(filterTrainingStructure, texts.length);
@@ -235,7 +235,7 @@ public class WekaInstancesConverter extends FilterTrainingTemplate<Instances> {
             throw new IllegalArgumentException("Datasets cannot be null or empty");
         }
 
-        return executeInference(() -> {
+        return executeFilterInference(() -> {
             logger.info("INFERENCE: Transforming {} datasets with preserved labels (thread-safe)",
                     datasets.size());
 
@@ -539,7 +539,7 @@ public class WekaInstancesConverter extends FilterTrainingTemplate<Instances> {
      * Thread-safe - uses trained filter.
      */
     public Instances applyTfIdfTransformation(Instances rawInstances) throws Exception {
-        return executeInference(() ->
+        return executeFilterInference(() ->
                 Filter.useFilter(rawInstances, trainedStringToWordFilter)
         );
     }
@@ -553,7 +553,7 @@ public class WekaInstancesConverter extends FilterTrainingTemplate<Instances> {
             return tfidfInstances;
         }
 
-        return executeInference(() -> {
+        return executeFilterInference(() -> {
             if (trainedNormalizationFilter != null) {
                 return Filter.useFilter(tfidfInstances, trainedNormalizationFilter);
             } else {
@@ -594,7 +594,7 @@ public class WekaInstancesConverter extends FilterTrainingTemplate<Instances> {
      * Thread-safe - returns defensive copy.
      */
     public Set<String> getVocabulary() {
-        return executeInference(() ->
+        return executeFilterInference(() ->
                 vocabulary != null ? new HashSet<>(vocabulary) : new HashSet<>()
         );
     }
@@ -604,7 +604,7 @@ public class WekaInstancesConverter extends FilterTrainingTemplate<Instances> {
      * Thread-safe - returns immutable object.
      */
     public ConversionStats getLastConversionStats() {
-        return executeInference(() -> lastConversionStats);
+        return executeFilterInference(() -> lastConversionStats);
     }
 
     /**
@@ -612,7 +612,7 @@ public class WekaInstancesConverter extends FilterTrainingTemplate<Instances> {
      * Thread-safe - returns defensive copy.
      */
     public Instances getFilterTrainingStructure() {
-        return executeInference(() ->
+        return executeFilterInference(() ->
                 filterTrainingStructure != null ?
                         new Instances(filterTrainingStructure, 0) : null
         );
@@ -623,7 +623,7 @@ public class WekaInstancesConverter extends FilterTrainingTemplate<Instances> {
      * Thread-safe.
      */
     public FilterStats getFilterStats() {
-        return executeInference(() -> {
+        return executeFilterInference(() -> {
             int vocabularySize = vocabulary != null ? vocabulary.size() : 0;
             int ngramSize = useBigrams ? 2 : 1;
             return new FilterStats(getFilterState(), vocabularySize, ngramSize, 0.0, 0.0);
@@ -635,7 +635,7 @@ public class WekaInstancesConverter extends FilterTrainingTemplate<Instances> {
      * Thread-safe.
      */
     public PerformanceMetrics getPerformanceMetrics() {
-        return executeInference(() ->
+        return executeFilterInference(() ->
                 new PerformanceMetrics(
                         getLastTrainingTimeMs(),
                         vocabulary != null ? vocabulary.size() : 0,

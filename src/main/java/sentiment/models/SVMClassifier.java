@@ -636,7 +636,7 @@ public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluati
         StringBuilder summary = new StringBuilder();
         summary.append("=== SVM Classifier Summary ===\n\n");
         summary.append(String.format("Algorithm: %s\n", AlgorithmType.SVM.getDisplayName()));
-        summary.append(String.format("State: %s\n", classifierState));
+        summary.append(String.format("State: %s\n", getState()));
 
         if (optimalConfig != null) {
             summary.append(String.format("Configuration: %s\n", optimalConfig));

@@ -118,7 +118,7 @@ public class WekaModelPersistence<T extends ClassifierTrainingTemplate<?>> {
         logger.info("Loading {} model from: {}", classifier.getAlgorithmName(), modelPath);
 
         // Acquire write lock for atomic model replacement
-        classifier.stateLock.writeLock().lock();
+        classifier.acquireWriteLock();
         try {
             ModelBundle bundle;
 
@@ -146,7 +146,7 @@ public class WekaModelPersistence<T extends ClassifierTrainingTemplate<?>> {
             setTrainingMetadata(classifier, bundle.trainingStructure, bundle.supportedClasses);
 
             // Transition to READY state
-            classifier.classifierState = PipelineState.READY;
+            classifier.setState(PipelineState.READY);
 
             logger.info("✅ Model loaded: {} classes, trained at {}",
                     bundle.supportedClasses.length, new Date(bundle.timestamp));
@@ -157,7 +157,7 @@ public class WekaModelPersistence<T extends ClassifierTrainingTemplate<?>> {
             logger.error("Failed to load model from {}", modelPath, e);
             throw e;
         } finally {
-            classifier.stateLock.writeLock().unlock();
+            classifier.releaseWriteLock();
         }
     }
 
