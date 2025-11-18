@@ -40,7 +40,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
  * - Inference phase: stateLock.readLock() - concurrent reads safe
  */
 @Component
-public class TextPreprocessor implements PreprocessingPipeline {
+public class TextPreprocessor {
 
     private static final String VERSION = "1.0.0";
     private static final Logger logger = LoggerFactory.getLogger(TextPreprocessor.class);
@@ -132,7 +132,6 @@ public class TextPreprocessor implements PreprocessingPipeline {
      * @throws IllegalArgumentException if data is null or empty
      * @throws IllegalStateException if pipeline is already fitted
      */
-    @Override
     public void fit(List<Dataset> data) {
         if (data == null || data.isEmpty()) {
             throw new IllegalArgumentException("Training data cannot be null or empty");
@@ -193,7 +192,6 @@ public class TextPreprocessor implements PreprocessingPipeline {
      * @throws IllegalStateException if pipeline not fitted
      * @throws IllegalArgumentException if text is null or empty
      */
-    @Override
     public String transform(String text) {
         if (ValidationUtils.isNullOrEmpty(text)) {
             logger.debug("Received null or empty text for transformation");
@@ -291,7 +289,6 @@ public class TextPreprocessor implements PreprocessingPipeline {
     /**
      * Complete preprocessing pipeline
      */
-    @Override
     public String preprocessText(String rawText) {
         if (rawText == null || rawText.trim().isEmpty()) {
             return "";
@@ -338,7 +335,6 @@ public class TextPreprocessor implements PreprocessingPipeline {
     /**
      * Save pipeline state to disk
      */
-    @Override
     public void saveState(Path path) throws IOException {
         stateLock.readLock().lock();  // ✅ READ LOCK for safe state access
         try {
@@ -370,7 +366,6 @@ public class TextPreprocessor implements PreprocessingPipeline {
     /**
      * Load pipeline state from disk
      */
-    @Override
     public void loadState(Path path) throws IOException {
         if (!Files.exists(path)) {
             throw new IllegalArgumentException("State file does not exist: " + path);
@@ -422,7 +417,6 @@ public class TextPreprocessor implements PreprocessingPipeline {
 
     // ==================== STATE ACCESS ====================
 
-    @Override
     public String getVersion() {
         return VERSION;
     }
