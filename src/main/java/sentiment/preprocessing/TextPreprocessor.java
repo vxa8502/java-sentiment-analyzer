@@ -21,37 +21,26 @@ import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
- * FIXED: Thread safety issue resolved with ReadWriteLock
+ * Text preprocessing pipeline with stateful training and thread safety.
  *
- * CIRCULAR DEPENDENCY FIX (PROPER SOLUTION):
- * ==========================================
- * Before:
- *   TextPreprocessor → TFIDFFeatureExtractor → PreprocessingPipeline (TextPreprocessor)
- *   ❌ CIRCULAR DEPENDENCY (fixed with @Lazy workaround)
+ * REFACTORED: Circular dependency eliminated
+ * ===========================================
+ * TFIDFFeatureExtractor no longer injects this class.
+ * This class provides pre-cleaned datasets to feature extractors.
  *
- * After:
- *   TextPreprocessor implements TextCleaner interface
- *   TFIDFFeatureExtractor depends on TextCleaner (not full PreprocessingPipeline)
- *   ✅ CLEAN ARCHITECTURE - No circular dependency!
- *
- * WHY THIS IS BETTER:
- * ===================
- * 1. Interface Segregation Principle: TFIDFFeatureExtractor only needs cleaning methods,
- *    not the full pipeline lifecycle (fit/transform/saveState/loadState)
- * 2. No need for @Lazy workaround - proper dependency inversion
- * 3. Clearer separation of concerns
- * 4. Easier to test and mock
- *
- * EXPLICIT FIT/TRANSFORM WORKFLOW:
- * - fit(data) trains the pipeline (called ONCE) - uses WRITE lock
- * - transform(text) applies trained pipeline (thread-safe) - uses READ lock
+ * WORKFLOW:
+ * =========
+ * 1. fit(data) - Train pipeline on raw data (cleans + captures vocab stats)
+ * 2. transform(text) - Apply cleaning to new text (thread-safe inference)
+ * 3. preprocessDatasets(datasets) - Bulk cleaning for feature extraction
  *
  * THREAD SAFETY:
+ * ==============
  * - Training phase: stateLock.writeLock() - exclusive access
  * - Inference phase: stateLock.readLock() - concurrent reads safe
  */
 @Component
-public class TextPreprocessor implements PreprocessingPipeline, TextCleaner {
+public class TextPreprocessor implements PreprocessingPipeline {
 
     private static final String VERSION = "1.0.0";
     private static final Logger logger = LoggerFactory.getLogger(TextPreprocessor.class);
@@ -60,13 +49,10 @@ public class TextPreprocessor implements PreprocessingPipeline, TextCleaner {
     private final int minWordLength;
     private final boolean preserveEmoticons;
 
-    // Clean dependency injection - NO circular dependency (fixed with @Lazy)
+    // Clean dependency injection
     private final ContractionExpander contractionExpander;
     private final AdvancedTokenizer advancedTokenizer;
     private final IntelligentStopwordRemover stopwordRemover;
-
-    // Feature extractor injected with @Lazy to break circular dependency
-    private final TFIDFFeatureExtractor featureExtractor;
 
     // Pipeline state management - THREAD-SAFE with ReadWriteLock
     private final ReadWriteLock stateLock = new ReentrantReadWriteLock();
@@ -101,21 +87,13 @@ public class TextPreprocessor implements PreprocessingPipeline, TextCleaner {
     /**
      * Constructor with dependency injection.
      *
-     * ARCHITECTURE NOTE:
-     * ==================
-     * This class implements both PreprocessingPipeline and TextCleaner.
-     * TFIDFFeatureExtractor depends on TextCleaner interface (not PreprocessingPipeline),
-     * which breaks the circular dependency properly through interface segregation.
-     *
      * Dependencies:
-     * - featureExtractor: For TF-IDF feature extraction (still uses @Lazy for compatibility)
      * - contractionExpander: Expands contractions ("don't" → "do not")
      * - advancedTokenizer: Advanced tokenization logic
      * - stopwordRemover: Intelligent stopword filtering
      */
     @Autowired
     public TextPreprocessor(
-            @Lazy TFIDFFeatureExtractor featureExtractor,  // @Lazy kept for now (can be removed later)
             ContractionExpander contractionExpander,
             AdvancedTokenizer advancedTokenizer,
             IntelligentStopwordRemover stopwordRemover,
@@ -128,7 +106,6 @@ public class TextPreprocessor implements PreprocessingPipeline, TextCleaner {
                     "Invalid minWordLength: " + minWordLength + ". Must be >= 1");
         }
 
-        this.featureExtractor = featureExtractor;
         this.contractionExpander = contractionExpander;
         this.advancedTokenizer = advancedTokenizer;
         this.stopwordRemover = stopwordRemover;
@@ -136,8 +113,7 @@ public class TextPreprocessor implements PreprocessingPipeline, TextCleaner {
         this.preserveEmoticons = preserveEmoticons;
         this.pipelineState = new PipelineState();
 
-        logger.info("TextPreprocessor initialized. Implements TextCleaner + PreprocessingPipeline. " +
-                        "Thread safety: ReadWriteLock. " +
+        logger.info("TextPreprocessor initialized. Thread safety: ReadWriteLock. " +
                         "Configuration: minWordLength={}, preserveEmoticons={}",
                 minWordLength, preserveEmoticons);
     }
@@ -184,11 +160,7 @@ public class TextPreprocessor implements PreprocessingPipeline, TextCleaner {
                 // Step 2: Extract and store vocabulary statistics with MI-based feature selection
                 pipelineState.captureVocabularyStatsWithPrincipledSelection(preprocessedTexts, data);
 
-                // Step 3: Train feature extractor (now guaranteed to be available via @Lazy)
-                logger.info("Training TFIDFFeatureExtractor via @Lazy proxy");
-                featureExtractor.fit(data);  // First call to proxy initializes real object
-
-                // Step 4: Store configuration
+                // Step 3: Store configuration
                 pipelineState.storeConfiguration(this);
 
                 isFitted = true;
@@ -332,44 +304,33 @@ public class TextPreprocessor implements PreprocessingPipeline, TextCleaner {
         return String.join(" ", filtered);
     }
 
-    // ==================== FEATURE EXTRACTION (DELEGATES) ====================
+    // ==================== DATASET PREPROCESSING ====================
 
     /**
-     * Extract features using TFIDFFeatureExtractor (accessed via @Lazy proxy)
+     * Preprocess multiple datasets - returns new datasets with cleaned text.
+     * This is the primary method for preparing data for feature extraction.
+     *
+     * @param rawDatasets Datasets with raw text
+     * @return New datasets with pre-cleaned text
      */
-    public Instances extractFeatures(List<Dataset> data) {
-        if (data == null || data.isEmpty()) {
-            throw new IllegalArgumentException("Dataset cannot be null or empty");
+    public List<Dataset> preprocessDatasets(List<Dataset> rawDatasets) {
+        if (rawDatasets == null || rawDatasets.isEmpty()) {
+            throw new IllegalArgumentException("Datasets cannot be null or empty");
         }
 
-        logger.info("Delegating feature extraction to TFIDFFeatureExtractor");
+        logger.info("Preprocessing {} datasets for feature extraction", rawDatasets.size());
 
-        // Access via @Lazy proxy - will initialize on first call
-        return featureExtractor.extractFeatures(data);
-    }
-
-    /**
-     * Convert to Weka Instances using the integrated pipeline
-     */
-    public Instances convertToWekaInstances(List<Dataset> data) {
-        if (data == null || data.isEmpty()) {
-            throw new IllegalArgumentException("Dataset cannot be null or empty");
-        }
-
-        logger.info("Converting {} samples to Weka Instances using integrated preprocessing pipeline", data.size());
-        return featureExtractor.extractFeatures(data);
-    }
-
-    /**
-     * Process multiple texts and extract features in one operation
-     */
-    public TFIDFFeatureExtractor.FeatureExtractionResult processAndExtractFeatures(List<Dataset> data) {
-        if (data == null || data.isEmpty()) {
-            throw new IllegalArgumentException("Dataset cannot be null or empty");
-        }
-
-        logger.info("Processing and extracting features for {} datasets using integrated pipeline", data.size());
-        return featureExtractor.extractFeaturesWithAnalysis(data);
+        return rawDatasets.stream()
+                .map(dataset -> {
+                    String cleanedText = preprocessText(dataset.getText());
+                    return new Dataset.Builder(cleanedText, dataset.getSentiment())
+                            .id(dataset.getId())
+                            .confidence(dataset.getConfidence())
+                            .source(dataset.getSource())
+                            .timestamp(dataset.getTimestamp())
+                            .build();
+                })
+                .collect(Collectors.toList());
     }
 
     // ==================== STATE MANAGEMENT ====================
@@ -453,7 +414,6 @@ public class TextPreprocessor implements PreprocessingPipeline, TextCleaner {
         try {
             isFitted = false;
             pipelineState = new PipelineState();
-            featureExtractor.reset();
             logger.info("Pipeline reset to unfitted state");
         } finally {
             stateLock.writeLock().unlock();
@@ -494,8 +454,7 @@ public class TextPreprocessor implements PreprocessingPipeline, TextCleaner {
                 VERSION,
                 contractionExpander.getVersion(),
                 advancedTokenizer.getVersion(),
-                stopwordRemover.getVersion(),
-                featureExtractor.getVersion()
+                stopwordRemover.getVersion()
         );
     }
 
@@ -504,7 +463,7 @@ public class TextPreprocessor implements PreprocessingPipeline, TextCleaner {
      */
     public PreprocessingStats getPreprocessingStats(List<Dataset> data) {
         if (data == null || data.isEmpty()) {
-            return new PreprocessingStats(0, 0, 0, 0, new CleaningMetrics(), null, null, null);
+            return new PreprocessingStats(0, 0, 0, 0, new CleaningMetrics(), null, null);
         }
 
         int totalTexts = data.size();
@@ -519,8 +478,6 @@ public class TextPreprocessor implements PreprocessingPipeline, TextCleaner {
 
         IntelligentStopwordRemover.StopwordAnalysis stopwordAnalysis =
                 stopwordRemover.analyzeStopwordRemoval(tokenize(cleanText(sampleText)));
-
-        TFIDFFeatureExtractor.FeatureConfig featureConfig = featureExtractor.getConfiguration();
 
         for (Dataset dataset : data) {
             String originalText = dataset.getText();
@@ -540,8 +497,7 @@ public class TextPreprocessor implements PreprocessingPipeline, TextCleaner {
                 totalFilteredWords,
                 aggregatedMetrics,
                 tokenAnalysis,
-                stopwordAnalysis,
-                featureConfig
+                stopwordAnalysis
         );
     }
 
@@ -571,8 +527,7 @@ public class TextPreprocessor implements PreprocessingPipeline, TextCleaner {
                 this.getClass().getSimpleName(),
                 contractionExpander.getStats(),
                 advancedTokenizer.getClass().getSimpleName(),
-                stopwordRemover.getConfigurationSummary(),
-                featureExtractor.getConfiguration()
+                stopwordRemover.getConfigurationSummary()
         );
     }
 
@@ -875,13 +830,11 @@ public class TextPreprocessor implements PreprocessingPipeline, TextCleaner {
         public final CleaningMetrics cleaningMetrics;
         public final AdvancedTokenizer.TokenizationAnalysis tokenizationAnalysis;
         public final IntelligentStopwordRemover.StopwordAnalysis stopwordAnalysis;
-        public final TFIDFFeatureExtractor.FeatureConfig featureConfig;
 
         public PreprocessingStats(int totalTexts, int originalWords, int cleanedWords,
                                   int filteredWords, CleaningMetrics cleaningMetrics,
                                   AdvancedTokenizer.TokenizationAnalysis tokenizationAnalysis,
-                                  IntelligentStopwordRemover.StopwordAnalysis stopwordAnalysis,
-                                  TFIDFFeatureExtractor.FeatureConfig featureConfig) {
+                                  IntelligentStopwordRemover.StopwordAnalysis stopwordAnalysis) {
             this.totalTexts = totalTexts;
             this.originalWords = originalWords;
             this.cleanedWords = cleanedWords;
@@ -889,16 +842,15 @@ public class TextPreprocessor implements PreprocessingPipeline, TextCleaner {
             this.cleaningMetrics = cleaningMetrics;
             this.tokenizationAnalysis = tokenizationAnalysis;
             this.stopwordAnalysis = stopwordAnalysis;
-            this.featureConfig = featureConfig;
         }
 
         @Override
         public String toString() {
             return String.format(
                     "PreprocessingStats{texts=%d, originalWords=%d, cleanedWords=%d, filteredWords=%d, " +
-                            "cleaning=%s, tokenization=%s, stopwords=%s, features=%s}",
+                            "cleaning=%s, tokenization=%s, stopwords=%s}",
                     totalTexts, originalWords, cleanedWords, filteredWords, cleaningMetrics,
-                    tokenizationAnalysis, stopwordAnalysis, featureConfig
+                    tokenizationAnalysis, stopwordAnalysis
             );
         }
 
@@ -920,25 +872,21 @@ public class TextPreprocessor implements PreprocessingPipeline, TextCleaner {
         public final ContractionExpander.ContractionStats contractionStats;
         public final String tokenizerName;
         public final String stopwordConfig;
-        public final TFIDFFeatureExtractor.FeatureConfig featureConfig;
 
         public PipelineSummary(String preprocessorName,
                                ContractionExpander.ContractionStats contractionStats,
-                               String tokenizerName, String stopwordConfig,
-                               TFIDFFeatureExtractor.FeatureConfig featureConfig) {
+                               String tokenizerName, String stopwordConfig) {
             this.preprocessorName = preprocessorName;
             this.contractionStats = contractionStats;
             this.tokenizerName = tokenizerName;
             this.stopwordConfig = stopwordConfig;
-            this.featureConfig = featureConfig;
         }
 
         @Override
         public String toString() {
             return String.format(
-                    "PipelineSummary{preprocessor=%s, contractions=%s, tokenizer=%s, " +
-                            "stopwords=%s, features=%s}",
-                    preprocessorName, contractionStats, tokenizerName, stopwordConfig, featureConfig
+                    "PipelineSummary{preprocessor=%s, contractions=%s, tokenizer=%s, stopwords=%s}",
+                    preprocessorName, contractionStats, tokenizerName, stopwordConfig
             );
         }
     }
@@ -970,27 +918,24 @@ public class TextPreprocessor implements PreprocessingPipeline, TextCleaner {
         public final String contractionExpanderVersion;
         public final String tokenizerVersion;
         public final String stopwordRemoverVersion;
-        public final String featureExtractorVersion;
 
         public PipelineVersionInfo(String preprocessorVersion,
                                    String contractionExpanderVersion,
                                    String tokenizerVersion,
-                                   String stopwordRemoverVersion,
-                                   String featureExtractorVersion) {
+                                   String stopwordRemoverVersion) {
             this.preprocessorVersion = preprocessorVersion;
             this.contractionExpanderVersion = contractionExpanderVersion;
             this.tokenizerVersion = tokenizerVersion;
             this.stopwordRemoverVersion = stopwordRemoverVersion;
-            this.featureExtractorVersion = featureExtractorVersion;
         }
 
         @Override
         public String toString() {
             return String.format(
                     "PipelineVersionInfo{preprocessor=%s, contractionExpander=%s, " +
-                            "tokenizer=%s, stopwordRemover=%s, featureExtractor=%s}",
+                            "tokenizer=%s, stopwordRemover=%s}",
                     preprocessorVersion, contractionExpanderVersion, tokenizerVersion,
-                    stopwordRemoverVersion, featureExtractorVersion
+                    stopwordRemoverVersion
             );
         }
 
@@ -998,9 +943,9 @@ public class TextPreprocessor implements PreprocessingPipeline, TextCleaner {
          * Get a compact version string for the entire pipeline
          */
         public String getCompactVersion() {
-            return String.format("Pipeline-v%s (CE:%s|TOK:%s|SW:%s|FE:%s)",
+            return String.format("Pipeline-v%s (CE:%s|TOK:%s|SW:%s)",
                     preprocessorVersion, contractionExpanderVersion, tokenizerVersion,
-                    stopwordRemoverVersion, featureExtractorVersion);
+                    stopwordRemoverVersion);
         }
     }
 
@@ -1028,10 +973,6 @@ public class TextPreprocessor implements PreprocessingPipeline, TextCleaner {
         logger.info("\n--- Step 4: Complete Preprocessing ---");
         String finalPreprocessed = preprocessText(sampleText);
         logger.info("Final preprocessed result: '{}'", finalPreprocessed);
-
-        logger.info("\n--- Step 5: Feature Extraction Configuration ---");
-        TFIDFFeatureExtractor.FeatureConfig featureConfig = featureExtractor.getConfiguration();
-        logger.info("Feature extraction will use: {}", featureConfig);
 
         logger.info("=== End Integrated Pipeline Demonstration ===");
     }

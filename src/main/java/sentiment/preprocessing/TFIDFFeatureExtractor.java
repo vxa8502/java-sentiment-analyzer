@@ -17,38 +17,32 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * REFACTORED: Now extends FilterTrainingTemplate base class.
+ * TF-IDF feature extractor that accepts pre-cleaned text.
  *
- * CIRCULAR DEPENDENCY FIX:
- * ========================
- * ✅ Now depends on TextCleaner interface (not PreprocessingPipeline)
- * ✅ Follows Interface Segregation Principle
- * ✅ Only requires cleaning methods (cleanText, tokenize, removeStopwords)
- * ✅ No circular dependency with TextPreprocessor
+ * DEPENDENCY SIMPLIFICATION:
+ * ==========================
+ * This component does NOT inject text cleaning dependencies.
+ * Callers are responsible for pre-cleaning datasets before passing them here.
  *
- * BENEFITS OF REFACTORING:
- * ========================
- * ✅ ~200 lines of boilerplate removed
- * ✅ State management logic inherited from base
- * ✅ Thread-safety guarantees enforced by template
- * ✅ Consistent behavior with WekaInstancesConverter
- * ✅ Focus on WHAT (filter config) not HOW (state management)
+ * BENEFITS:
+ * =========
+ * ✅ Single Responsibility - only handles feature extraction
+ * ✅ No circular dependencies - clean dependency graph
+ * ✅ Testable - easy to test with mock cleaned data
+ * ✅ Reusable - works with any text cleaning strategy
  *
- * WHAT THIS CLASS NOW DOES:
- * =========================
+ * RESPONSIBILITIES:
+ * =================
  * 1. Configure Weka filters (StringToWordVector, Normalize)
- * 2. Implement training logic (doFit)
- * 3. Implement inference logic (transform using executeInference)
- * 4. Provide feature extraction analysis
+ * 2. Train filters on pre-cleaned text during fit()
+ * 3. Transform pre-cleaned text during inference
+ * 4. Provide feature extraction analysis and statistics
  *
- * WHAT THE BASE CLASS HANDLES:
- * ============================
- * 1. Thread-safe state management (ReadWriteLock)
- * 2. State machine enforcement (UNINITIALIZED -> TRAINING -> READY)
- * 3. Training phase protection (write lock)
- * 4. Inference phase concurrency (read lock)
- * 5. Error handling and state transitions
- * 6. Reset and cleanup logic
+ * THREAD SAFETY (via FilterTrainingTemplate):
+ * ===========================================
+ * - Training phase: write lock (exclusive access)
+ * - Inference phase: read lock (concurrent reads safe)
+ * - State machine: UNINITIALIZED → TRAINING → READY
  */
 @Component
 public class TFIDFFeatureExtractor extends FilterTrainingTemplate<Instances> {
@@ -66,9 +60,8 @@ public class TFIDFFeatureExtractor extends FilterTrainingTemplate<Instances> {
     private final boolean normalizeFeatures;
     private final boolean outputWordCounts;
 
-    // CIRCULAR DEPENDENCY FIX: Depend on TextCleaner, not PreprocessingPipeline
-    // This follows the Interface Segregation Principle - we only need cleaning methods
-    private final TextCleaner textCleaner;
+    // REFACTORED: No text cleaning dependency - accepts pre-cleaned text
+    // Caller is responsible for cleaning datasets before passing to this component
 
     // Trained filters (mutable, but immutable after training)
     private StringToWordVector stringToWordVectorFilter;
@@ -80,7 +73,6 @@ public class TFIDFFeatureExtractor extends FilterTrainingTemplate<Instances> {
 
     @Autowired
     public TFIDFFeatureExtractor(
-            TextCleaner textCleaner,  // FIXED: Use TextCleaner instead of PreprocessingPipeline
             @Value("${sentiment.features.max-features:5000}") int maxFeatures,
             @Value("${sentiment.features.min-term-freq:2}") int minTermFreq,
             @Value("${sentiment.features.max-term-freq:0.9}") double maxTermFreq,
@@ -92,7 +84,6 @@ public class TFIDFFeatureExtractor extends FilterTrainingTemplate<Instances> {
 
         validateConfiguration(maxFeatures, minTermFreq, maxTermFreq);
 
-        this.textCleaner = textCleaner;
         this.maxFeatures = maxFeatures;
         this.minTermFreq = minTermFreq;
         this.maxTermFreq = maxTermFreq;
@@ -102,8 +93,8 @@ public class TFIDFFeatureExtractor extends FilterTrainingTemplate<Instances> {
         this.normalizeFeatures = normalizeFeatures;
         this.outputWordCounts = outputWordCounts;
 
-        logger.info("TFIDFFeatureExtractor initialized. Configuration: maxFeatures={}, " +
-                        "minTermFreq={}, useTfIdf={}, useBigrams={}",
+        logger.info("TFIDFFeatureExtractor initialized (accepts pre-cleaned text). " +
+                        "Configuration: maxFeatures={}, minTermFreq={}, useTfIdf={}, useBigrams={}",
                 maxFeatures, minTermFreq, useTfIdf, useBigrams);
     }
 
@@ -115,22 +106,19 @@ public class TFIDFFeatureExtractor extends FilterTrainingTemplate<Instances> {
      */
     @Override
     protected Instances doFit(List<Dataset> datasets) throws Exception {
-        logger.info("Training TF-IDF filters on {} samples", datasets.size());
+        logger.info("Training TF-IDF filters on {} samples (expects pre-cleaned text)", datasets.size());
 
-        // Step 1: Preprocess all training texts
-        List<Dataset> preprocessedDatasets = preprocessAllTexts(datasets);
-
-        // Step 2: Create raw Weka instances
-        Instances rawInstances = createRawInstances(preprocessedDatasets);
+        // Step 1: Create raw Weka instances (assumes datasets contain pre-cleaned text)
+        Instances rawInstances = createRawInstances(datasets);
         this.trainingStructure = new Instances(rawInstances, 0);  // Store structure
 
-        // Step 3: Train StringToWordVector filter
+        // Step 2: Train StringToWordVector filter
         trainFeatureFilter(rawInstances);
 
-        // Step 4: Apply TF-IDF transformation
+        // Step 3: Apply TF-IDF transformation
         Instances tfidfInstances = Filter.useFilter(rawInstances, stringToWordVectorFilter);
 
-        // Step 5: Train normalization filter if enabled
+        // Step 4: Train normalization filter if enabled
         Instances finalInstances;
         if (normalizeFeatures) {
             trainNormalizationFilter(tfidfInstances);
@@ -139,7 +127,7 @@ public class TFIDFFeatureExtractor extends FilterTrainingTemplate<Instances> {
             finalInstances = tfidfInstances;
         }
 
-        // Step 6: Generate statistics
+        // Step 5: Generate statistics
         generateFeatureStats(finalInstances);
 
         logger.info("TF-IDF training complete. Vocabulary: {} terms", vocabularyStats.numFeatures);
@@ -169,19 +157,20 @@ public class TFIDFFeatureExtractor extends FilterTrainingTemplate<Instances> {
     // ==================== INFERENCE METHODS (THREAD-SAFE) ====================
 
     /**
-     * Transform a single text using trained filters.
+     * Transform a single pre-cleaned text using trained filters.
      * Thread-safe after fit() completes.
+     *
+     * @param cleanedText Pre-cleaned text (caller must clean before passing)
      */
-    public Instance transform(String text) {
-        ValidationUtils.requireNonEmpty(text);
+    public Instance transform(String cleanedText) {
+        ValidationUtils.requireNonEmpty(cleanedText);
 
         // Use base class executeInference for thread-safe execution
         return executeFilterInference(() -> {
-            logger.debug("INFERENCE: Transforming text (thread-safe): '{}'",
-                    text.substring(0, Math.min(50, text.length())));
+            logger.debug("INFERENCE: Transforming pre-cleaned text (thread-safe): '{}'",
+                    cleanedText.substring(0, Math.min(50, cleanedText.length())));
 
-            String preprocessedText = textCleaner.preprocessText(text);
-            Instances singleInstanceSet = createSingleInstanceSet(preprocessedText);
+            Instances singleInstanceSet = createSingleInstanceSet(cleanedText);
 
             // Apply trained filters (thread-safe: Filter.useFilter creates new Instances)
             Instances transformed = Filter.useFilter(singleInstanceSet, stringToWordVectorFilter);
@@ -195,24 +184,25 @@ public class TFIDFFeatureExtractor extends FilterTrainingTemplate<Instances> {
     }
 
     /**
-     * Transform multiple texts using trained filters.
+     * Transform multiple pre-cleaned texts using trained filters.
      * Thread-safe batch transformation.
+     *
+     * @param cleanedTexts Pre-cleaned texts (caller must clean before passing)
      */
-    public Instances transform(List<String> texts) {
-        if (texts == null || texts.isEmpty()) {
+    public Instances transform(List<String> cleanedTexts) {
+        if (cleanedTexts == null || cleanedTexts.isEmpty()) {
             throw new IllegalArgumentException("Texts cannot be null or empty");
         }
 
         return executeFilterInference(() -> {
-            logger.info("INFERENCE: Batch transforming {} texts (thread-safe)", texts.size());
+            logger.info("INFERENCE: Batch transforming {} pre-cleaned texts (thread-safe)", cleanedTexts.size());
 
-            // Create batch instances
-            List<Dataset> tempDatasets = texts.stream()
+            // Create batch instances from pre-cleaned texts
+            List<Dataset> tempDatasets = cleanedTexts.stream()
                     .map(text -> new Dataset.Builder(text, Dataset.SentimentLabel.NEUTRAL).build())
                     .collect(Collectors.toList());
 
-            List<Dataset> preprocessed = preprocessAllTexts(tempDatasets);
-            Instances rawInstances = createRawInstances(preprocessed);
+            Instances rawInstances = createRawInstances(tempDatasets);
 
             // Apply trained filters
             Instances transformed = Filter.useFilter(rawInstances, stringToWordVectorFilter);
@@ -221,7 +211,7 @@ public class TFIDFFeatureExtractor extends FilterTrainingTemplate<Instances> {
             }
 
             logger.info("INFERENCE complete: {} texts -> {} features",
-                    texts.size(), transformed.numAttributes() - 1);
+                    cleanedTexts.size(), transformed.numAttributes() - 1);
 
             return transformed;
         });
@@ -229,23 +219,8 @@ public class TFIDFFeatureExtractor extends FilterTrainingTemplate<Instances> {
 
     // ==================== TRAINING HELPER METHODS ====================
 
-    private List<Dataset> preprocessAllTexts(List<Dataset> datasets) {
-        logger.debug("Preprocessing {} texts for feature extraction", datasets.size());
-        return datasets.stream()
-                .map(dataset -> {
-                    String preprocessedText = textCleaner.preprocessText(dataset.getText());
-                    return new Dataset.Builder(preprocessedText, dataset.getSentiment())
-                            .id(dataset.getId())
-                            .confidence(dataset.getConfidence())
-                            .source(dataset.getSource())
-                            .timestamp(dataset.getTimestamp())
-                            .build();
-                })
-                .collect(Collectors.toList());
-    }
-
     private Instances createRawInstances(List<Dataset> datasets) {
-        logger.debug("Creating raw Weka instances from {} preprocessed datasets", datasets.size());
+        logger.debug("Creating raw Weka instances from {} pre-cleaned datasets", datasets.size());
 
         ArrayList<Attribute> attributes = new ArrayList<>();
         attributes.add(new Attribute("text", (ArrayList<String>) null));
@@ -267,7 +242,7 @@ public class TFIDFFeatureExtractor extends FilterTrainingTemplate<Instances> {
         return instances;
     }
 
-    private Instances createSingleInstanceSet(String preprocessedText) {
+    private Instances createSingleInstanceSet(String cleanedText) {
         ArrayList<Attribute> attributes = new ArrayList<>();
         attributes.add(new Attribute("text", (ArrayList<String>) null));
 
@@ -278,7 +253,7 @@ public class TFIDFFeatureExtractor extends FilterTrainingTemplate<Instances> {
         singleSet.setClassIndex(singleSet.numAttributes() - 1);
 
         DenseInstance instance = new DenseInstance(2);
-        instance.setValue(attributes.get(0), preprocessedText);
+        instance.setValue(attributes.get(0), cleanedText);
         instance.setValue(attributes.get(1), "unknown");
         instance.setDataset(singleSet);
         singleSet.add(instance);
@@ -453,8 +428,10 @@ public class TFIDFFeatureExtractor extends FilterTrainingTemplate<Instances> {
     // ==================== ANALYSIS METHODS ====================
 
     /**
-     * Extract features with comprehensive analysis.
+     * Extract features with comprehensive analysis from pre-cleaned datasets.
      * Thread-safe after fit() completes.
+     *
+     * @param datasets Datasets with pre-cleaned text
      */
     public FeatureExtractionResult extractFeaturesWithAnalysis(List<Dataset> datasets) {
         if (datasets == null || datasets.isEmpty()) {
@@ -462,13 +439,13 @@ public class TFIDFFeatureExtractor extends FilterTrainingTemplate<Instances> {
         }
 
         return executeFilterInference(() -> {
-            logger.info("Extracting features with analysis for {} datasets", datasets.size());
+            logger.info("Extracting features with analysis for {} pre-cleaned datasets", datasets.size());
 
-            // Transform using trained filters
-            List<String> texts = datasets.stream()
+            // Transform using trained filters (expects pre-cleaned text)
+            List<String> cleanedTexts = datasets.stream()
                     .map(Dataset::getText)
                     .collect(Collectors.toList());
-            Instances features = transform(texts);
+            Instances features = transform(cleanedTexts);
 
             // Perform analysis
             VocabularyAnalysis vocabAnalysis = analyzeVocabulary(features);

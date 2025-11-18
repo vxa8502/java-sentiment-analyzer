@@ -29,9 +29,6 @@ import static org.mockito.Mockito.*;
 class TextPreprocessorTest {
 
     @Mock
-    private TFIDFFeatureExtractor mockFeatureExtractor;
-
-    @Mock
     private ContractionExpander mockContractionExpander;
 
     @Mock
@@ -70,7 +67,6 @@ class TextPreprocessorTest {
 
         // Create preprocessor with mocked dependencies
         preprocessor = new TextPreprocessor(
-            mockFeatureExtractor,
             mockContractionExpander,
             mockTokenizer,
             mockStopwordRemover,
@@ -86,7 +82,6 @@ class TextPreprocessorTest {
     void testConstructor_InvalidMinWordLength_ThrowsException() {
         assertThrows(IllegalArgumentException.class,
             () -> new TextPreprocessor(
-                mockFeatureExtractor,
                 mockContractionExpander,
                 mockTokenizer,
                 mockStopwordRemover,
@@ -314,15 +309,8 @@ class TextPreprocessorTest {
             "Preprocessor should be fitted after calling fit()");
     }
 
-    @Test
-    @DisplayName("fit should call featureExtractor.fit()")
-    void testFit_CallsFeatureExtractorFit() {
-        List<Dataset> trainingData = createMockTrainingData(20);
-
-        preprocessor.fit(trainingData);
-
-        verify(mockFeatureExtractor, times(1)).fit(trainingData);
-    }
+    // REMOVED: TextPreprocessor no longer injects TFIDFFeatureExtractor
+    // Feature extraction happens in service layer with pre-cleaned datasets
 
     @Test
     @DisplayName("transform should throw when not fitted")
@@ -430,7 +418,7 @@ class TextPreprocessorTest {
 
         assertFalse(preprocessor.isFitted(),
             "Should not be fitted after reset");
-        verify(mockFeatureExtractor, times(1)).reset();
+        // REMOVED: No longer calls featureExtractor.reset()
     }
 
     // ==================== THREAD SAFETY TESTS ====================
@@ -509,7 +497,6 @@ class TextPreprocessorTest {
         assertTrue(preprocessor.isFitted());
 
         // Verify pipeline components were used
-        verify(mockFeatureExtractor).fit(trainingData);
         verify(mockContractionExpander, atLeastOnce()).expand(anyString());
         verify(mockTokenizer, atLeastOnce()).tokenize(anyString());
         verify(mockStopwordRemover, atLeastOnce()).removeStopwords(any());
