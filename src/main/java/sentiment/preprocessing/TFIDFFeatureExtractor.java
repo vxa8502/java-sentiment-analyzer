@@ -251,7 +251,7 @@ public class TFIDFFeatureExtractor extends FilterTrainingTemplate<Instances> {
         attributes.add(new Attribute("text", (ArrayList<String>) null));
 
         ArrayList<String> classValues = new ArrayList<>(Arrays.asList("positive", "negative", "neutral"));
-        attributes.add(new Attribute("sentiment", classValues));
+        attributes.add(new Attribute("class_label", classValues));
 
         Instances instances = new Instances("SentimentDataRaw", attributes, datasets.size());
         instances.setClassIndex(instances.numAttributes() - 1);
@@ -272,7 +272,7 @@ public class TFIDFFeatureExtractor extends FilterTrainingTemplate<Instances> {
         attributes.add(new Attribute("text", (ArrayList<String>) null));
 
         ArrayList<String> classValues = new ArrayList<>(Arrays.asList("positive", "negative", "neutral", "unknown"));
-        attributes.add(new Attribute("sentiment", classValues));
+        attributes.add(new Attribute("class_label", classValues));
 
         Instances singleSet = new Instances("SingleText", attributes, 1);
         singleSet.setClassIndex(singleSet.numAttributes() - 1);

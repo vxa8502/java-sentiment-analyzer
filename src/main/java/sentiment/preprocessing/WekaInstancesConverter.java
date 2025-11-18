@@ -269,7 +269,7 @@ public class WekaInstancesConverter extends FilterTrainingTemplate<Instances> {
         attributes.add(new Attribute("text", (ArrayList<String>) null));
 
         ArrayList<String> sentimentValues = createSentimentValues(datasets);
-        attributes.add(new Attribute("sentiment", sentimentValues));
+        attributes.add(new Attribute("class_label", sentimentValues));
 
         Instances instances = new Instances("SentimentAnalysis", attributes, datasets.size());
         instances.setClassIndex(1);
