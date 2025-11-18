@@ -8,7 +8,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import sentiment.data.Dataset;
-import sentiment.data.DatasetLoaderRegistry;
+import sentiment.data.SimpleDatasetLoader;
 import sentiment.data.DatasetLoadResult;
 import sentiment.models.SVMClassifier;
 import sentiment.models.WekaModelPersistence;
@@ -48,7 +48,7 @@ public class SentimentConfiguration {
     private WekaInstancesConverter wekaInstancesConverter;
 
     @Autowired
-    private DatasetLoaderRegistry dataLoaderManager;
+    private SimpleDatasetLoader datasetLoader;
 
     @Value("${sentiment.data.training-file:./data/datasets/Reviews.csv}")
     private String trainingDataPath;
@@ -240,8 +240,8 @@ public class SentimentConfiguration {
                 }
             }
 
-            // Load dataset using the DatasetLoaderRegistry
-            DatasetLoadResult loadResult = dataLoaderManager.loadDataset(resolvedPath);
+            // Load dataset using SimpleDatasetLoader
+            DatasetLoadResult loadResult = datasetLoader.loadWithMetadata(resolvedPath);
             List<Dataset> allData = loadResult.datasets();
 
             logger.info("Loaded {} reviews from {} (took {}ms)",

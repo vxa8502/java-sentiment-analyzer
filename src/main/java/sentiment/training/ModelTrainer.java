@@ -5,7 +5,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import sentiment.data.Dataset;
-import sentiment.data.DatasetLoaderRegistry;
+import sentiment.data.SimpleDatasetLoader;
 import sentiment.data.DatasetLoadResult;
 import sentiment.evaluation.StratifiedDataSplitter;
 import sentiment.models.*;
@@ -57,7 +57,7 @@ public class ModelTrainer {
 
     private static final Logger logger = LoggerFactory.getLogger(ModelTrainer.class);
 
-    private final DatasetLoaderRegistry dataLoaderManager;
+    private final SimpleDatasetLoader datasetLoader;
     private final TextPreprocessor textPreprocessor;
     private final WekaInstancesConverter wekaInstancesConverter;
 
@@ -65,10 +65,10 @@ public class ModelTrainer {
      * Creates a ModelTrainer with Spring-injected components.
      */
     @Autowired
-    public ModelTrainer(DatasetLoaderRegistry dataLoaderManager,
+    public ModelTrainer(SimpleDatasetLoader datasetLoader,
                         TextPreprocessor textPreprocessor,
                         WekaInstancesConverter wekaInstancesConverter) {
-        this.dataLoaderManager = dataLoaderManager;
+        this.datasetLoader = datasetLoader;
         this.textPreprocessor = textPreprocessor;
         this.wekaInstancesConverter = wekaInstancesConverter;
 
@@ -216,7 +216,7 @@ public class ModelTrainer {
     }
 
     private List<Dataset> loadTrainingData(String dataPath, int maxSamples) throws Exception {
-        DatasetLoadResult loadResult = dataLoaderManager.loadDataset(dataPath);
+        DatasetLoadResult loadResult = datasetLoader.loadWithMetadata(dataPath);
         List<Dataset> allData = loadResult.datasets();
 
         logger.info("Loaded {} total samples from {} ({}ms)",
