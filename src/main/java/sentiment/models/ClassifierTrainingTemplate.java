@@ -19,15 +19,6 @@ import java.util.*;
  * Extends {@link TrainingTemplate} to provide unified state management and lifecycle control.
  * Uses Template Method pattern - subclasses implement {@link #doTrain(List)} and {@link #doClearResources()}.
  *
- * <h3>Design Pattern</h3>
- * <p>Inherits from TrainingTemplate:
- * <ul>
- *   <li>Thread-safe state management using {@code ReadWriteLock}</li>
- *   <li>State machine enforcement (UNINITIALIZED → TRAINING → READY)</li>
- *   <li>Training phase protection (write lock)</li>
- *   <li>Inference phase concurrency (read lock)</li>
- * </ul>
- *
  * <p>Adds classifier-specific features:
  * <ul>
  *   <li>Weka integration ({@link weka.classifiers.Classifier})</li>

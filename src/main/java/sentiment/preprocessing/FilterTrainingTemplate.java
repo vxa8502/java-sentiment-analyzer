@@ -1,6 +1,5 @@
 package sentiment.preprocessing;
 
-import org.slf4j.Logger;
 import sentiment.data.Dataset;
 import sentiment.TrainingTemplate;
 
@@ -37,22 +36,6 @@ import java.util.List;
  *   <li>State mutations only during training (write lock)</li>
  * </ul>
  *
- * <h3>Usage Pattern</h3>
- * <ol>
- *   <li>Application startup: {@code extractor.fit(trainingData)} (once)</li>
- *   <li>Request handling: {@code extractor.transform(text)} (many times, concurrently)</li>
- *   <li>Application shutdown: {@code extractor.cleanup()} (automatic via {@code @PreDestroy})</li>
- * </ol>
- *
- * <h3>State Machine</h3>
- * <pre>
- * UNINITIALIZED --fit()--> TRAINING --success--> READY
- *      ^                      |                    |
- *      |                   failure              reset()
- *      |                      |                    |
- *      +--------&lt;----------ERROR---------&lt;---------+
- * </pre>
- *
  * @param <T> type of training data result (e.g., Instances)
  */
 public abstract class FilterTrainingTemplate<T> extends TrainingTemplate<T> {
@@ -60,7 +43,7 @@ public abstract class FilterTrainingTemplate<T> extends TrainingTemplate<T> {
     /**
      * Fits the filter on training data.
      * <p>
-     * This is a convenience wrapper around {@link #train(List)} that uses filter-specific
+     * This is a convenience wrapper around {@link TrainingTemplate#trainInternal(List)} that uses filter-specific
      * naming conventions (fit vs train). Delegates to the base template method pattern.
      *
      * @param datasets training data
@@ -87,15 +70,6 @@ public abstract class FilterTrainingTemplate<T> extends TrainingTemplate<T> {
      * Called within {@link #fit(List)} method, protected by write lock.
      * Thread safety is not required as exclusive access is guaranteed.
      *
-     * <p><b>Implementation guidelines:</b>
-     * <ol>
-     *   <li>Train filters (StringToWordVector, Normalize, etc.)</li>
-     *   <li>Apply transformations to training data</li>
-     *   <li>Store trained filters in subclass fields</li>
-     *   <li>Generate statistics and metadata</li>
-     *   <li>Return training result</li>
-     * </ol>
-     *
      * @param datasets training data
      * @return training result
      * @throws Exception if training fails (transitions to ERROR state)
@@ -105,7 +79,7 @@ public abstract class FilterTrainingTemplate<T> extends TrainingTemplate<T> {
     /**
      * Delegates to {@link #doFit(List)} for filter-specific API.
      * <p>
-     * This method is called by the base class {@link TrainingTemplate#train(List)}.
+     * This method is called by the base class {@link TrainingTemplate#trainInternal(List)}.
      * It delegates to the filter-specific {@link #doFit(List)} method to maintain
      * API naming conventions.
      *
