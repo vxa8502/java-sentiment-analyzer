@@ -2,42 +2,28 @@ package sentiment.preprocessing;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.annotation.Autowired;
 import sentiment.data.Dataset;
 import sentiment.util.ValidationUtils;
-import weka.core.Instances;
 
 import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.regex.Pattern;
-import java.util.regex.Matcher;
 import java.util.stream.Collectors;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
- * Text preprocessing pipeline with stateful training and thread safety.
- *
- * REFACTORED: Circular dependency eliminated
- * ===========================================
- * TFIDFFeatureExtractor no longer injects this class.
- * This class provides pre-cleaned datasets to feature extractors.
- *
- * WORKFLOW:
- * =========
- * 1. fit(data) - Train pipeline on raw data (cleans + captures vocab stats)
- * 2. transform(text) - Apply cleaning to new text (thread-safe inference)
- * 3. preprocessDatasets(datasets) - Bulk cleaning for feature extraction
- *
- * THREAD SAFETY:
- * ==============
- * - Training phase: stateLock.writeLock() - exclusive access
- * - Inference phase: stateLock.readLock() - concurrent reads safe
+ * Stateful text preprocessing pipeline with thread-safe training and inference.
+ * <p>
+ * Use {@link #fit(List)} to train the pipeline on labeled data, then use
+ * {@link #transform(String)} or {@link #preprocessDatasets(List)} for inference.
+ * Training captures vocabulary statistics and uses mutual information for feature selection.
+ * All methods are thread-safe using read-write locks.
  */
 @Component
 public class TextPreprocessor {
@@ -85,12 +71,14 @@ public class TextPreprocessor {
     );
 
     /**
-     * Constructor with dependency injection.
+     * Creates a text preprocessor with the specified dependencies and configuration.
      *
-     * Dependencies:
-     * - contractionExpander: Expands contractions ("don't" → "do not")
-     * - advancedTokenizer: Advanced tokenization logic
-     * - stopwordRemover: Intelligent stopword filtering
+     * @param contractionExpander expands contractions before tokenization
+     * @param advancedTokenizer tokenizes cleaned text
+     * @param stopwordRemover filters stopwords from tokens
+     * @param minWordLength minimum word length to keep (must be >= 1)
+     * @param preserveEmoticons whether to preserve sentiment-bearing emoticons
+     * @throws IllegalArgumentException if minWordLength < 1
      */
     @Autowired
     public TextPreprocessor(
@@ -118,19 +106,13 @@ public class TextPreprocessor {
                 minWordLength, preserveEmoticons);
     }
 
-    // ==================== TRAINING PHASE ====================
-
     /**
-     * TRAINING PHASE: Fit the preprocessing pipeline on training data.
+     * Trains the preprocessing pipeline on labeled data.
+     * Captures vocabulary statistics and applies mutual information-based feature selection.
+     * Must be called before using {@link #transform(String)}.
      *
-     * This method trains any stateful components and captures vocabulary statistics.
-     * Must be called ONCE before using transform().
-     *
-     * Thread safety: Uses WRITE lock - exclusive access during training
-     *
-     * @param data Training dataset
+     * @param data training datasets with text and labels
      * @throws IllegalArgumentException if data is null or empty
-     * @throws IllegalStateException if pipeline is already fitted
      */
     public void fit(List<Dataset> data) {
         if (data == null || data.isEmpty()) {
@@ -178,19 +160,13 @@ public class TextPreprocessor {
         }
     }
 
-    // ==================== INFERENCE PHASE ====================
-
     /**
-     * INFERENCE PHASE: Transform a single text through the fitted pipeline.
+     * Transforms text through the fitted preprocessing pipeline.
+     * Thread-safe for concurrent inference after training.
      *
-     * Thread-safe after fit() completes. Must call fit() before using this method.
-     *
-     * Thread safety: Uses READ lock - concurrent reads safe!
-     *
-     * @param text Input text to transform
-     * @return Preprocessed text
+     * @param text input text to preprocess
+     * @return preprocessed text with cleaning, tokenization, and stopword removal applied
      * @throws IllegalStateException if pipeline not fitted
-     * @throws IllegalArgumentException if text is null or empty
      */
     public String transform(String text) {
         if (ValidationUtils.isNullOrEmpty(text)) {
@@ -215,10 +191,12 @@ public class TextPreprocessor {
         }
     }
 
-    // ==================== CORE PREPROCESSING METHODS ====================
-
     /**
-     * Clean text by removing noise, URLs, HTML, etc.
+     * Cleans text by removing URLs, emails, HTML tags, and normalizing special characters.
+     * Expands contractions and preserves emoticons if configured.
+     *
+     * @param rawText raw input text
+     * @return cleaned text ready for tokenization
      */
     public String cleanText(String rawText) {
         if (rawText == null || rawText.trim().isEmpty()) {
@@ -265,7 +243,10 @@ public class TextPreprocessor {
     }
 
     /**
-     * Tokenize using AdvancedTokenizer
+     * Tokenizes cleaned text into individual words.
+     *
+     * @param cleanedText cleaned text from {@link #cleanText(String)}
+     * @return list of tokens
      */
     public List<String> tokenize(String cleanedText) {
         if (cleanedText == null || cleanedText.trim().isEmpty()) {
@@ -276,7 +257,10 @@ public class TextPreprocessor {
     }
 
     /**
-     * Remove stopwords using IntelligentStopwordRemover
+     * Removes stopwords from tokenized text.
+     *
+     * @param tokens list of tokens from {@link #tokenize(String)}
+     * @return filtered tokens with stopwords removed
      */
     public List<String> removeStopwords(List<String> tokens) {
         if (tokens == null || tokens.isEmpty()) {
@@ -287,7 +271,10 @@ public class TextPreprocessor {
     }
 
     /**
-     * Complete preprocessing pipeline
+     * Applies the complete preprocessing pipeline: cleaning, tokenization, and stopword removal.
+     *
+     * @param rawText raw input text
+     * @return fully preprocessed text
      */
     public String preprocessText(String rawText) {
         if (rawText == null || rawText.trim().isEmpty()) {
@@ -301,14 +288,12 @@ public class TextPreprocessor {
         return String.join(" ", filtered);
     }
 
-    // ==================== DATASET PREPROCESSING ====================
-
     /**
-     * Preprocess multiple datasets - returns new datasets with cleaned text.
-     * This is the primary method for preparing data for feature extraction.
+     * Preprocesses multiple datasets for feature extraction.
      *
-     * @param rawDatasets Datasets with raw text
-     * @return New datasets with pre-cleaned text
+     * @param rawDatasets datasets with raw text
+     * @return new datasets with preprocessed text
+     * @throws IllegalArgumentException if rawDatasets is null or empty
      */
     public List<Dataset> preprocessDatasets(List<Dataset> rawDatasets) {
         if (rawDatasets == null || rawDatasets.isEmpty()) {
@@ -330,10 +315,12 @@ public class TextPreprocessor {
                 .collect(Collectors.toList());
     }
 
-    // ==================== STATE MANAGEMENT ====================
-
     /**
-     * Save pipeline state to disk
+     * Saves the fitted pipeline state to disk for later reuse.
+     *
+     * @param path file path to save state
+     * @throws IOException if writing fails
+     * @throws IllegalStateException if pipeline not fitted
      */
     public void saveState(Path path) throws IOException {
         stateLock.readLock().lock();  // ✅ READ LOCK for safe state access
@@ -364,7 +351,11 @@ public class TextPreprocessor {
     }
 
     /**
-     * Load pipeline state from disk
+     * Loads a previously saved pipeline state from disk.
+     *
+     * @param path file path to load state from
+     * @throws IOException if reading fails or file doesn't exist
+     * @throws IllegalArgumentException if file doesn't exist
      */
     public void loadState(Path path) throws IOException {
         if (!Files.exists(path)) {
@@ -385,8 +376,19 @@ public class TextPreprocessor {
                 int savedMinWordLength = ois.readInt();
                 boolean savedPreserveEmoticons = ois.readBoolean();
 
+                if (!VERSION.equals(savedVersion)) {
+                    logger.warn("Loaded version {} differs from current version {}",
+                               savedVersion, VERSION);
+                }
+
                 if (savedMinWordLength != this.minWordLength) {
-                    logger.warn("Loaded minWordLength differs from current config");
+                    logger.warn("Loaded minWordLength {} differs from current config {}",
+                               savedMinWordLength, this.minWordLength);
+                }
+
+                if (savedPreserveEmoticons != this.preserveEmoticons) {
+                    logger.warn("Loaded preserveEmoticons {} differs from current config {}",
+                               savedPreserveEmoticons, this.preserveEmoticons);
                 }
 
                 logger.info("Pipeline state loaded. Vocabulary: {}, Fitted: {}",
@@ -402,7 +404,7 @@ public class TextPreprocessor {
     }
 
     /**
-     * Reset pipeline to unfitted state
+     * Resets the pipeline to an unfitted state, clearing all learned vocabulary statistics.
      */
     public void reset() {
         stateLock.writeLock().lock();  // ✅ WRITE LOCK for state reset
@@ -415,21 +417,28 @@ public class TextPreprocessor {
         }
     }
 
-    // ==================== STATE ACCESS ====================
-
+    /**
+     * Returns the pipeline version.
+     *
+     * @return version string
+     */
     public String getVersion() {
         return VERSION;
     }
 
     /**
-     * Check if pipeline is fitted and ready for transformation
+     * Checks if the pipeline has been trained and is ready for inference.
+     *
+     * @return true if fitted, false otherwise
      */
     public boolean isFitted() {
         return isFitted;  // volatile read is safe
     }
 
     /**
-     * Get pipeline state information (thread-safe)
+     * Returns the current pipeline state including vocabulary statistics.
+     *
+     * @return pipeline state snapshot
      */
     public PipelineState getPipelineState() {
         stateLock.readLock().lock();  // ✅ READ LOCK for safe access
@@ -441,7 +450,9 @@ public class TextPreprocessor {
     }
 
     /**
-     * Get comprehensive version information for all pipeline components
+     * Returns version information for all pipeline components.
+     *
+     * @return comprehensive version info
      */
     public PipelineVersionInfo getVersionInfo() {
         return new PipelineVersionInfo(
@@ -453,7 +464,10 @@ public class TextPreprocessor {
     }
 
     /**
-     * Get comprehensive preprocessing statistics using all components
+     * Computes preprocessing statistics for the given datasets.
+     *
+     * @param data datasets to analyze
+     * @return preprocessing statistics including word counts and analysis
      */
     public PreprocessingStats getPreprocessingStats(List<Dataset> data) {
         if (data == null || data.isEmpty()) {
@@ -496,7 +510,11 @@ public class TextPreprocessor {
     }
 
     /**
-     * Process a single text through the complete pipeline
+     * Processes a single text through the complete pipeline.
+     * Alias for {@link #preprocessText(String)} with debug logging.
+     *
+     * @param rawText raw input text
+     * @return preprocessed text
      */
     public String processSingleText(String rawText) {
         if (rawText == null || rawText.trim().isEmpty()) {
@@ -514,7 +532,9 @@ public class TextPreprocessor {
     }
 
     /**
-     * Get the current preprocessing pipeline summary
+     * Returns a summary of the pipeline configuration and component statistics.
+     *
+     * @return pipeline summary
      */
     public PipelineSummary getPipelineSummary() {
         return new PipelineSummary(
@@ -525,12 +545,12 @@ public class TextPreprocessor {
         );
     }
 
-    // ==================== PIPELINE STATE CLASS ====================
-
     /**
-     * Serializable pipeline state for persistence
+     * Serializable pipeline state for persistence.
+     * Contains vocabulary statistics and configuration from training.
      */
     public static class PipelineState implements Serializable {
+        @java.io.Serial
         private static final long serialVersionUID = 1L;
 
         public int vocabularySize = 0;
@@ -543,8 +563,7 @@ public class TextPreprocessor {
         public boolean preserveEmoticons = true;
 
         /**
-         * DEPRECATED: Frequency-based vocabulary capture without feature selection.
-         * Use captureVocabularyStatsWithPrincipledSelection() instead.
+         * @deprecated Use {@link #captureVocabularyStatsWithPrincipledSelection(List, List)} instead.
          */
         @Deprecated
         public void captureVocabularyStats(List<String> preprocessedTexts) {
@@ -568,27 +587,12 @@ public class TextPreprocessor {
         }
 
         /**
-         * Principled vocabulary capture with Mutual Information-based feature selection.
+         * Captures vocabulary statistics using mutual information-based feature selection.
+         * Selects features that maximize discriminative power rather than raw frequency.
          *
-         * THEORETICAL FOUNDATION:
-         * ======================
-         * Mutual Information I(X;Y) measures how much knowing feature X reduces uncertainty about class Y.
-         *
-         * I(X;Y) = H(Y) - H(Y|X)
-         * where:
-         *   H(Y) = entropy of class distribution
-         *   H(Y|X) = conditional entropy of class given feature
-         *
-         * This is provably optimal for feature selection because:
-         * 1. It directly quantifies discriminative power
-         * 2. It's invariant to feature scaling
-         * 3. It handles both positive and negative class associations
-         *
-         * Unlike frequency-based selection which discards rare but potentially discriminative terms,
-         * MI-based selection preserves features that reduce classification uncertainty.
-         *
-         * @param preprocessedTexts Preprocessed text samples
-         * @param originalDatasets Original datasets with labels
+         * @param preprocessedTexts preprocessed text samples
+         * @param originalDatasets original datasets with labels
+         * @throws IllegalArgumentException if sizes don't match
          */
         public void captureVocabularyStatsWithPrincipledSelection(
                 List<String> preprocessedTexts,
@@ -655,8 +659,9 @@ public class TextPreprocessor {
                 double retainedMI = vocabularyFrequencies.keySet().stream()
                     .mapToDouble(mutualInformation::get).sum();
 
-                logger.info("Feature selection retained {:.2f}% of mutual information ({:.4f} / {:.4f})",
-                           100.0 * retainedMI / totalMI, retainedMI, totalMI);
+                logger.info("Feature selection retained {}",
+                           String.format("%.2f%% of mutual information (%.4f / %.4f)",
+                               100.0 * retainedMI / totalMI, retainedMI, totalMI));
 
                 // Report some statistics about discarded features
                 long discardedFeatures = frequencies.size() - MAX_VOCAB_SIZE;
@@ -675,25 +680,13 @@ public class TextPreprocessor {
         }
 
         /**
-         * Compute Mutual Information between a term and class labels.
+         * Computes mutual information between a term and class labels.
+         * Higher scores indicate greater discriminative power.
          *
-         * I(term; class) = H(class) - H(class|term)
-         *
-         * This quantifies how much knowing whether the term appears reduces uncertainty
-         * about the class label.
-         *
-         * MATHEMATICAL DERIVATION:
-         * ========================
-         * MI = Σ_x Σ_y P(x,y) * log(P(x,y) / (P(x) * P(y)))
-         *
-         * where:
-         *   x ∈ {term present, term absent}
-         *   y ∈ {positive, negative, neutral, ...}
-         *
-         * @param term The term to evaluate
-         * @param docTokenSets Precomputed token sets for each document (CORRECTNESS FIX)
-         * @param originalDatasets Original datasets with labels
-         * @return Mutual information score (higher = more discriminative)
+         * @param term term to evaluate
+         * @param docTokenSets precomputed token sets for each document
+         * @param originalDatasets original datasets with labels
+         * @return mutual information score
          */
         private double computeMutualInformation(
                 String term,
@@ -745,17 +738,14 @@ public class TextPreprocessor {
         }
 
         /**
-         * Compute MI component for a 2x2 contingency table.
+         * Computes mutual information contribution from a 2x2 contingency table.
          *
-         * This implements the formula:
-         * MI = Σ_i Σ_j (n_ij / N) * log((N * n_ij) / (row_i * col_j))
-         *
-         * @param n11 Count of (term present, class present)
-         * @param n10 Count of (term present, class absent)
-         * @param n01 Count of (term absent, class present)
-         * @param n00 Count of (term absent, class absent)
-         * @param total Total number of documents
-         * @return MI contribution from this contingency table
+         * @param n11 count of (term present, class present)
+         * @param n10 count of (term present, class absent)
+         * @param n01 count of (term absent, class present)
+         * @param n00 count of (term absent, class absent)
+         * @param total total number of documents
+         * @return MI contribution
          */
         private double computeMIComponent(int n11, int n10, int n01, int n00, int total) {
             double mi = 0.0;
@@ -776,15 +766,14 @@ public class TextPreprocessor {
         }
 
         /**
-         * Add a single term to the MI calculation with proper handling of edge cases.
+         * Adds a single cell's contribution to the mutual information calculation.
+         * Handles edge cases where counts are zero.
          *
-         * Handles the case where n_ij = 0 (since 0 * log(0) = 0 by convention in information theory)
-         *
-         * @param nij Count in cell (i,j)
-         * @param rowTotal Total for row i
-         * @param colTotal Total for column j
-         * @param total Overall total
-         * @return Contribution of this cell to MI
+         * @param nij count in cell (i,j)
+         * @param rowTotal total for row i
+         * @param colTotal total for column j
+         * @param total overall total
+         * @return contribution of this cell to MI
          */
         private double addMITerm(int nij, int rowTotal, int colTotal, int total) {
             if (nij == 0 || rowTotal == 0 || colTotal == 0) {
@@ -804,6 +793,11 @@ public class TextPreprocessor {
             return pij * Math.log(nij / expected);
         }
 
+        /**
+         * Stores configuration snapshot from the preprocessor.
+         *
+         * @param preprocessor preprocessor to extract configuration from
+         */
         public void storeConfiguration(TextPreprocessor preprocessor) {
             this.minWordLength = preprocessor.minWordLength;
             this.preserveEmoticons = preprocessor.preserveEmoticons;
@@ -861,28 +855,11 @@ public class TextPreprocessor {
         }
     }
 
-    public static class PipelineSummary {
-        public final String preprocessorName;
-        public final ContractionExpander.ContractionStats contractionStats;
-        public final String tokenizerName;
-        public final String stopwordConfig;
-
-        public PipelineSummary(String preprocessorName,
-                               ContractionExpander.ContractionStats contractionStats,
-                               String tokenizerName, String stopwordConfig) {
-            this.preprocessorName = preprocessorName;
-            this.contractionStats = contractionStats;
-            this.tokenizerName = tokenizerName;
-            this.stopwordConfig = stopwordConfig;
-        }
-
-        @Override
-        public String toString() {
-            return String.format(
-                    "PipelineSummary{preprocessor=%s, contractions=%s, tokenizer=%s, stopwords=%s}",
-                    preprocessorName, contractionStats, tokenizerName, stopwordConfig
-            );
-        }
+    public record PipelineSummary(
+            String preprocessorName,
+            ContractionExpander.ContractionStats contractionStats,
+            String tokenizerName,
+            String stopwordConfig) {
     }
 
     public static class CleaningMetrics {
@@ -907,34 +884,16 @@ public class TextPreprocessor {
         }
     }
 
-    public static class PipelineVersionInfo {
-        public final String preprocessorVersion;
-        public final String contractionExpanderVersion;
-        public final String tokenizerVersion;
-        public final String stopwordRemoverVersion;
-
-        public PipelineVersionInfo(String preprocessorVersion,
-                                   String contractionExpanderVersion,
-                                   String tokenizerVersion,
-                                   String stopwordRemoverVersion) {
-            this.preprocessorVersion = preprocessorVersion;
-            this.contractionExpanderVersion = contractionExpanderVersion;
-            this.tokenizerVersion = tokenizerVersion;
-            this.stopwordRemoverVersion = stopwordRemoverVersion;
-        }
-
-        @Override
-        public String toString() {
-            return String.format(
-                    "PipelineVersionInfo{preprocessor=%s, contractionExpander=%s, " +
-                            "tokenizer=%s, stopwordRemover=%s}",
-                    preprocessorVersion, contractionExpanderVersion, tokenizerVersion,
-                    stopwordRemoverVersion
-            );
-        }
+    public record PipelineVersionInfo(
+            String preprocessorVersion,
+            String contractionExpanderVersion,
+            String tokenizerVersion,
+            String stopwordRemoverVersion) {
 
         /**
-         * Get a compact version string for the entire pipeline
+         * Returns a compact version string for the entire pipeline.
+         *
+         * @return compact version string
          */
         public String getCompactVersion() {
             return String.format("Pipeline-v%s (CE:%s|TOK:%s|SW:%s)",
@@ -943,8 +902,11 @@ public class TextPreprocessor {
         }
     }
 
-    // ========== Demonstration and Testing Methods ==========
-
+    /**
+     * Demonstrates the integrated pipeline on sample text with detailed logging.
+     *
+     * @param sampleText sample text to process
+     */
     public void demonstrateIntegratedPipeline(String sampleText) {
         logger.info("=== Integrated Text Preprocessing Pipeline Demonstration ===");
         logger.info("Original text: '{}'", sampleText);
@@ -971,6 +933,11 @@ public class TextPreprocessor {
         logger.info("=== End Integrated Pipeline Demonstration ===");
     }
 
+    /**
+     * Demonstrates text cleaning with detailed logging of each step.
+     *
+     * @param sampleText sample text to clean
+     */
     public void demonstrateCleaning(String sampleText) {
         logger.info("=== Text Cleaning Demonstration (Integrated Pipeline) ===");
         logger.info("Original: '{}'", sampleText);
@@ -989,7 +956,10 @@ public class TextPreprocessor {
     }
 
     /**
-     * Demonstrate the fit/transform workflow
+     * Demonstrates the fit/transform workflow with detailed logging.
+     *
+     * @param trainingData training datasets
+     * @param newText new text to transform
      */
     public void demonstrateFitTransform(List<Dataset> trainingData, String newText) {
         logger.info("=== Fit/Transform Workflow Demonstration ===");
@@ -1012,7 +982,11 @@ public class TextPreprocessor {
     }
 
     /**
-     * Demonstrate state persistence
+     * Demonstrates state persistence (save/load) with detailed logging.
+     *
+     * @param savePath path to save state
+     * @param loadPath path to load state from
+     * @throws IOException if file operations fail
      */
     public void demonstrateStatePersistence(Path savePath, Path loadPath) throws IOException {
         logger.info("=== State Persistence Demonstration ===");
