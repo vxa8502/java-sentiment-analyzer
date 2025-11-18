@@ -10,7 +10,7 @@ import java.util.List;
  * <br>
  * Evaluation → ClassifierEvaluator
  * <br>
- * Persistence → ClassifierPersistence
+ * Persistence → WekaModelPersistence
  * <br>
  * This follows Interface Segregation Principle (ISP):
  * <br>

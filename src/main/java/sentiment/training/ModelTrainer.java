@@ -288,14 +288,10 @@ public class ModelTrainer {
         Path modelPath = Paths.get(outputPath);
         Files.createDirectories(modelPath.getParent());
 
-        // Use appropriate persistence mechanism based on classifier type
+        // All classifiers extend ClassifierTrainingTemplate and use generic Weka persistence
         if (classifier instanceof ClassifierTrainingTemplate) {
-            // All Weka-based classifiers (including SVM) use generic persistence
             WekaModelPersistence<ClassifierTrainingTemplate<?>> persistence = new WekaModelPersistence<>();
             persistence.saveModel((ClassifierTrainingTemplate<?>) classifier, modelPath);
-        } else if (classifier instanceof ClassifierPersistence persistable) {
-            // Fallback for custom persistence implementations
-            persistable.saveModel(modelPath);
         } else {
             throw new UnsupportedOperationException(
                     "Classifier type " + algorithmType + " does not support persistence");
