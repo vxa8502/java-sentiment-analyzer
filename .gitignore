@@ -41,3 +41,6 @@ src/main/resources/datasets/
 # Environment files
 .env
 application-local.properties
+
+# Personal notes
+syllabus.md

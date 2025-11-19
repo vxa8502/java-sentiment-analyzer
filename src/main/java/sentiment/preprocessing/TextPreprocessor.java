@@ -486,28 +486,6 @@ public class TextPreprocessor {
     }
 
     /**
-     * Processes a single text through the complete pipeline.
-     * Alias for {@link #preprocessText(String)} with debug logging.
-     *
-     * @param rawText raw input text
-     * @return preprocessed text
-     */
-    public String processSingleText(String rawText) {
-        if (rawText == null || rawText.trim().isEmpty()) {
-            return "";
-        }
-
-        logger.debug("Processing single text through integrated pipeline");
-        String result = preprocessText(rawText);
-
-        logger.debug("Single text processing complete: '{}' -> '{}'",
-                rawText.substring(0, Math.min(30, rawText.length())),
-                result.substring(0, Math.min(30, result.length())));
-
-        return result;
-    }
-
-    /**
      * Returns a summary of the pipeline configuration and component statistics.
      *
      * @return pipeline summary

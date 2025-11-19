@@ -17,32 +17,16 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * TF-IDF feature extractor that accepts pre-cleaned text.
+ * TF-IDF feature extractor that transforms pre-cleaned text into numeric feature vectors.
+ * <p>
+ * Callers must provide pre-cleaned text. This component handles only feature extraction,
+ * not text cleaning, ensuring single responsibility and avoiding circular dependencies.
+ * <p>
+ * Training (fit) configures and trains Weka filters on the provided dataset. Inference
+ * (transform) applies the trained filters to new text. Thread-safe for concurrent reads
+ * during inference after training completes.
  *
- * DEPENDENCY SIMPLIFICATION:
- * ==========================
- * This component does NOT inject text cleaning dependencies.
- * Callers are responsible for pre-cleaning datasets before passing them here.
- *
- * BENEFITS:
- * =========
- * ✅ Single Responsibility - only handles feature extraction
- * ✅ No circular dependencies - clean dependency graph
- * ✅ Testable - easy to test with mock cleaned data
- * ✅ Reusable - works with any text cleaning strategy
- *
- * RESPONSIBILITIES:
- * =================
- * 1. Configure Weka filters (StringToWordVector, Normalize)
- * 2. Train filters on pre-cleaned text during fit()
- * 3. Transform pre-cleaned text during inference
- * 4. Provide feature extraction analysis and statistics
- *
- * THREAD SAFETY (via FilterTrainingTemplate):
- * ===========================================
- * - Training phase: write lock (exclusive access)
- * - Inference phase: read lock (concurrent reads safe)
- * - State machine: UNINITIALIZED → TRAINING → READY
+ * @see FilterTrainingTemplate for thread safety guarantees
  */
 @Component
 public class TFIDFFeatureExtractor extends FilterTrainingTemplate<Instances> {
@@ -60,16 +44,12 @@ public class TFIDFFeatureExtractor extends FilterTrainingTemplate<Instances> {
     private final boolean normalizeFeatures;
     private final boolean outputWordCounts;
 
-    // REFACTORED: No text cleaning dependency - accepts pre-cleaned text
-    // Caller is responsible for cleaning datasets before passing to this component
-
     // Trained filters (mutable, but immutable after training)
     private StringToWordVector stringToWordVectorFilter;
     private Normalize normalizationFilter;
 
     // Training metadata
     private VocabularyStats vocabularyStats;
-    private Instances trainingStructure;
 
     @Autowired
     public TFIDFFeatureExtractor(
@@ -98,11 +78,14 @@ public class TFIDFFeatureExtractor extends FilterTrainingTemplate<Instances> {
                 maxFeatures, minTermFreq, useTfIdf, useBigrams);
     }
 
-    // ==================== TEMPLATE METHOD IMPLEMENTATIONS ====================
+    // Template method implementations
 
     /**
-     * SUBCLASS HOOK: Implement TF-IDF specific training logic.
-     * Called by base class fit() within write lock.
+     * Trains TF-IDF filters on the provided datasets.
+     * Called by base class within write lock during fit().
+     *
+     * @param datasets datasets with pre-cleaned text
+     * @return transformed instances with TF-IDF features
      */
     @Override
     protected Instances doFit(List<Dataset> datasets) throws Exception {
@@ -110,7 +93,6 @@ public class TFIDFFeatureExtractor extends FilterTrainingTemplate<Instances> {
 
         // Step 1: Create raw Weka instances (assumes datasets contain pre-cleaned text)
         Instances rawInstances = createRawInstances(datasets);
-        this.trainingStructure = new Instances(rawInstances, 0);  // Store structure
 
         // Step 2: Train StringToWordVector filter
         trainFeatureFilter(rawInstances);
@@ -135,26 +117,23 @@ public class TFIDFFeatureExtractor extends FilterTrainingTemplate<Instances> {
     }
 
     /**
-     * SUBCLASS HOOK: Clear TF-IDF specific resources.
-     * Called by base class reset() within write lock.
+     * Clears trained filters and cached statistics.
+     * Called by base class within write lock during reset().
      */
     @Override
     protected void doClearResources() {
         stringToWordVectorFilter = null;
         normalizationFilter = null;
         vocabularyStats = null;
-        trainingStructure = null;
     }
 
-    /**
-     * SUBCLASS HOOK: Provide logger instance to base class.
-     */
+    /** {@inheritDoc} */
     @Override
     protected Logger getLogger() {
         return logger;
     }
 
-    // ==================== INFERENCE METHODS (THREAD-SAFE) ====================
+    // Inference methods
 
     /**
      * Transform a single pre-cleaned text using trained filters.
@@ -217,7 +196,7 @@ public class TFIDFFeatureExtractor extends FilterTrainingTemplate<Instances> {
         });
     }
 
-    // ==================== TRAINING HELPER METHODS ====================
+    // Training helper methods
 
     private Instances createRawInstances(List<Dataset> datasets) {
         logger.debug("Creating raw Weka instances from {} pre-cleaned datasets", datasets.size());
@@ -282,16 +261,10 @@ public class TFIDFFeatureExtractor extends FilterTrainingTemplate<Instances> {
         if (useBigrams || useTrigrams) {
             NGramTokenizer ngramTokenizer = new NGramTokenizer();
             ngramTokenizer.setNGramMinSize(1);
-
-            if (useTrigrams) {
-                ngramTokenizer.setNGramMaxSize(3);
-                logger.debug("N-gram tokenizer configured for unigrams, bigrams, and trigrams");
-            } else if (useBigrams) {
-                ngramTokenizer.setNGramMaxSize(2);
-                logger.debug("N-gram tokenizer configured for unigrams and bigrams");
-            }
-
+            ngramTokenizer.setNGramMaxSize(useTrigrams ? 3 : 2);
             stringToWordVectorFilter.setTokenizer(ngramTokenizer);
+
+            logger.debug("N-gram tokenizer configured: max size = {}", useTrigrams ? 3 : 2);
         }
 
         stringToWordVectorFilter.setInputFormat(rawInstances);
@@ -381,7 +354,7 @@ public class TFIDFFeatureExtractor extends FilterTrainingTemplate<Instances> {
         return distribution;
     }
 
-    // ==================== CONFIGURATION AND UTILITIES ====================
+    // Configuration and utilities
 
     private void validateConfiguration(int maxFeatures, int minTermFreq, double maxTermFreq) {
         if (maxFeatures <= 0) {
@@ -425,7 +398,7 @@ public class TFIDFFeatureExtractor extends FilterTrainingTemplate<Instances> {
         return diag.toString();
     }
 
-    // ==================== ANALYSIS METHODS ====================
+    // Analysis methods
 
     /**
      * Extract features with comprehensive analysis from pre-cleaned datasets.
@@ -457,7 +430,10 @@ public class TFIDFFeatureExtractor extends FilterTrainingTemplate<Instances> {
     }
 
     /**
-     * Analyze vocabulary composition.
+     * Analyzes vocabulary composition including n-gram distribution.
+     *
+     * @param instances feature instances to analyze
+     * @return vocabulary analysis with n-gram counts and top features
      */
     private VocabularyAnalysis analyzeVocabulary(Instances instances) {
         int numFeatures = instances.numAttributes() - 1;
@@ -482,7 +458,10 @@ public class TFIDFFeatureExtractor extends FilterTrainingTemplate<Instances> {
     }
 
     /**
-     * Assess feature quality metrics.
+     * Assesses feature quality based on density and variance metrics.
+     *
+     * @param instances feature instances to assess
+     * @return quality metrics including average density, variance, and high-variance feature count
      */
     private FeatureQualityMetrics assessFeatureQuality(Instances instances) {
         int numFeatures = instances.numAttributes() - 1;
@@ -516,7 +495,11 @@ public class TFIDFFeatureExtractor extends FilterTrainingTemplate<Instances> {
     }
 
     /**
-     * Demonstrate feature extraction with sample data.
+     * Demonstrates feature extraction by logging analysis results for sample data.
+     *
+     * @param sampleTexts pre-cleaned sample texts
+     * @param sentiments corresponding sentiment labels
+     * @throws IllegalArgumentException if text and sentiment lists have different sizes
      */
     public void demonstrateFeatureExtraction(List<String> sampleTexts, List<String> sentiments) {
         if (sampleTexts.size() != sentiments.size()) {
@@ -561,38 +544,21 @@ public class TFIDFFeatureExtractor extends FilterTrainingTemplate<Instances> {
         return count;
     }
 
-    // ==================== DATA CLASSES ====================
+    // Data classes
 
-    public static class FeatureExtractionResult {
-        public final Instances instances;
-        public final VocabularyAnalysis vocabularyAnalysis;
-        public final FeatureQualityMetrics qualityMetrics;
-        public final VocabularyStats vocabularyStats;
-
-        public FeatureExtractionResult(Instances instances, VocabularyAnalysis vocabularyAnalysis,
-                                       FeatureQualityMetrics qualityMetrics, VocabularyStats vocabularyStats) {
-            this.instances = instances;
-            this.vocabularyAnalysis = vocabularyAnalysis;
-            this.qualityMetrics = qualityMetrics;
-            this.vocabularyStats = vocabularyStats;
-        }
+    public record FeatureExtractionResult(
+            Instances instances,
+            VocabularyAnalysis vocabularyAnalysis,
+            FeatureQualityMetrics qualityMetrics,
+            VocabularyStats vocabularyStats) {
     }
 
-    public static class VocabularyAnalysis {
-        public final int totalFeatures;
-        public final List<String> topFeatures;
-        public final int unigramCount;
-        public final int bigramCount;
-        public final int trigramCount;
-
-        public VocabularyAnalysis(int totalFeatures, List<String> topFeatures,
-                                  int unigramCount, int bigramCount, int trigramCount) {
-            this.totalFeatures = totalFeatures;
-            this.topFeatures = topFeatures;
-            this.unigramCount = unigramCount;
-            this.bigramCount = bigramCount;
-            this.trigramCount = trigramCount;
-        }
+    public record VocabularyAnalysis(
+            int totalFeatures,
+            List<String> topFeatures,
+            int unigramCount,
+            int bigramCount,
+            int trigramCount) {
 
         @Override
         public String toString() {
@@ -602,16 +568,10 @@ public class TFIDFFeatureExtractor extends FilterTrainingTemplate<Instances> {
         }
     }
 
-    public static class FeatureQualityMetrics {
-        public final double averageDensity;
-        public final double averageVariance;
-        public final int highVarianceFeatures;
-
-        public FeatureQualityMetrics(double averageDensity, double averageVariance, int highVarianceFeatures) {
-            this.averageDensity = averageDensity;
-            this.averageVariance = averageVariance;
-            this.highVarianceFeatures = highVarianceFeatures;
-        }
+    public record FeatureQualityMetrics(
+            double averageDensity,
+            double averageVariance,
+            int highVarianceFeatures) {
 
         @Override
         public String toString() {
@@ -620,21 +580,12 @@ public class TFIDFFeatureExtractor extends FilterTrainingTemplate<Instances> {
         }
     }
 
-    public static class VocabularyStats {
-        public final int numFeatures;
-        public final int numDocuments;
-        public final double sparsity;
-        public final double averageDocumentLength;
-        public final Map<String, Double> distribution;
-
-        public VocabularyStats(int numFeatures, int numDocuments, double sparsity,
-                               double averageDocumentLength, Map<String, Double> distribution) {
-            this.numFeatures = numFeatures;
-            this.numDocuments = numDocuments;
-            this.sparsity = sparsity;
-            this.averageDocumentLength = averageDocumentLength;
-            this.distribution = distribution;
-        }
+    public record VocabularyStats(
+            int numFeatures,
+            int numDocuments,
+            double sparsity,
+            double averageDocumentLength,
+            Map<String, Double> distribution) {
 
         @Override
         public String toString() {
@@ -643,28 +594,15 @@ public class TFIDFFeatureExtractor extends FilterTrainingTemplate<Instances> {
         }
     }
 
-    public static class FeatureConfig {
-        public final int maxFeatures;
-        public final int minTermFreq;
-        public final double maxTermFreq;
-        public final boolean useTfIdf;
-        public final boolean useBigrams;
-        public final boolean useTrigrams;
-        public final boolean normalizeFeatures;
-        public final boolean outputWordCounts;
-
-        public FeatureConfig(int maxFeatures, int minTermFreq, double maxTermFreq,
-                             boolean useTfIdf, boolean useBigrams, boolean useTrigrams,
-                             boolean normalizeFeatures, boolean outputWordCounts) {
-            this.maxFeatures = maxFeatures;
-            this.minTermFreq = minTermFreq;
-            this.maxTermFreq = maxTermFreq;
-            this.useTfIdf = useTfIdf;
-            this.useBigrams = useBigrams;
-            this.useTrigrams = useTrigrams;
-            this.normalizeFeatures = normalizeFeatures;
-            this.outputWordCounts = outputWordCounts;
-        }
+    public record FeatureConfig(
+            int maxFeatures,
+            int minTermFreq,
+            double maxTermFreq,
+            boolean useTfIdf,
+            boolean useBigrams,
+            boolean useTrigrams,
+            boolean normalizeFeatures,
+            boolean outputWordCounts) {
 
         @Override
         public String toString() {
@@ -675,7 +613,7 @@ public class TFIDFFeatureExtractor extends FilterTrainingTemplate<Instances> {
         }
     }
 
-    // ==================== LEGACY API (DEPRECATED) ====================
+    // Legacy API (deprecated)
 
     /**
      * @deprecated Use explicit fit() then transform() workflow instead.
