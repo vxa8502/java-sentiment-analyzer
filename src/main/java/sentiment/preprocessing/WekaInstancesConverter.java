@@ -277,7 +277,7 @@ public class WekaInstancesConverter extends FilterTrainingTemplate<Instances> {
         for (Dataset dataset : datasets) {
             DenseInstance instance = new DenseInstance(2);
             instance.setDataset(instances);  // Must set dataset BEFORE setValue()
-            String preprocessed = textPreprocessor.preprocessText(dataset.getText());
+            String preprocessed = textPreprocessor.transform(dataset.getText());
             instance.setValue(0, preprocessed);
             instance.setValue(1, dataset.getSentiment().getDisplayName());
             instances.add(instance);
@@ -295,7 +295,7 @@ public class WekaInstancesConverter extends FilterTrainingTemplate<Instances> {
         DenseInstance instance = new DenseInstance(2);
         instance.setDataset(singleStructure);
 
-        String preprocessed = textPreprocessor.preprocessText(text);
+        String preprocessed = textPreprocessor.transform(text);
         if (preprocessed == null || preprocessed.trim().isEmpty()) {
             preprocessed = "empty_content_placeholder";
         }

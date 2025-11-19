@@ -235,7 +235,7 @@ class SVMBatchPredictorOptimizationTest {
         when(mockSMO.classifyInstance(any()))
                 .thenReturn(0.0);
 
-        when(mockPreprocessor.preprocessText(anyString()))
+        when(mockPreprocessor.transform(anyString()))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
         // Execute
@@ -409,7 +409,7 @@ class SVMBatchPredictorOptimizationTest {
 
         List<String> texts = Arrays.asList("", "  ", null, "valid text");
 
-        when(mockPreprocessor.preprocessText(anyString()))
+        when(mockPreprocessor.transform(anyString()))
                 .thenAnswer(invocation -> {
                     String text = invocation.getArgument(0);
                     return (text == null || text.trim().isEmpty()) ?
@@ -434,7 +434,7 @@ class SVMBatchPredictorOptimizationTest {
 
         List<String> texts = createTestTexts(10);
 
-        when(mockPreprocessor.preprocessText(anyString()))
+        when(mockPreprocessor.transform(anyString()))
                 .thenThrow(new RuntimeException("Processing error"));
 
         // Verify
@@ -515,7 +515,7 @@ class SVMBatchPredictorOptimizationTest {
     }
 
     private void setupMocksForBatchProcessing(List<String> texts, String label) throws Exception {
-        when(mockPreprocessor.preprocessText(anyString()))
+        when(mockPreprocessor.transform(anyString()))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
         when(mockConverter.transform(any(String[].class), anyString()))
@@ -529,7 +529,7 @@ class SVMBatchPredictorOptimizationTest {
     }
 
     private void setupMocksForProbabilityProcessing(List<String> texts) throws Exception {
-        when(mockPreprocessor.preprocessText(anyString()))
+        when(mockPreprocessor.transform(anyString()))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
         when(mockConverter.transform(any(String[].class), anyString()))

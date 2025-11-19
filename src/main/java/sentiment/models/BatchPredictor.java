@@ -464,7 +464,7 @@ public class BatchPredictor<T extends WekaClassifier> {
                 preprocessed.add("empty_content_placeholder");
                 emptyCount++;
             } else {
-                String processed = preprocessor.preprocessText(text);
+                String processed = preprocessor.transform(text);
                 if (ValidationUtils.isNullOrEmpty(processed)) {
                     processed = "empty_content_placeholder";
                     emptyCount++;

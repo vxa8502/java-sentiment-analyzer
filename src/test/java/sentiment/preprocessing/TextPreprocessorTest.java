@@ -349,14 +349,56 @@ class TextPreprocessorTest {
             "Transform with empty string should return empty string");
     }
 
+    @Test
+    @DisplayName("fit and transform should use consistent preprocessing")
+    void testFitTransform_ConsistentPreprocessing() {
+        // This test ensures that fit() and transform() use the same preprocessing logic
+        String testText = "This is a test message";
+
+        // Create two preprocessors with identical configuration
+        TextPreprocessor preprocessor1 = new TextPreprocessor(
+            mockContractionExpander,
+            mockTokenizer,
+            mockStopwordRemover,
+            2,
+            true
+        );
+
+        TextPreprocessor preprocessor2 = new TextPreprocessor(
+            mockContractionExpander,
+            mockTokenizer,
+            mockStopwordRemover,
+            2,
+            true
+        );
+
+        List<Dataset> trainingData = createMockTrainingData(20);
+
+        // Preprocessor 1: Use fit() -> transform() workflow
+        preprocessor1.fit(trainingData);
+        String fitTransformResult = preprocessor1.transform(testText);
+
+        // Preprocessor 2: Manually apply preprocessing steps (what fit() should do internally)
+        String cleaned = preprocessor2.cleanText(testText);
+        List<String> tokens = preprocessor2.tokenize(cleaned);
+        List<String> filtered = preprocessor2.removeStopwords(tokens);
+        String manualResult = String.join(" ", filtered);
+
+        // Both approaches should produce identical results
+        assertEquals(manualResult, fitTransformResult,
+            "fit() and transform() must use consistent preprocessing logic");
+    }
+
     // ==================== FULL PIPELINE TESTS ====================
 
     @Test
-    @DisplayName("preprocessText should apply full pipeline")
-    void testPreprocessText_AppliesFullPipeline() {
-        String input = "Don't visit https://spam.com for bad deals!";
+    @DisplayName("transform should apply full pipeline after fit")
+    void testTransform_AppliesFullPipeline() {
+        List<Dataset> trainingData = createMockTrainingData(20);
+        preprocessor.fit(trainingData);
 
-        String result = preprocessor.preprocessText(input);
+        String input = "Don't visit https://spam.com for bad deals!";
+        String result = preprocessor.transform(input);
 
         // Verify all components were called
         verify(mockContractionExpander, atLeastOnce()).expand(anyString());
@@ -367,15 +409,18 @@ class TextPreprocessorTest {
     }
 
     @Test
-    @DisplayName("preprocessText should handle complex input")
-    void testPreprocessText_HandlesComplexInput() {
+    @DisplayName("transform should handle complex input after fit")
+    void testTransform_HandlesComplexInput() {
+        List<Dataset> trainingData = createMockTrainingData(20);
+        preprocessor.fit(trainingData);
+
         String complexInput = """
             Hey @user! Check out https://example.com :)
             This is #amazing and I can't believe it!
             Contact: test@email.com for more info.
             """;
 
-        String result = preprocessor.preprocessText(complexInput);
+        String result = preprocessor.transform(complexInput);
 
         assertNotNull(result);
         assertFalse(result.isEmpty(),

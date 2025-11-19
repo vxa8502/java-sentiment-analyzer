@@ -21,9 +21,13 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
  * Stateful text preprocessing pipeline with thread-safe training and inference.
  * <p>
  * Use {@link #fit(List)} to train the pipeline on labeled data, then use
- * {@link #transform(String)} or {@link #preprocessDatasets(List)} for inference.
- * Training captures vocabulary statistics and uses mutual information for feature selection.
- * All methods are thread-safe using read-write locks.
+ * {@link #transform(String)} for inference. Training captures vocabulary statistics
+ * and uses mutual information for feature selection. All methods are thread-safe
+ * using read-write locks.
+ * <p>
+ * For fine-grained control over individual preprocessing steps, use
+ * {@link #cleanText(String)}, {@link #tokenize(String)}, and
+ * {@link #removeStopwords(List)} independently.
  */
 @Component
 public class TextPreprocessor {
@@ -119,7 +123,7 @@ public class TextPreprocessor {
             throw new IllegalArgumentException("Training data cannot be null or empty");
         }
 
-        stateLock.writeLock().lock();  // ✅ WRITE LOCK for training
+        stateLock.writeLock().lock();  // WRITE LOCK for training
         try {
             if (isFitted) {
                 logger.warn("Pipeline already fitted. Refitting with new data.");
@@ -132,10 +136,8 @@ public class TextPreprocessor {
                 // Step 1: Preprocess all training texts
                 List<String> preprocessedTexts = new ArrayList<>();
                 for (Dataset dataset : data) {
-                    String cleaned = cleanText(dataset.getText());
-                    List<String> tokens = tokenize(cleaned);
-                    List<String> filtered = removeStopwords(tokens);
-                    preprocessedTexts.add(String.join(" ", filtered));
+                    String preprocessed = preprocessText(dataset.getText());
+                    preprocessedTexts.add(preprocessed);
                 }
 
                 // Step 2: Extract and store vocabulary statistics with MI-based feature selection
@@ -156,7 +158,7 @@ public class TextPreprocessor {
             }
 
         } finally {
-            stateLock.writeLock().unlock();  // ✅ Always release write lock
+            stateLock.writeLock().unlock();  // Always release write lock
         }
     }
 
@@ -174,7 +176,7 @@ public class TextPreprocessor {
             return "";
         }
 
-        stateLock.readLock().lock();  // ✅ READ LOCK for concurrent inference
+        stateLock.readLock().lock();  // READ LOCK for concurrent inference
         try {
             if (!isFitted) {
                 throw new IllegalStateException(
@@ -187,7 +189,7 @@ public class TextPreprocessor {
             return preprocessText(text);
 
         } finally {
-            stateLock.readLock().unlock();  // ✅ Always release read lock
+            stateLock.readLock().unlock();  // Always release read lock
         }
     }
 
@@ -271,12 +273,13 @@ public class TextPreprocessor {
     }
 
     /**
-     * Applies the complete preprocessing pipeline: cleaning, tokenization, and stopword removal.
+     * Internal helper that chains the complete preprocessing pipeline.
+     * Used by both fit() and transform() to ensure consistency.
      *
      * @param rawText raw input text
      * @return fully preprocessed text
      */
-    public String preprocessText(String rawText) {
+    private String preprocessText(String rawText) {
         if (rawText == null || rawText.trim().isEmpty()) {
             return "";
         }
@@ -289,33 +292,6 @@ public class TextPreprocessor {
     }
 
     /**
-     * Preprocesses multiple datasets for feature extraction.
-     *
-     * @param rawDatasets datasets with raw text
-     * @return new datasets with preprocessed text
-     * @throws IllegalArgumentException if rawDatasets is null or empty
-     */
-    public List<Dataset> preprocessDatasets(List<Dataset> rawDatasets) {
-        if (rawDatasets == null || rawDatasets.isEmpty()) {
-            throw new IllegalArgumentException("Datasets cannot be null or empty");
-        }
-
-        logger.info("Preprocessing {} datasets for feature extraction", rawDatasets.size());
-
-        return rawDatasets.stream()
-                .map(dataset -> {
-                    String cleanedText = preprocessText(dataset.getText());
-                    return new Dataset.Builder(cleanedText, dataset.getSentiment())
-                            .id(dataset.getId())
-                            .confidence(dataset.getConfidence())
-                            .source(dataset.getSource())
-                            .timestamp(dataset.getTimestamp())
-                            .build();
-                })
-                .collect(Collectors.toList());
-    }
-
-    /**
      * Saves the fitted pipeline state to disk for later reuse.
      *
      * @param path file path to save state
@@ -323,7 +299,7 @@ public class TextPreprocessor {
      * @throws IllegalStateException if pipeline not fitted
      */
     public void saveState(Path path) throws IOException {
-        stateLock.readLock().lock();  // ✅ READ LOCK for safe state access
+        stateLock.readLock().lock();  // READ LOCK for safe state access
         try {
             if (!isFitted) {
                 throw new IllegalStateException("Cannot save unfitted pipeline");
@@ -362,7 +338,7 @@ public class TextPreprocessor {
             throw new IllegalArgumentException("State file does not exist: " + path);
         }
 
-        stateLock.writeLock().lock();  // ✅ WRITE LOCK for state modification
+        stateLock.writeLock().lock();  // WRITE LOCK for state modification
         try {
             logger.info("Loading pipeline state from: {}", path);
 
@@ -407,7 +383,7 @@ public class TextPreprocessor {
      * Resets the pipeline to an unfitted state, clearing all learned vocabulary statistics.
      */
     public void reset() {
-        stateLock.writeLock().lock();  // ✅ WRITE LOCK for state reset
+        stateLock.writeLock().lock();  // WRITE LOCK for state reset
         try {
             isFitted = false;
             pipelineState = new PipelineState();
@@ -441,7 +417,7 @@ public class TextPreprocessor {
      * @return pipeline state snapshot
      */
     public PipelineState getPipelineState() {
-        stateLock.readLock().lock();  // ✅ READ LOCK for safe access
+        stateLock.readLock().lock();  // READ LOCK for safe access
         try {
             return pipelineState;
         } finally {
