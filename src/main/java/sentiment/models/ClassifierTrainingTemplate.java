@@ -381,6 +381,17 @@ public abstract class ClassifierTrainingTemplate<T> extends TrainingTemplate<T> 
 
         double[][] confusionMatrix = evaluation.confusionMatrix();
 
+        // Compute ROC-AUC and PR-AUC for all classes
+        double[] rocAUC = new double[numClasses];
+        double[] prAUC = new double[numClasses];
+        for (int i = 0; i < numClasses; i++) {
+            final int classIndex = i;
+            rocAUC[i] = safeMetric(() -> evaluation.areaUnderROC(classIndex));
+            prAUC[i] = safeMetric(() -> evaluation.areaUnderPRC(classIndex));
+        }
+        Double macroAvgROCAUC = Arrays.stream(rocAUC).average().orElse(0.0);
+        Double macroAvgPRAUC = Arrays.stream(prAUC).average().orElse(0.0);
+
         Map<String, Object> stats = buildAdditionalStats(evaluation, testData, evaluationTimeMs);
 
         return new sentiment.evaluation.ClassifierEvaluationResult(
@@ -388,7 +399,10 @@ public abstract class ClassifierTrainingTemplate<T> extends TrainingTemplate<T> 
                 precision, recall, f1Score,
                 macroAvgPrecision, macroAvgRecall, macroAvgF1,
                 weightedPrecision, weightedRecall, weightedF1,
-                confusionMatrix, supportedClasses, stats
+                confusionMatrix, supportedClasses,
+                rocAUC, macroAvgROCAUC, prAUC, macroAvgPRAUC,
+                null,  // calibrationMetrics - computed by subclasses if needed
+                stats
         );
     }
 

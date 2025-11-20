@@ -8,7 +8,6 @@ import weka.core.Instances;
 import sentiment.preprocessing.TextPreprocessor;
 import sentiment.preprocessing.WekaInstancesConverter;
 import sentiment.evaluation.ClassifierEvaluationResult;
-import sentiment.data.Dataset;
 
 import javax.annotation.PreDestroy;
 import java.util.*;
@@ -16,75 +15,16 @@ import java.util.*;
 /**
  * Logistic Regression sentiment classifier using Weka's Logistic implementation.
  *
- * MODEL SELECTION RATIONALE:
- * ==========================
- * Logistic Regression is a simple yet effective linear classifier:
+ * <p>A fast, interpretable linear classifier that produces well-calibrated probabilities.
+ * Effective as a baseline model and for applications requiring feature interpretability.
  *
- * 1. Simplicity and Interpretability: Linear model with clear feature weights, making it
- *    easy to understand which words contribute to positive vs. negative sentiment.
+ * <p>Strengths: Simple linear decision boundary with clear feature weights, fast training
+ * and inference, built-in L2 regularization prevents overfitting.
  *
- * 2. Probabilistic Output: Produces well-calibrated probabilities via sigmoid function,
- *    ideal for confidence thresholding and risk-based decision making.
+ * <p>Limitations: Cannot capture non-linear patterns or feature interactions without
+ * manual feature engineering. Requires normalized features (TF-IDF provides this naturally).
  *
- * 3. Fast Training and Inference: Efficient gradient-based optimization converges quickly,
- *    even on large datasets. Inference is a simple dot product + sigmoid.
- *
- * 4. Regularization Built-in: Ridge regression (L2 penalty) prevents overfitting and
- *    handles correlated features well, common in text data.
- *
- * 5. Baseline for Neural Networks: Logistic regression is essentially a single-layer
- *    neural network, making it a good baseline before exploring deeper architectures.
- *
- * 6. Multi-Class Support: Naturally extends to multi-class via softmax (one-vs-rest or
- *    multinomial logistic regression).
- *
- * Limitations:
- * - Linear Decision Boundary: Cannot capture complex non-linear patterns or feature
- *   interactions without manual feature engineering.
- * - Feature Independence: Like Naive Bayes, struggles with correlated features unless
- *   properly regularized.
- * - Sensitive to Feature Scaling: Requires normalized features for optimal performance
- *   (TF-IDF naturally provides this).
- *
- * Trade-offs vs. SVM:
- * + Faster training (especially on large datasets)
- * + More interpretable (direct feature weights)
- * + Better probability calibration
- * - Lower accuracy on complex patterns (2-4% typical gap)
- * - Requires feature scaling
- *
- * Trade-offs vs. Naive Bayes:
- * + Better accuracy (3-7% improvement)
- * + Handles feature correlations via regularization
- * + More reliable probability estimates
- * - 2-5x slower training
- * - Requires more careful hyperparameter tuning (ridge parameter)
- *
- * Trade-offs vs. Random Forest:
- * + Faster training and inference
- * + More interpretable (feature weights)
- * + Lower memory usage
- * - Lower accuracy on non-linear patterns
- * - Cannot capture feature interactions automatically
- *
- * ARCHITECTURE:
- * =============
- * Follows the same pipeline as BasicSVMClassifier:
- * 1. Accepts raw List<Dataset> in train()
- * 2. Fits preprocessor (text cleaning, tokenization)
- * 3. Fits feature extractor (TF-IDF vectorization)
- * 4. Trains Logistic Regression on transformed features
- *
- * CONFIGURATION:
- * ==============
- * Default parameters:
- * - Ridge parameter: Auto-selected via cross-validation
- * - Max iterations: 100 (sufficient for most text datasets)
- *
- * THREAD SAFETY:
- * ==============
- * - Training: Exclusive write lock (modifies model state)
- * - Inference: Concurrent read lock (thread-safe predictions)
+ * <p><b>Thread Safety:</b> Training operations use exclusive locks; predictions are thread-safe.
  */
 public class LogisticRegressionClassifier extends ClassifierTrainingTemplate<ClassifierEvaluationResult>
         implements ClassifierEvaluator, WekaClassifier {
@@ -97,7 +37,11 @@ public class LogisticRegressionClassifier extends ClassifierTrainingTemplate<Cla
     // NOTE: converter, trainingDataStructure, supportedClasses now inherited from base class
 
     /**
-     * Creates a new thread-safe Logistic Regression classifier with default configuration.
+     * Creates a Logistic Regression classifier with default configuration.
+     *
+     * @param preprocessor text preprocessor for feature extraction
+     * @param converter instances converter for Weka format transformation
+     * @throws IllegalArgumentException if any parameter is null
      */
     public LogisticRegressionClassifier(TextPreprocessor preprocessor, WekaInstancesConverter converter) {
         if (preprocessor == null || converter == null) {
@@ -113,6 +57,11 @@ public class LogisticRegressionClassifier extends ClassifierTrainingTemplate<Cla
 
     /**
      * Creates classifier with custom Logistic configuration.
+     *
+     * @param preprocessor text preprocessor for feature extraction
+     * @param converter instances converter for Weka format transformation
+     * @param customLogistic pre-configured Logistic instance
+     * @throws IllegalArgumentException if any parameter is null
      */
     public LogisticRegressionClassifier(TextPreprocessor preprocessor, WekaInstancesConverter converter,
                                          Logistic customLogistic) {
@@ -165,7 +114,7 @@ public class LogisticRegressionClassifier extends ClassifierTrainingTemplate<Cla
 
     // NOTE: getTrainingInstanceCount() and getFeatureCount() now inherited from base class
 
-    // ==================== TEMPLATE METHOD IMPLEMENTATIONS ====================
+    // TEMPLATE METHOD IMPLEMENTATIONS
 
     @Override
     protected void performAlgorithmSpecificTraining(Instances trainingData) throws Exception {
@@ -200,24 +149,27 @@ public class LogisticRegressionClassifier extends ClassifierTrainingTemplate<Cla
 
     // NOTE: finalizeTraining(), classify(), getClassificationProbabilities(), evaluate() now inherited from base class
 
-    // ==================== MODEL SUMMARY ====================
+    // MODEL SUMMARY
 
     @Override
     public String getModelSummary() {
         requireTrained();
 
-        return String.format(
-                "=== Logistic Regression Classifier Summary ===\n\n" +
-                        "Algorithm: %s\n" +
-                        "State: %s\n\n" +
-                        "Training: %d instances, %d features\n" +
-                        "Classes: %d (%s)\n" +
-                        "Training Time: %dms\n" +
-                        "Vocabulary: %d terms\n\n" +
-                        "Performance Characteristics:\n" +
-                        "  - Fast training and inference\n" +
-                        "  - Interpretable feature weights\n" +
-                        "  - Well-calibrated probabilities",
+        return """
+                === Logistic Regression Classifier Summary ===
+
+                Algorithm: %s
+                State: %s
+
+                Training: %d instances, %d features
+                Classes: %d (%s)
+                Training Time: %dms
+                Vocabulary: %d terms
+
+                Performance Characteristics:
+                  - Fast training and inference
+                  - Interpretable feature weights
+                  - Well-calibrated probabilities""".formatted(
                 AlgorithmType.LOGISTIC_REGRESSION.getDisplayName(),
                 getState(),
                 getTrainingInstanceCount(),
@@ -231,11 +183,11 @@ public class LogisticRegressionClassifier extends ClassifierTrainingTemplate<Cla
 
     @Override
     protected String getSubclassDiagnostics() {
-        return String.format(
-                "=== LogisticRegressionClassifier Diagnostics ===\n" +
-                        "Logistic: %s\n" +
-                        "Training: %d instances, %d features\n" +
-                        "Supported classes: %s",
+        return """
+                === LogisticRegressionClassifier Diagnostics ===
+                Logistic: %s
+                Training: %d instances, %d features
+                Supported classes: %s""".formatted(
                 logistic != null ? "initialized" : "null",
                 getTrainingInstanceCount(),
                 getFeatureCount(),
@@ -243,11 +195,12 @@ public class LogisticRegressionClassifier extends ClassifierTrainingTemplate<Cla
         );
     }
 
-    // ==================== ACCESSORS ====================
+    // ACCESSORS
 
     /**
-     * Get the underlying Logistic Regression classifier.
-     * Used for testing and advanced configuration.
+     * Gets the underlying Logistic classifier.
+     *
+     * @return the Logistic instance
      */
     public Logistic getLogistic() {
         return logistic;
@@ -258,16 +211,21 @@ public class LogisticRegressionClassifier extends ClassifierTrainingTemplate<Cla
 
     // NOTE: getPreprocessor() implemented above to satisfy abstract method
 
+    /**
+     * Gets the Weka instances converter.
+     *
+     * @return the converter instance
+     */
     public WekaInstancesConverter getConverter() {
         return converter;
     }
 
-    // ==================== WEKA CLASSIFIER INTERFACE ====================
+    // WEKA CLASSIFIER INTERFACE
 
     /**
-     * Gets the underlying Weka classifier for batch operations.
+     * Gets the underlying Weka classifier.
      *
-     * @return The Logistic classifier as base Classifier type
+     * @return the Logistic classifier as base Classifier type
      */
     @Override
     public weka.classifiers.Classifier getWekaClassifier() {
