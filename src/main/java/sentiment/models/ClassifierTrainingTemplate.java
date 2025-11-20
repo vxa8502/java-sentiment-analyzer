@@ -71,6 +71,40 @@ public abstract class ClassifierTrainingTemplate<T> extends TrainingTemplate<T> 
     }
 
     /**
+     * Default implementation of training workflow for simple classifiers.
+     * <p>
+     * Uses the standard pipeline: fit preprocessing → fit feature extraction → train model.
+     * Subclasses with custom training logic (e.g., SVMClassifier with hyperparameter tuning)
+     * should override this method.
+     *
+     * @param rawDatasets raw training datasets
+     * @return null (no evaluation result during training)
+     * @throws Exception if training fails
+     */
+    @Override
+    protected T doTrain(List<Dataset> rawDatasets) throws Exception {
+        if (rawDatasets == null || rawDatasets.isEmpty()) {
+            throw new IllegalArgumentException("Training data cannot be null or empty");
+        }
+
+        // Use consolidated training pipeline from base class
+        performStandardTrainingPipeline(rawDatasets, this::performAlgorithmSpecificTraining);
+
+        return null;
+    }
+
+    /**
+     * Performs algorithm-specific model training.
+     * <p>
+     * Subclasses must implement this to call their specific Weka classifier's
+     * {@code buildClassifier()} method.
+     *
+     * @param trainingData prepared Weka instances
+     * @throws Exception if training fails
+     */
+    protected abstract void performAlgorithmSpecificTraining(Instances trainingData) throws Exception;
+
+    /**
      * Returns the underlying Weka classifier instance.
      * <p>
      * This is used by the consolidated inference methods in the base class.
@@ -593,6 +627,20 @@ public abstract class ClassifierTrainingTemplate<T> extends TrainingTemplate<T> 
      */
     public <R> R executeInference(java.util.concurrent.Callable<R> task) throws Exception {
         return executeInference((InferenceTask<R>) task::call);
+    }
+
+    // RESOURCE CLEANUP
+
+    /**
+     * Clears classifier-specific resources during reset.
+     * <p>
+     * Consolidated implementation that clears Weka-specific state managed by this template.
+     * Final to ensure consistent cleanup behavior across all classifier implementations.
+     */
+    @Override
+    protected final void doClearResources() {
+        trainingDataStructure = null;
+        supportedClasses = null;
     }
 
     // PERSISTENCE SUPPORT

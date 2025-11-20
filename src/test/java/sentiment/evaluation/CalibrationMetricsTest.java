@@ -8,22 +8,12 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Comprehensive unit tests for CalibrationMetrics.
- *
- * Tests cover:
- * - Brier score computation
- * - Expected Calibration Error (ECE)
- * - Maximum Calibration Error (MCE)
- * - Reliability diagram bins
- * - Multi-class calibration
- * - Edge cases and validation
+ * Tests for {@link CalibrationMetrics}.
  */
 @DisplayName("CalibrationMetrics Unit Tests")
 class CalibrationMetricsTest {
 
     private static final double EPSILON = 1e-6;
-
-    // ==================== BASIC COMPUTATION TESTS ====================
 
     @Test
     @DisplayName("Perfect calibration should yield near-zero Brier score and ECE")
@@ -34,10 +24,8 @@ class CalibrationMetricsTest {
 
         CalibrationMetrics metrics = CalibrationMetrics.compute(probs, labels, 10);
 
-        // Brier score should be 0 for perfect predictions
         assertEquals(0.0, metrics.getBrierScore(), EPSILON);
-
-        // ECE should be very low (bins may not align perfectly)
+        // Bins may not align perfectly at boundaries
         assertTrue(metrics.getExpectedCalibrationError() < 0.15);
     }
 
@@ -50,21 +38,18 @@ class CalibrationMetricsTest {
 
         CalibrationMetrics metrics = CalibrationMetrics.compute(probs, labels, 10);
 
-        // Brier score should be 1.0 for worst predictions
         assertEquals(1.0, metrics.getBrierScore(), EPSILON);
     }
 
     @Test
     @DisplayName("Well-calibrated model should have low ECE")
     void testWellCalibratedModel() {
-        // Predictions roughly match actual frequencies
-        // 80% confident predictions -> 80% accuracy
+        // Predictions roughly match actual frequencies: 80% confident -> 80% accuracy
         double[] probs = {0.8, 0.8, 0.8, 0.8, 0.8, 0.2, 0.2, 0.2, 0.2, 0.2};
-        int[] labels = {1, 1, 1, 1, 0, 0, 0, 0, 0, 1};  // 4/5 correct in high conf, 4/5 correct in low conf
+        int[] labels = {1, 1, 1, 1, 0, 0, 0, 0, 0, 1};  // 4/5 correct in each group
 
         CalibrationMetrics metrics = CalibrationMetrics.compute(probs, labels, 5);
 
-        // ECE should be low for well-calibrated model
         assertTrue(metrics.getExpectedCalibrationError() < 0.2);
     }
 
@@ -80,8 +65,6 @@ class CalibrationMetricsTest {
         // ECE should be high (confidence=0.9, accuracy=0.5 -> gap=0.4)
         assertTrue(metrics.getExpectedCalibrationError() > 0.3);
     }
-
-    // ==================== BRIER SCORE TESTS ====================
 
     @Test
     @DisplayName("Brier score should be computed correctly")
@@ -109,8 +92,6 @@ class CalibrationMetricsTest {
         assertTrue(metrics.getBrierScore() >= 0.0);
         assertTrue(metrics.getBrierScore() <= 1.0);
     }
-
-    // ==================== BINNING TESTS ====================
 
     @Test
     @DisplayName("Bins should be created correctly")
@@ -185,8 +166,6 @@ class CalibrationMetricsTest {
         assertEquals(0.0, bin.getAccuracy(), EPSILON);
     }
 
-    // ==================== MULTI-CLASS TESTS ====================
-
     @Test
     @DisplayName("Multi-class calibration should average metrics across classes")
     void testMultiClassCalibration() {
@@ -219,8 +198,6 @@ class CalibrationMetricsTest {
         assertThrows(IllegalArgumentException.class,
                 () -> CalibrationMetrics.computeMultiClass(probs, labels, 5));
     }
-
-    // ==================== VALIDATION TESTS ====================
 
     @Test
     @DisplayName("Should throw on array length mismatch")
@@ -269,8 +246,6 @@ class CalibrationMetricsTest {
                 () -> CalibrationMetrics.compute(probs, labels, 0));
     }
 
-    // ==================== STATISTICS TESTS ====================
-
     @Test
     @DisplayName("Average confidence should be computed correctly")
     void testAverageConfidence() {
@@ -295,18 +270,14 @@ class CalibrationMetricsTest {
         assertEquals(0.5, metrics.getAverageAccuracy(), EPSILON);
     }
 
-    // ==================== ECE AND MCE TESTS ====================
-
     @Test
     @DisplayName("ECE should be weighted average of bin calibration errors")
     void testECE_Computation() {
-        // Create two distinct groups
         double[] probs = {0.9, 0.9, 0.1, 0.1};
         int[] labels = {1, 1, 0, 0};  // Perfect calibration
 
         CalibrationMetrics metrics = CalibrationMetrics.compute(probs, labels, 2);
 
-        // Should have very low ECE since predictions match labels well
         assertTrue(metrics.getExpectedCalibrationError() < 0.15);
     }
 
@@ -318,7 +289,6 @@ class CalibrationMetricsTest {
 
         CalibrationMetrics metrics = CalibrationMetrics.compute(probs, labels, 2);
 
-        // MCE should be high (worst bin has large gap)
         assertTrue(metrics.getMaximumCalibrationError() > 0.7);
     }
 
@@ -345,8 +315,6 @@ class CalibrationMetricsTest {
         assertTrue(metrics.getMaximumCalibrationError() >= 0.0);
         assertTrue(metrics.getMaximumCalibrationError() <= 1.0);
     }
-
-    // ==================== TO STRING TESTS ====================
 
     @Test
     @DisplayName("toString should contain key metrics")
@@ -384,8 +352,6 @@ class CalibrationMetricsTest {
         assertTrue(str.contains("empty"));
     }
 
-    // ==================== EDGE CASES ====================
-
     @Test
     @DisplayName("Should handle all same predictions")
     void testEdgeCase_SamePredictions() {
@@ -407,7 +373,7 @@ class CalibrationMetricsTest {
         CalibrationMetrics metrics = CalibrationMetrics.compute(probs, labels, 5);
 
         assertNotNull(metrics);
-        assertTrue(metrics.getBrierScore() < 0.1);  // Should be low for high-confidence correct predictions
+        assertTrue(metrics.getBrierScore() < 0.1);
     }
 
     @Test

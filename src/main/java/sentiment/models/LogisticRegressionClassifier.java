@@ -5,7 +5,6 @@ import org.slf4j.LoggerFactory;
 import weka.classifiers.functions.Logistic;
 import weka.classifiers.Evaluation;
 import weka.core.Instances;
-import weka.core.Instance;
 import sentiment.preprocessing.TextPreprocessor;
 import sentiment.preprocessing.WekaInstancesConverter;
 import sentiment.evaluation.ClassifierEvaluationResult;
@@ -92,8 +91,6 @@ public class LogisticRegressionClassifier extends ClassifierTrainingTemplate<Cla
 
     private static final Logger logger = LoggerFactory.getLogger(LogisticRegressionClassifier.class);
 
-    private volatile boolean instanceStructureValidated = false;
-
     private Logistic logistic;
 
     private final TextPreprocessor preprocessor;
@@ -171,22 +168,10 @@ public class LogisticRegressionClassifier extends ClassifierTrainingTemplate<Cla
     // ==================== TEMPLATE METHOD IMPLEMENTATIONS ====================
 
     @Override
-    protected ClassifierEvaluationResult doTrain(List<Dataset> rawDatasets) throws Exception {
-        if (rawDatasets == null || rawDatasets.isEmpty()) {
-            throw new IllegalArgumentException("Training data cannot be null or empty");
-        }
-
-        // Use consolidated training pipeline from base class
-        performStandardTrainingPipeline(rawDatasets, this::performModelTraining);
-
-        return null;
-    }
-
-    @Override
-    protected void doClearResources() {
-        trainingDataStructure = null;
-        supportedClasses = null;
-        instanceStructureValidated = false;
+    protected void performAlgorithmSpecificTraining(Instances trainingData) throws Exception {
+        logger.info("Training Logistic Regression model on {} instances", trainingData.numInstances());
+        logistic.buildClassifier(trainingData);
+        logger.info("Logistic Regression model training complete");
     }
 
     @PreDestroy
@@ -195,13 +180,22 @@ public class LogisticRegressionClassifier extends ClassifierTrainingTemplate<Cla
         doClearResources();
     }
 
-    // ==================== TRAINING HELPERS ====================
+    @Override
+    protected Map<String, Object> buildAdditionalStats(
+            Evaluation evaluation, Instances testData, long evaluationTimeMs) {
 
-    private void performModelTraining(Instances trainingData) throws Exception {
-        logger.info("Training Logistic Regression model on {} instances", trainingData.numInstances());
-        logistic.buildClassifier(trainingData);
-        logger.info("Logistic Regression model training complete");
-        this.instanceStructureValidated = false;
+        // Get base stats
+        Map<String, Object> stats = super.buildAdditionalStats(evaluation, testData, evaluationTimeMs);
+
+        // Add Logistic Regression specific parameters
+        try {
+            stats.put("ridge", logistic.getRidge());
+            stats.put("maxIterations", logistic.getMaxIts());
+        } catch (Exception e) {
+            logger.debug("Could not extract Logistic Regression parameters");
+        }
+
+        return stats;
     }
 
     // NOTE: finalizeTraining(), classify(), getClassificationProbabilities(), evaluate() now inherited from base class
@@ -241,13 +235,11 @@ public class LogisticRegressionClassifier extends ClassifierTrainingTemplate<Cla
                 "=== LogisticRegressionClassifier Diagnostics ===\n" +
                         "Logistic: %s\n" +
                         "Training: %d instances, %d features\n" +
-                        "Supported classes: %s\n" +
-                        "Instance validation cached: %s",
+                        "Supported classes: %s",
                 logistic != null ? "initialized" : "null",
                 getTrainingInstanceCount(),
                 getFeatureCount(),
-                supportedClasses != null ? String.join(", ", supportedClasses) : "none",
-                instanceStructureValidated
+                supportedClasses != null ? String.join(", ", supportedClasses) : "none"
         );
     }
 

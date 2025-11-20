@@ -3,6 +3,7 @@ package sentiment.models;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import weka.classifiers.bayes.NaiveBayes;
+import weka.classifiers.Evaluation;
 import weka.core.Instances;
 import sentiment.preprocessing.TextPreprocessor;
 import sentiment.preprocessing.WekaInstancesConverter;
@@ -23,8 +24,6 @@ public class NaiveBayesClassifier extends ClassifierTrainingTemplate<ClassifierE
         implements ClassifierEvaluator, WekaClassifier {
 
     private static final Logger logger = LoggerFactory.getLogger(NaiveBayesClassifier.class);
-
-    private volatile boolean instanceStructureValidated = false;
 
     private NaiveBayes naiveBayes;
 
@@ -110,22 +109,10 @@ public class NaiveBayesClassifier extends ClassifierTrainingTemplate<ClassifierE
     // TEMPLATE METHOD IMPLEMENTATIONS
 
     @Override
-    protected ClassifierEvaluationResult doTrain(List<Dataset> rawDatasets) throws Exception {
-        if (rawDatasets == null || rawDatasets.isEmpty()) {
-            throw new IllegalArgumentException("Training data cannot be null or empty");
-        }
-
-        // Use consolidated training pipeline from base class
-        performStandardTrainingPipeline(rawDatasets, this::performModelTraining);
-
-        return null;
-    }
-
-    @Override
-    protected void doClearResources() {
-        trainingDataStructure = null;
-        supportedClasses = null;
-        instanceStructureValidated = false;
+    protected void performAlgorithmSpecificTraining(Instances trainingData) throws Exception {
+        logger.info("Training Naive Bayes model on {} instances", trainingData.numInstances());
+        naiveBayes.buildClassifier(trainingData);
+        logger.info("Naive Bayes model training complete");
     }
 
     @PreDestroy
@@ -134,13 +121,18 @@ public class NaiveBayesClassifier extends ClassifierTrainingTemplate<ClassifierE
         doClearResources();
     }
 
-    // TRAINING HELPERS
+    @Override
+    protected Map<String, Object> buildAdditionalStats(
+            Evaluation evaluation, Instances testData, long evaluationTimeMs) {
 
-    private void performModelTraining(Instances trainingData) throws Exception {
-        logger.info("Training Naive Bayes model on {} instances", trainingData.numInstances());
-        naiveBayes.buildClassifier(trainingData);
-        logger.info("Naive Bayes model training complete");
-        this.instanceStructureValidated = false;
+        // Get base stats
+        Map<String, Object> stats = super.buildAdditionalStats(evaluation, testData, evaluationTimeMs);
+
+        // Add Naive Bayes specific parameters
+        stats.put("useKernelEstimator", naiveBayes.getUseKernelEstimator());
+        stats.put("useSupervisedDiscretization", naiveBayes.getUseSupervisedDiscretization());
+
+        return stats;
     }
 
     // MODEL SUMMARY
@@ -183,13 +175,11 @@ public class NaiveBayesClassifier extends ClassifierTrainingTemplate<ClassifierE
                         NaiveBayesClassifier Diagnostics
                         NaiveBayes: %s
                         Training: %d instances, %d features
-                        Supported classes: %s
-                        Instance validation cached: %s""",
+                        Supported classes: %s""",
                 naiveBayes != null ? "initialized" : "null",
                 getTrainingInstanceCount(),
                 getFeatureCount(),
-                supportedClasses != null ? String.join(", ", supportedClasses) : "none",
-                instanceStructureValidated
+                supportedClasses != null ? String.join(", ", supportedClasses) : "none"
         );
     }
 

@@ -35,7 +35,6 @@ public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluati
 
     private static final Logger logger = LoggerFactory.getLogger(SVMClassifier.class);
 
-    private volatile boolean instanceStructureValidated = false;
     private SMO smo;
     private final TextPreprocessor preprocessor;
 
@@ -164,7 +163,7 @@ public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluati
         logger.info("Step 3/3: Training SVM classifier");
         validateWekaTrainingData(trainingInstances);
         configureSMOForTraining(trainingInstances);
-        performModelTraining(trainingInstances);
+        performAlgorithmSpecificTraining(trainingInstances);
         finalizeTraining(trainingInstances);
 
         // Step 4: Validate pipeline consistency (CRITICAL)
@@ -174,13 +173,6 @@ public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluati
 
         // Return null - no evaluation during training
         return null;
-    }
-
-    @Override
-    protected void doClearResources() {
-        trainingDataStructure = null;
-        supportedClasses = null;
-        instanceStructureValidated = false;
     }
 
     @PreDestroy
@@ -326,11 +318,11 @@ public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluati
                 smo.getC(), smo.getEpsilon(), kernelName);
     }
 
-    private void performModelTraining(Instances trainingData) throws Exception {
+    @Override
+    protected void performAlgorithmSpecificTraining(Instances trainingData) throws Exception {
         logger.info("Training SVM model on {} instances", trainingData.numInstances());
         smo.buildClassifier(trainingData);
         logger.info("SVM model training complete");
-        this.instanceStructureValidated = false;
     }
 
     /**
@@ -531,17 +523,15 @@ public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluati
                 === SVMClassifier Diagnostics ===
                 SMO: %s
                 Training: %d instances, %d features
-                Supported classes: %s
-                Instance validation cached: %s""",
+                Supported classes: %s""",
                 smo != null ? "initialized" : "null",
                 getTrainingInstanceCount(),
                 getFeatureCount(),
-                supportedClasses != null ? String.join(", ", supportedClasses) : "none",
-                instanceStructureValidated
+                supportedClasses != null ? String.join(", ", supportedClasses) : "none"
         );
     }
 
-    // ==================== HYPERPARAMETER SEARCH (PRIVATE) ====================
+    // HYPERPARAMETER SEARCH (PRIVATE)
 
     // Default hyperparameter grid
     private static final double[] C_VALUES = {0.01, 0.1, 1.0, 10.0, 100.0};
