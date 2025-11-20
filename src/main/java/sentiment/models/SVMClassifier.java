@@ -16,71 +16,36 @@ import javax.annotation.PreDestroy;
 import java.util.*;
 
 /**
- * Support Vector Machine (SVM) sentiment classifier using Weka's SMO implementation.
+ * SVM classifier for sentiment analysis using Weka's SMO implementation.
  *
- * MODEL SELECTION RATIONALE:
- * ==========================
- * SVM was selected for this sentiment analysis task for the following reasons:
+ * <p>Manages the complete training pipeline from raw text to trained model:
+ * <ol>
+ *   <li>Fits text preprocessor (cleaning, tokenization, stop words)</li>
+ *   <li>Fits feature extractor (TF-IDF vectorization)</li>
+ *   <li>Trains SVM on transformed features</li>
+ * </ol>
  *
- * 1. High-Dimensional Sparse Data: Text features (TF-IDF) result in high-dimensional sparse
- *    vectors where SVM excels due to its ability to find optimal separating hyperplanes.
+ * <p>Supports optional hyperparameter tuning via cross-validation to optimize
+ * kernel type, complexity parameter (C), and kernel-specific parameters.
  *
- * 2. Strong Theoretical Foundation: SVMs have solid mathematical foundations with guaranteed
- *    convergence and well-understood generalization bounds.
- *
- * 3. Robustness to Overfitting: The margin maximization principle and regularization (C parameter)
- *    help prevent overfitting even with limited training data.
- *
- * 4. Binary and Multi-Class Support: SMO naturally handles binary classification and extends
- *    to multi-class problems, making it suitable for sentiment analysis (positive/negative/neutral).
- *
- * 5. Enterprise Java Ecosystem: Weka's mature, production-tested SVM implementation integrates
- *    well with Java-based ML pipelines in enterprise environments.
- *
- * Alternative Considerations:
- * - Naive Bayes: Faster training but assumes feature independence (violated in text)
- * - Random Forest: Good ensemble performance but higher memory footprint and harder to tune
- * - Neural Networks: Better for very large datasets but require more training data and compute
- *
- * ARCHITECTURE:
- * =============
- * This classifier owns the complete training pipeline:
- * 1. Accepts raw List<Dataset> in train()
- * 2. Fits preprocessor (text cleaning, tokenization, stopword removal)
- * 3. Fits feature extractor (TF-IDF vectorization)
- * 4. Trains SVM on transformed features
- *
- * THREAD SAFETY:
- * ==============
- * - Training: Exclusive write lock (modifies model state)
- * - Inference: Concurrent read lock (thread-safe predictions)
- * - Instance structure validation cached for performance
+ * <p><b>Thread Safety:</b> Training operations use exclusive locks; predictions are thread-safe.
  */
 public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluationResult>
         implements ClassifierEvaluator, WekaClassifier {
 
     private static final Logger logger = LoggerFactory.getLogger(SVMClassifier.class);
 
-    // ✅ Performance: Cache validation result to avoid repeated checks
     private volatile boolean instanceStructureValidated = false;
-
-    // ✅ Non-final to allow model replacement during load
     private SMO smo;
-
-    // Core ML components (immutable after construction)
     private final TextPreprocessor preprocessor;
-    // NOTE: converter, trainingDataStructure, supportedClasses now inherited from base class
 
-    // Hyperparameter tuning configuration
     private boolean enableHyperparameterTuning = false;
     private int cvFolds = 5;
     private SVMConfig optimalConfig;
-
-    // Class imbalance detection threshold
     private double classImbalanceThreshold = 3.0;
 
     /**
-     * Creates a new thread-safe SVM classifier with default configuration.
+     * Creates an SVM classifier with default configuration.
      */
     public SVMClassifier(TextPreprocessor preprocessor, WekaInstancesConverter converter) {
         if (preprocessor == null || converter == null) {
@@ -106,17 +71,14 @@ public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluati
         this.converter = converter;
         this.smo = customSMO;
 
-        logger.info("Created BasicSVMClassifier with custom SMO");
+        logger.info("Created SVMClassifier with custom SMO");
     }
 
     /**
-     * Enables hyperparameter tuning using stratified k-fold cross-validation.
+     * Enables hyperparameter tuning via grid search with k-fold cross-validation.
      *
-     * When enabled, the classifier will perform grid search before training to find
-     * optimal C, kernel type, and kernel parameters.
-     *
-     * @param enable Whether to enable hyperparameter tuning
-     * @param numFolds Number of folds for cross-validation (typically 5 or 10)
+     * @param enable whether to enable tuning
+     * @param numFolds number of CV folds (typically 5 or 10)
      */
     public void setHyperparameterTuning(boolean enable, int numFolds) {
         this.enableHyperparameterTuning = enable;
@@ -125,19 +87,9 @@ public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluati
     }
 
     /**
-     * Convenience method to enable hyperparameter tuning with default 5-fold CV.
-     */
-    public void setHyperparameterTuning(boolean enable) {
-        setHyperparameterTuning(enable, 5);
-    }
-
-    /**
      * Sets the class imbalance threshold for automatic class weighting.
      *
-     * When the ratio of max_class_count / min_class_count exceeds this threshold,
-     * class weighting will be automatically enabled during training.
-     *
-     * @param threshold The imbalance ratio threshold (must be > 1.0)
+     * @param threshold imbalance ratio (max/min class counts) that triggers weighting (must be > 1.0)
      * @throws IllegalArgumentException if threshold <= 1.0
      */
     public void setClassImbalanceThreshold(double threshold) {
@@ -184,24 +136,8 @@ public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluati
         return preprocessor;
     }
 
-    // ==================== DERIVED GETTERS (SINGLE SOURCE OF TRUTH) ====================
-
     /**
-     * ✅ MEMORY FIX: Derive training instance count from structure
-     * No duplicate storage needed
-     */
-    // NOTE: getTrainingInstanceCount() and getFeatureCount() now inherited from base class
-
-    // ==================== TEMPLATE METHOD IMPLEMENTATIONS ====================
-
-    /**
-     * ✅ WORKFLOW FIX: Now accepts raw List<Dataset> and fits the full pipeline internally
-     *
-     * PIPELINE FLOW:
-     * 1. Validate raw datasets
-     * 2. Fit TextPreprocessor on raw data
-     * 3. Fit WekaInstancesConverter to get Instances
-     * 4. Train SVM on converted Instances
+     * Trains the classifier on raw datasets, fitting the complete preprocessing and feature extraction pipeline.
      */
     @Override
     protected ClassifierEvaluationResult doTrain(List<Dataset> rawDatasets) throws Exception {
@@ -249,15 +185,12 @@ public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluati
 
     @PreDestroy
     public void cleanup() {
-        logger.info("Cleaning up BasicSVMClassifier resources");
+        logger.info("Cleaning up SVMClassifier resources");
         doClearResources();
     }
 
-    // ==================== TRAINING HELPERS ====================
-
     /**
-     * Override to add SVM-specific class balance validation.
-     * Inherits common validation from ClassifierTrainingTemplate.
+     * Validates training data and checks class balance.
      */
     @Override
     protected void validateWekaTrainingData(Instances data) {
@@ -266,8 +199,7 @@ public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluati
     }
 
     /**
-     * ✅ FIXED: Validates class distribution and throws exception early if invalid.
-     * SVM-SPECIFIC: Checks for class imbalance and minimum class requirements.
+     * Validates class distribution and detects class imbalance.
      */
     private void checkClassBalance(Instances data) {
         int[] classCounts = new int[data.classAttribute().numValues()];
@@ -298,29 +230,7 @@ public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluati
     }
 
     /**
-     * ✅ CRITICAL: Validates vocabulary consistency between preprocessor and converter.
-     *
-     * This ensures that the preprocessing pipeline and feature extraction operate on
-     * compatible vocabulary spaces. A mismatch means the model was trained on different
-     * features than what will be used during inference, resulting in INVALID predictions.
-     *
-     * CORRECT VALIDATION (Fixed):
-     * - Converter vocabulary must be a SUBSET of preprocessor vocabulary (V_c ⊆ V_p)
-     * - This allows valid feature selection while preventing vocabulary drift
-     * - Prevents training on features that won't exist during inference
-     *
-     * Mathematical Justification (Aria):
-     * Let V_p be the preprocessor vocabulary and V_c be the converter vocabulary.
-     * For valid composition φ ∘ π where:
-     * - π: text → tokens(V_p) (preprocessing transformation)
-     * - φ: tokens → R^|V_c| (feature mapping)
-     *
-     * We require V_c ⊆ V_p to ensure that every feature used by the converter
-     * corresponds to a valid token that can be produced by the preprocessor.
-     * If V_c ⊄ V_p, then φ expects tokens that π cannot produce, leading to
-     * undefined behavior and invalid predictions during inference.
-     *
-     * @throws IllegalStateException if converter vocabulary is not a subset of preprocessor vocabulary
+     * Validates and logs preprocessing pipeline statistics.
      */
     private void validatePipelineConsistency() {
         Set<String> preprocessorVocabSet = preprocessor.getPipelineState().vocabularyFrequencies.keySet();
@@ -344,15 +254,6 @@ public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluati
         logger.info("  - Training instances:      {}", trainingDataStructure.numInstances());
     }
 
-    /**
-     * Helper to format example terms for error messages.
-     */
-    private String getExampleTerms(Set<String> terms, int maxExamples) {
-        return terms.stream()
-                .limit(maxExamples)
-                .collect(java.util.stream.Collectors.joining(", "));
-    }
-
     private void configureSMOForTraining(Instances trainingData) throws Exception {
         if (enableHyperparameterTuning) {
             logger.info("=== HYPERPARAMETER TUNING ENABLED ===");
@@ -362,8 +263,7 @@ public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluati
             boolean useClassWeighting = shouldUseClassWeighting(trainingData);
 
             // Perform grid search
-            SVMHyperparameterSearch search = new SVMHyperparameterSearch(cvFolds);
-            optimalConfig = search.findOptimalConfig(trainingData, useClassWeighting);
+            optimalConfig = performGridSearch(trainingData, useClassWeighting);
 
             // Apply optimal configuration
             applySVMConfig(optimalConfig);
@@ -389,9 +289,7 @@ public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluati
     }
 
     /**
-     * Checks if class weighting should be applied based on class distribution.
-     *
-     * Returns true if imbalance ratio exceeds the configured threshold.
+     * Checks if class weighting should be applied based on imbalance ratio.
      */
     private boolean shouldUseClassWeighting(Instances data) {
         int[] classCounts = new int[data.numClasses()];
@@ -413,9 +311,6 @@ public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluati
         return shouldWeight;
     }
 
-    /**
-     * Applies an SVMConfig to the SMO classifier.
-     */
     private void applySVMConfig(SVMConfig config) throws Exception {
         // Set kernel
         smo.setKernel(config.createKernel());
@@ -438,24 +333,8 @@ public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluati
         this.instanceStructureValidated = false;
     }
 
-    // NOTE: finalizeTraining(), classify(), getClassificationProbabilities() now inherited from base class
-
-    // ==================== EVALUATION (THREAD-SAFE) - OVERRIDDEN FOR ADVANCED METRICS ====================
-
     /**
-     * ✅ OPTIMIZED: Single-pass evaluation that extracts metrics during iteration.
-     *
-     * Overrides base class to add advanced metrics (ROC-AUC, PR-AUC, calibration).
-     *
-     * PREVIOUS APPROACH (two-pass):
-     * - Pass 1: evaluation.evaluateModel(smo, testData)
-     * - Pass 2: iterate again to extract probabilities for AUC
-     *
-     * NEW APPROACH (one-pass):
-     * - Single iteration using evaluateModelOnceAndRecordPrediction
-     * - Collect probabilities during evaluation
-     *
-     * PROOF: testMetricsEquivalence_OnePassVsTwoPass verifies identical results
+     * Performs evaluation with advanced metrics including ROC-AUC, PR-AUC, and calibration.
      */
     @Override
     protected ClassifierEvaluationResult performEvaluation(Instances testData)
@@ -483,7 +362,7 @@ public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluati
 
         // Now compute advanced metrics using the collected data
         ClassifierEvaluationResult result = buildEvaluationResult(
-                evaluation, testData, evaluationTime, "",
+                evaluation, testData, evaluationTime,
                 probabilities, actualLabels);
 
         String accuracy = String.format("%.3f", result.getAccuracy());
@@ -494,15 +373,12 @@ public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluati
     }
 
     /**
-     * ✅ OPTIMIZED: Build evaluation result using pre-collected probabilities.
-     *
-     * @param probabilities Already collected during single-pass evaluation
-     * @param actualLabels Already collected during single-pass evaluation
+     * Builds evaluation result including advanced metrics.
      */
     private ClassifierEvaluationResult buildEvaluationResult(
             Evaluation evaluation, Instances testData,
-            long evaluationTimeMs, String predictions,
-            double[][] probabilities, int[] actualLabels) throws Exception {
+            long evaluationTimeMs,
+            double[][] probabilities, int[] actualLabels) {
 
         double accuracy = evaluation.pctCorrect() / 100.0;
         int numClasses = supportedClasses.length;
@@ -512,7 +388,7 @@ public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluati
         double[] f1Score = new double[numClasses];
 
         for (int i = 0; i < numClasses; i++) {
-            final int classIndex = i;
+            int classIndex = i;
             precision[i] = safeMetric(() -> evaluation.precision(classIndex));
             recall[i] = safeMetric(() -> evaluation.recall(classIndex));
             f1Score[i] = safeMetric(() -> evaluation.fMeasure(classIndex));
@@ -528,9 +404,7 @@ public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluati
 
         double[][] confusionMatrix = evaluation.confusionMatrix();
 
-        // ==================== ADVANCED METRICS ====================
-
-        // Compute ROC-AUC and PR-AUC
+        // Compute advanced metrics
         double[] rocAUC = null;
         Double macroAvgROCAUC = null;
         double[] prAUC = null;
@@ -538,9 +412,6 @@ public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluati
         sentiment.evaluation.CalibrationMetrics calibrationMetrics = null;
 
         try {
-            // ✅ NO LONGER NEEDED: extractPredictionsAndProbabilities
-            // Probabilities and labels already collected during single-pass evaluation
-
             // Compute ROC-AUC per class
             rocAUC = sentiment.evaluation.AUCCalculator.computeMultiClassROCAUC(
                     probabilities, actualLabels);
@@ -554,12 +425,12 @@ public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluati
             // Compute calibration metrics (for binary or multi-class)
             if (numClasses == 2) {
                 // Binary classification: use positive class probabilities
-                double[] positiveProbs = new double[probabilities.length];
+                double[] positiveClassProbs = new double[probabilities.length];
                 for (int i = 0; i < probabilities.length; i++) {
-                    positiveProbs[i] = probabilities[i][1];  // Class index 1
+                    positiveClassProbs[i] = probabilities[i][1];  // Class index 1
                 }
                 calibrationMetrics = sentiment.evaluation.CalibrationMetrics.compute(
-                        positiveProbs, actualLabels, 10);
+                        positiveClassProbs, actualLabels, 10);
             } else {
                 // Multi-class: compute averaged calibration
                 calibrationMetrics = sentiment.evaluation.CalibrationMetrics.computeMultiClass(
@@ -603,11 +474,8 @@ public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluati
         }
     }
 
-
-    // NOTE: safeMetric() and MetricSupplier now inherited from base class
-
     /**
-     * Override to add SVM-specific stats (C parameter, epsilon).
+     * Adds SVM-specific parameters to evaluation statistics.
      */
     @Override
     protected Map<String, Object> buildAdditionalStats(
@@ -626,8 +494,6 @@ public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluati
 
         return stats;
     }
-
-    // ==================== MODEL SUMMARY ====================
 
     @Override
     public String getModelSummary() {
@@ -661,12 +527,12 @@ public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluati
 
     @Override
     protected String getSubclassDiagnostics() {
-        return String.format(
-                "=== BasicSVMClassifier Diagnostics ===\n" +
-                        "SMO: %s\n" +
-                        "Training: %d instances, %d features\n" +
-                        "Supported classes: %s\n" +
-                        "Instance validation cached: %s",
+        return String.format("""
+                === SVMClassifier Diagnostics ===
+                SMO: %s
+                Training: %d instances, %d features
+                Supported classes: %s
+                Instance validation cached: %s""",
                 smo != null ? "initialized" : "null",
                 getTrainingInstanceCount(),
                 getFeatureCount(),
@@ -675,48 +541,253 @@ public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluati
         );
     }
 
-    // ==================== ACCESSORS ====================
+    // ==================== HYPERPARAMETER SEARCH (PRIVATE) ====================
+
+    // Default hyperparameter grid
+    private static final double[] C_VALUES = {0.01, 0.1, 1.0, 10.0, 100.0};
+    private static final SVMConfig.KernelType[] KERNEL_TYPES = {
+            SVMConfig.KernelType.LINEAR,
+            SVMConfig.KernelType.POLYNOMIAL,
+            SVMConfig.KernelType.RBF
+    };
+    private static final double[] GAMMA_VALUES = {0.001, 0.01, 0.1, 1.0};  // RBF only
+    private static final int[] DEGREE_VALUES = {2, 3, 4};  // Polynomial only
 
     /**
-     * Get the underlying SMO classifier.
-     * Used for testing and advanced configuration.
+     * Finds the optimal SVM configuration using grid search with stratified k-fold CV.
+     * Evaluates all hyperparameter combinations and selects the one with highest macro-F1 score.
+     */
+    private SVMConfig performGridSearch(Instances trainingData, boolean enableClassWeighting) throws Exception {
+        if (trainingData == null || trainingData.numInstances() < cvFolds) {
+            throw new IllegalArgumentException(
+                    String.format("Need at least %d instances for %d-fold CV", cvFolds, cvFolds));
+        }
+
+        logger.info("Starting hyperparameter search on {} instances", trainingData.numInstances());
+        logger.info("Class weighting: {}", enableClassWeighting ? "ENABLED" : "DISABLED");
+
+        // Step 1: Calculate class weights if needed
+        double[] classWeights = null;
+        if (enableClassWeighting) {
+            classWeights = calculateClassWeightsForGrid(trainingData);
+            logger.info("Class weights: {}", Arrays.toString(classWeights));
+        }
+
+        // Step 2: Generate hyperparameter grid
+        List<SVMConfig> configGrid = generateConfigGrid(classWeights);
+        logger.info("Testing {} configurations", configGrid.size());
+
+        // Step 3: Evaluate each configuration with stratified k-fold CV
+        List<SVMConfig> evaluatedConfigs = new ArrayList<>();
+        int configNum = 0;
+
+        for (SVMConfig config : configGrid) {
+            configNum++;
+            logger.info("Evaluating config {}/{}: {}", configNum, configGrid.size(), config);
+
+            try {
+                evaluateConfigWithCV(config, trainingData);
+                evaluatedConfigs.add(config);
+                logger.info("  -> Macro-F1: {} (±{}), Accuracy: {}",
+                        String.format("%.4f", config.getCvMacroF1()),
+                        String.format("%.4f", config.getCvStdDev()),
+                        String.format("%.4f", config.getCvAccuracy()));
+            } catch (Exception e) {
+                logger.warn("  -> Failed to evaluate config: {}", e.getMessage());
+            }
+        }
+
+        if (evaluatedConfigs.isEmpty()) {
+            throw new Exception("No configurations completed successfully");
+        }
+
+        // Step 4: Select best configuration based on macro-F1
+        SVMConfig bestConfig = evaluatedConfigs.stream()
+                .max(Comparator.comparingDouble(c -> c.getCvMacroF1()))
+                .orElseThrow(() -> new Exception("Failed to find best configuration"));
+
+        logger.info("Best configuration found: {}", bestConfig);
+        logger.info("  -> Macro-F1: {} (±{})",
+                String.format("%.4f", bestConfig.getCvMacroF1()),
+                String.format("%.4f", bestConfig.getCvStdDev()));
+        logger.info("  -> Accuracy: {}", String.format("%.4f", bestConfig.getCvAccuracy()));
+
+        return bestConfig;
+    }
+
+    /**
+     * Calculates class weights inversely proportional to class frequencies.
+     * Minority classes receive higher weights in the SVM loss function.
+     */
+    private double[] calculateClassWeightsForGrid(Instances data) {
+        int numClasses = data.numClasses();
+        int[] classCounts = new int[numClasses];
+
+        // Count instances per class
+        for (int i = 0; i < data.numInstances(); i++) {
+            int classIndex = (int) data.instance(i).classValue();
+            classCounts[classIndex]++;
+        }
+
+        // Calculate weights: n_total / (n_classes * n_class_i)
+        double[] weights = new double[numClasses];
+        int totalInstances = data.numInstances();
+
+        for (int i = 0; i < numClasses; i++) {
+            if (classCounts[i] > 0) {
+                weights[i] = (double) totalInstances / (numClasses * classCounts[i]);
+            } else {
+                weights[i] = 1.0;  // Default weight for classes with no instances
+            }
+        }
+
+        return weights;
+    }
+
+    /**
+     * Generates all hyperparameter combinations to evaluate.
+     * Tests linear, polynomial (varying degree), and RBF (varying gamma) kernels
+     * across multiple regularization values.
+     */
+    private List<SVMConfig> generateConfigGrid(double[] classWeights) {
+        List<SVMConfig> grid = new ArrayList<>();
+
+        for (SVMConfig.KernelType kernelType : KERNEL_TYPES) {
+            for (double c : C_VALUES) {
+                switch (kernelType) {
+                    case LINEAR:
+                        // Linear kernel: only C matters
+                        grid.add(new SVMConfig(c, kernelType, 0.01, 1, classWeights, 1.0E-12));
+                        break;
+
+                    case POLYNOMIAL:
+                        // Polynomial: test different degrees
+                        for (int degree : DEGREE_VALUES) {
+                            grid.add(new SVMConfig(c, kernelType, 0.01, degree, classWeights, 1.0E-12));
+                        }
+                        break;
+
+                    case RBF:
+                        // RBF: test different gamma values
+                        for (double gamma : GAMMA_VALUES) {
+                            grid.add(new SVMConfig(c, kernelType, gamma, 1, classWeights, 1.0E-12));
+                        }
+                        break;
+                }
+            }
+        }
+
+        return grid;
+    }
+
+    /**
+     * Evaluates a configuration using stratified k-fold cross-validation.
+     * Updates the config with mean and standard deviation of macro-F1 and accuracy.
+     */
+    private void evaluateConfigWithCV(SVMConfig config, Instances data) throws Exception {
+        // Stratify the data first
+        Instances stratifiedData = new Instances(data);
+        Random random = new Random(42);  // Fixed seed for reproducibility
+        stratifiedData.randomize(random);
+        stratifiedData.stratify(cvFolds);
+
+        double[] macroF1Scores = new double[cvFolds];
+        double[] accuracyScores = new double[cvFolds];
+
+        // Perform k-fold cross-validation
+        for (int fold = 0; fold < cvFolds; fold++) {
+            Instances trainFold = stratifiedData.trainCV(cvFolds, fold, random);
+            Instances testFold = stratifiedData.testCV(cvFolds, fold);
+
+            // Train SVM with current configuration
+            SMO smoForFold = new SMO();
+            smoForFold.setKernel(config.createKernel());
+            smoForFold.setOptions(weka.core.Utils.splitOptions(config.toOptionsString()));
+            smoForFold.buildClassifier(trainFold);
+
+            // Evaluate on test fold
+            Evaluation evaluation = new Evaluation(trainFold);
+            evaluation.evaluateModel(smoForFold, testFold);
+
+            // Calculate macro-averaged F1 (average across all classes)
+            double macroF1 = calculateMacroF1(evaluation, data.numClasses());
+            double accuracy = evaluation.pctCorrect() / 100.0;
+
+            macroF1Scores[fold] = macroF1;
+            accuracyScores[fold] = accuracy;
+        }
+
+        // Calculate mean and standard deviation
+        double meanMacroF1 = Arrays.stream(macroF1Scores).average().orElse(0.0);
+        double meanAccuracy = Arrays.stream(accuracyScores).average().orElse(0.0);
+        double stdDevMacroF1 = calculateStdDev(macroF1Scores, meanMacroF1);
+
+        // Store results in config
+        config.setCvMacroF1(meanMacroF1);
+        config.setCvAccuracy(meanAccuracy);
+        config.setCvStdDev(stdDevMacroF1);
+    }
+
+    /**
+     * Calculates macro-averaged F1 score (mean of per-class F1 scores).
+     * Gives equal weight to all classes regardless of frequency.
+     */
+    private double calculateMacroF1(Evaluation evaluation, int numClasses) {
+        double sumF1 = 0.0;
+        int validClasses = 0;
+
+        for (int i = 0; i < numClasses; i++) {
+            double f1 = evaluation.fMeasure(i);
+            if (!Double.isNaN(f1)) {
+                sumF1 += f1;
+                validClasses++;
+            }
+        }
+
+        return validClasses > 0 ? sumF1 / validClasses : 0.0;
+    }
+
+    /**
+     * Calculates standard deviation of scores.
+     */
+    private double calculateStdDev(double[] scores, double mean) {
+        double sumSquaredDiff = 0.0;
+        for (double score : scores) {
+            double diff = score - mean;
+            sumSquaredDiff += diff * diff;
+        }
+        return Math.sqrt(sumSquaredDiff / scores.length);
+    }
+
+    // ==================== PUBLIC ACCESSORS ====================
+
+    /**
+     * Returns the underlying SMO classifier for testing and advanced configuration.
      */
     public SMO getSMO() {
         return smo;
     }
 
-    // NOTE: setSMO(), getTrainingStructure(), setTrainingMetadata() removed
-    // Persistence now uses abstract methods from ClassifierTrainingTemplate
-
-    // NOTE: getPreprocessor() implemented above to satisfy abstract method
-
     /**
-     * Get converter (for utility classes).
+     * Returns the feature converter.
      */
     public WekaInstancesConverter getConverter() {
         return converter;
     }
 
     /**
-     * Get the optimal configuration selected by hyperparameter search.
-     * Returns null if hyperparameter tuning was not enabled.
+     * Returns the optimal configuration from hyperparameter search, or null if tuning was disabled.
      */
+    @SuppressWarnings("unused")
     public SVMConfig getOptimalConfig() {
         return optimalConfig;
     }
 
-    // ==================== WekaClassifier INTERFACE ====================
-
     /**
-     * Returns the underlying Weka classifier for batch optimization.
-     * Required by WekaClassifier interface for BatchPredictor support.
-     *
-     * @return The SMO classifier instance
+     * Returns the underlying Weka classifier for batch operations.
      */
     @Override
     public weka.classifiers.Classifier getWekaClassifier() {
         return smo;
     }
-
-    // NOTE: executeInference(Callable) now inherited from base class
 }

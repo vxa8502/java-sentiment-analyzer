@@ -3,21 +3,10 @@ package sentiment.models;
 import weka.classifiers.functions.supportVector.Kernel;
 import weka.classifiers.functions.supportVector.PolyKernel;
 import weka.classifiers.functions.supportVector.RBFKernel;
-import weka.classifiers.functions.supportVector.NormalizedPolyKernel;
-
 import java.util.Objects;
 
 /**
- * Configuration class for SVM hyperparameters.
- *
- * Immutable value object representing a specific SVM configuration to be tested.
- *
- * Key hyperparameters:
- * - C: Complexity/regularization parameter. Higher C = less regularization (risk of overfitting)
- * - kernel: Determines the feature space transformation
- * - gamma: RBF kernel parameter controlling decision boundary flexibility
- * - degree: Polynomial kernel degree
- * - classWeights: Per-class weights to handle imbalanced data
+ * SVM configuration for hyperparameter tuning and model training.
  */
 public class SVMConfig {
 
@@ -56,21 +45,21 @@ public class SVMConfig {
     private Double cvStdDev;
 
     /**
-     * Creates a basic SVM configuration with linear kernel.
+     * Creates an SVM configuration with linear kernel.
      */
     public SVMConfig(double c) {
         this(c, KernelType.LINEAR, 0.01, 1, null, 1.0E-12);
     }
 
     /**
-     * Creates a full SVM configuration.
+     * Creates an SVM configuration.
      *
-     * @param c Complexity parameter (higher = less regularization)
-     * @param kernelType Type of kernel to use
-     * @param gamma RBF kernel parameter (ignored for other kernels)
-     * @param degree Polynomial kernel degree (ignored for other kernels)
-     * @param classWeights Per-class weights (null for no weighting)
-     * @param epsilon Tolerance parameter
+     * @param c complexity parameter
+     * @param kernelType kernel type
+     * @param gamma RBF kernel parameter
+     * @param degree polynomial kernel degree
+     * @param classWeights class weights, null for none
+     * @param epsilon tolerance parameter
      */
     public SVMConfig(double c, KernelType kernelType, double gamma, int degree,
                      double[] classWeights, double epsilon) {
@@ -96,9 +85,9 @@ public class SVMConfig {
     }
 
     /**
-     * Creates a Weka kernel instance based on the configuration.
+     * Creates a kernel instance.
      */
-    public Kernel createKernel() throws Exception {
+    public Kernel createKernel() {
         switch (kernelType) {
             case LINEAR:
                 PolyKernel linearKernel = new PolyKernel();
@@ -121,17 +110,15 @@ public class SVMConfig {
     }
 
     /**
-     * Builds Weka options string for SMO configuration.
+     * Builds options string for SMO.
      */
     public String toOptionsString() {
-        StringBuilder options = new StringBuilder();
-        options.append("-C ").append(c);
-        options.append(" -L 0.001");  // Learning rate
-        options.append(" -P ").append(epsilon);
-        options.append(" -N 0");  // Filter type
-        options.append(" -V -1"); // Number of folds for cross-validation calibration
-        options.append(" -W 1");  // Kernel cache size
-        return options.toString();
+        return "-C " + c +
+               " -L 0.001" +  // Learning rate
+               " -P " + epsilon +
+               " -N 0" +  // Filter type
+               " -V -1" + // Number of folds for cross-validation calibration
+               " -W 1";   // Kernel cache size
     }
 
     // Getters
