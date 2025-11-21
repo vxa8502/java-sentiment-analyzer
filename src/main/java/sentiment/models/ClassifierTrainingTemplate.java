@@ -1,6 +1,5 @@
 package sentiment.models;
 
-import org.slf4j.Logger;
 import sentiment.data.Dataset;
 import sentiment.PipelineState;
 import sentiment.TrainingTemplate;
