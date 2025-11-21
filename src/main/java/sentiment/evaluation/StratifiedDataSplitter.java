@@ -8,67 +8,30 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * ARIA'S MATHEMATICAL RIGOR: Proper Data Splitting for Unbiased Evaluation
- * =========================================================================
- *
- * "The model is only as honest as its data splitting strategy."
- *
- * CRITICAL PRINCIPLE:
- * ===================
- * Test set must be held out BEFORE any model selection or hyperparameter tuning.
- * Otherwise, information leakage causes overoptimistic performance estimates.
- *
- * PROPER WORKFLOW:
- * ================
- * 1. Split data: 60% train, 20% validation, 20% test
- * 2. Use train set for model training
- * 3. Use validation set for hyperparameter tuning and model selection
- * 4. Use test set ONCE for final unbiased performance estimate
- * 5. For robust estimates, use k-fold CV on train+val (NOT test)
- *
- * STRATIFICATION:
- * ===============
- * Ensures class distribution is preserved across splits.
- * Critical for imbalanced datasets.
- *
- * EXAMPLE:
- * ========
- * ```java
- * List<Dataset> data = loadData();
- *
- * // 60/20/20 split with stratification
- * DataSplit split = StratifiedDataSplitter.stratifiedSplit(data, 0.6, 0.2, 0.2, 42);
- *
- * // Train on train set
- * classifier.train(split.train);
- *
- * // Tune hyperparameters on validation set
- * tuneHyperparameters(classifier, split.validation);
- *
- * // Final evaluation on test set (ONCE)
- * ClassifierEvaluationResult finalResult = classifier.evaluate(split.test);
- * ```
- *
- * @author Aria (Mathematical Foundations Mentor)
+ * Utility for creating stratified train/validation/test splits while preserving
+ * class distribution across all subsets.
+ * <p>
+ * Stratification ensures each split maintains the same class proportions as the
+ * original dataset, which is critical for imbalanced data and accurate evaluation.
+ * <p>
+ * The test set should be held out before any model selection or hyperparameter
+ * tuning to prevent information leakage and ensure unbiased performance estimates.
  */
 public class StratifiedDataSplitter {
 
     private static final Logger logger = LoggerFactory.getLogger(StratifiedDataSplitter.class);
 
     /**
-     * Stratified train/validation/test split.
+     * Creates a stratified three-way split preserving class distribution in each subset.
+     * Reproducible when using the same seed.
      *
-     * GUARANTEES:
-     * - Class distribution preserved in each split
-     * - No data leakage between splits
-     * - Reproducible with fixed seed
-     *
-     * @param data Full dataset
-     * @param trainRatio Proportion for training (e.g., 0.6)
-     * @param valRatio Proportion for validation (e.g., 0.2)
-     * @param testRatio Proportion for test (e.g., 0.2)
-     * @param randomSeed Seed for reproducibility
-     * @return DataSplit with train, validation, and test sets
+     * @param data the full dataset to split
+     * @param trainRatio proportion for training (e.g., 0.6)
+     * @param valRatio proportion for validation (e.g., 0.2)
+     * @param testRatio proportion for test (e.g., 0.2); ratios must sum to 1.0
+     * @param randomSeed seed for reproducibility
+     * @return data split containing train, validation, and test sets
+     * @throws IllegalArgumentException if ratios don't sum to 1.0 or are negative
      */
     public static DataSplit stratifiedSplit(
             List<Dataset> data,
@@ -91,12 +54,8 @@ public class StratifiedDataSplitter {
                     String.format("Ratios must sum to 1.0, got %.3f", trainRatio + valRatio + testRatio));
         }
 
-        if (trainRatio < 0 || valRatio < 0 || testRatio < 0) {
-            throw new IllegalArgumentException("Ratios cannot be negative");
-        }
-
         if (trainRatio <= 0 || valRatio < 0 || testRatio < 0) {
-            throw new IllegalArgumentException("All ratios must be non-negative");
+            throw new IllegalArgumentException("All ratios must be non-negative and trainRatio must be positive");
         }
 
         // Group by class
@@ -152,12 +111,12 @@ public class StratifiedDataSplitter {
     }
 
     /**
-     * Two-way stratified split (train/test only).
+     * Creates a stratified two-way split (train/test only) with an empty validation set.
      *
-     * @param data Full dataset
-     * @param trainRatio Proportion for training (e.g., 0.8)
-     * @param randomSeed Seed for reproducibility
-     * @return DataSplit with validation set empty
+     * @param data the full dataset to split
+     * @param trainRatio proportion for training (e.g., 0.8)
+     * @param randomSeed seed for reproducibility
+     * @return data split with train and test sets; validation set is empty
      */
     public static DataSplit stratifiedSplit(
             List<Dataset> data,
@@ -168,16 +127,15 @@ public class StratifiedDataSplitter {
     }
 
     /**
-     * K-fold stratified cross-validation splits.
+     * Creates k-fold stratified cross-validation splits for model evaluation.
+     * Each fold contains a train/test pair with stratified class distribution.
+     * Intended for use on combined train+validation data, not on held-out test sets.
      *
-     * USAGE:
-     * For model evaluation WITHOUT a held-out test set.
-     * Typically used on train+val data, never on test data.
-     *
-     * @param data Dataset to split
-     * @param k Number of folds (typically 5 or 10)
-     * @param randomSeed Seed for reproducibility
-     * @return List of k folds, each containing train and test split
+     * @param data the dataset to split into folds
+     * @param k number of folds (typically 5 or 10); must be at least 2
+     * @param randomSeed seed for reproducibility
+     * @return list of k folds, each containing a train and test split
+     * @throws IllegalArgumentException if k < 2
      */
     public static List<DataSplit> stratifiedKFold(
             List<Dataset> data,
@@ -237,7 +195,12 @@ public class StratifiedDataSplitter {
     }
 
     /**
-     * Verify that stratification preserved class distribution.
+     * Verifies and logs that stratification preserved class distribution across splits.
+     *
+     * @param original the original dataset
+     * @param train the training split
+     * @param val the validation split (possibly empty)
+     * @param test the test split
      */
     private static void verifyStratification(
             List<Dataset> original,
@@ -270,13 +233,21 @@ public class StratifiedDataSplitter {
     }
 
     /**
-     * Result of data splitting.
+     * Immutable container for train, validation, and test data splits.
+     * Defensive copies are made to ensure immutability.
      */
     public static class DataSplit {
         public final List<Dataset> train;
         public final List<Dataset> validation;
         public final List<Dataset> test;
 
+        /**
+         * Creates an immutable data split with defensive copies.
+         *
+         * @param train the training data
+         * @param validation the validation data
+         * @param test the test data
+         */
         public DataSplit(List<Dataset> train, List<Dataset> validation, List<Dataset> test) {
             this.train = List.copyOf(train);
             this.validation = List.copyOf(validation);

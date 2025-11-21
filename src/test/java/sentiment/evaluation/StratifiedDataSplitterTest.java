@@ -13,7 +13,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Comprehensive unit tests for StratifiedDataSplitter.
- *
+ * <p>
  * Tests cover:
  * - Stratified train/validation/test splitting
  * - K-fold cross-validation
@@ -328,8 +328,8 @@ class StratifiedDataSplitterTest {
                 smallData, 0.5, 0.25, 0.25, SEED);
 
         assertEquals(4, split.totalSize());
-        assertTrue(split.train.size() >= 1);
-        assertTrue(split.test.size() >= 1);
+        assertFalse(split.train.isEmpty());
+        assertFalse(split.test.isEmpty());
     }
 
     @Test
@@ -380,14 +380,15 @@ class StratifiedDataSplitterTest {
                 balancedData, 0.8, 0.0, 0.2, SEED);
 
         assertEquals(0, split.validation.size());
-        assertTrue(split.train.size() > 0);
-        assertTrue(split.test.size() > 0);
+        assertFalse(split.train.isEmpty());
+        assertFalse(split.test.isEmpty());
     }
 
     // ==================== IMMUTABILITY TESTS ====================
 
     @Test
     @DisplayName("DataSplit lists should be immutable")
+    @SuppressWarnings("DataFlowIssue") // Intentionally testing immutability violations
     void testDataSplit_Immutability() {
         DataSplit split = StratifiedDataSplitter.stratifiedSplit(
                 balancedData, 0.6, 0.2, 0.2, SEED);
