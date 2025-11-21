@@ -8,16 +8,24 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.beans.factory.annotation.Value;
+import sentiment.evaluation.FeatureImportancePersistence;
+import sentiment.models.SVMClassifier;
 import sentiment.models.SentimentClassifier;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * REST API controller for sentiment analysis operations.
  * Endpoints:
  * - POST /api/v1/sentiment/analyze - Analyze single text
  * - POST /api/v1/sentiment/batch - Batch analysis
+ * - GET /api/v1/model/feature-importance - Get feature importance (SVM only)
  * - GET /api/v1/health - Health check
  */
 @RestController
@@ -27,10 +35,17 @@ public class SentimentController {
 
     private static final Logger logger = LoggerFactory.getLogger(SentimentController.class);
     private final SentimentClassifier classifier;
+    private final String svmModelPath;
     private final long startTime;
 
-    public SentimentController(SentimentClassifier classifier) {
+    // Cache feature importance to avoid reloading on every request
+    private FeatureImportanceResponse cachedFeatureImportance;
+    private final Object featureImportanceLock = new Object();
+
+    public SentimentController(SentimentClassifier classifier,
+                               @Value("${sentiment.models.svm-model-path:./models/svm-model.ser}") String svmModelPath) {
         this.classifier = classifier;
+        this.svmModelPath = svmModelPath;
         this.startTime = System.currentTimeMillis();
         logger.info("SentimentController initialized with {} classifier",
                    classifier.getAlgorithmName());
@@ -129,6 +144,141 @@ public class SentimentController {
     private record IndexedResult(int index, SentimentResponse result) {
         int getIndex() { return index; }
         SentimentResponse getResult() { return result; }
+    }
+
+    /**
+     * Returns feature importance analysis for the trained model.
+     *
+     * This endpoint is designed for notebook-based exploration and model understanding.
+     * It shows which features (words/n-grams) most strongly influence predictions.
+     *
+     * IMPORTANT:
+     * - Available for all model types (SVM, Naive Bayes, Random Forest, Logistic Regression)
+     * - Results are cached after first request for performance
+     * - Use topFeatures parameter to control response size
+     *
+     * Example request:
+     * GET /api/v1/model/feature-importance?topFeatures=50
+     *
+     * Example response:
+     * {
+     *   "modelType": "SVM",
+     *   "totalFeatures": 5000,
+     *   "topFeatures": [
+     *     {"feature": "excellent", "weight": 0.234, "significance": 0.234, "direction": "positive"},
+     *     {"feature": "terrible", "weight": -0.198, "significance": 0.198, "direction": "negative"}
+     *   ],
+     *   "statistics": {"mean": 0.002, "stdDev": 0.004, "median": 0.001, "percentile95": 0.009},
+     *   "analysisTimeMs": 234
+     * }
+     */
+    @GetMapping("/model/feature-importance")
+    public ResponseEntity<FeatureImportanceResponse> getFeatureImportance(
+            @RequestParam(defaultValue = "30") int topFeatures) {
+
+        logger.info("Feature importance request: topFeatures={}", topFeatures);
+
+        try {
+            // Check if model is trained
+            if (!classifier.isTrained()) {
+                return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                        .body(FeatureImportanceResponse.error(
+                                "Model not trained yet. Check /api/v1/health for status."));
+            }
+
+            // Note: Feature importance now works for all model types, not just SVM
+
+            // Use cached result if available
+            synchronized (featureImportanceLock) {
+                if (cachedFeatureImportance != null &&
+                    cachedFeatureImportance.topFeatures().size() >= topFeatures) {
+                    logger.info("Returning cached feature importance");
+                    // Return subset if requested fewer features
+                    List<FeatureImportanceResponse.FeatureInfo> subset =
+                            cachedFeatureImportance.topFeatures().subList(0,
+                                    Math.min(topFeatures, cachedFeatureImportance.topFeatures().size()));
+
+                    return ResponseEntity.ok(new FeatureImportanceResponse(
+                            cachedFeatureImportance.modelType(),
+                            cachedFeatureImportance.totalFeatures(),
+                            subset,
+                            cachedFeatureImportance.statistics(),
+                            cachedFeatureImportance.analysisTimeMs(),
+                            cachedFeatureImportance.note()
+                    ));
+                }
+
+                // Load pre-computed feature importance from file
+                logger.info("Loading pre-computed feature importance from file...");
+                Path featureImportancePath = FeatureImportancePersistence.getFeatureImportancePath(
+                        Paths.get(svmModelPath));
+
+                if (!Files.exists(featureImportancePath)) {
+                    return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                            .body(FeatureImportanceResponse.error(
+                                    "Feature importance data not found. Please re-train the model with " +
+                                    "--show-feature-importance flag to generate feature importance data. " +
+                                    "Expected file: " + featureImportancePath));
+                }
+
+                try {
+                    FeatureImportancePersistence.SerializableFeatureImportance data =
+                            FeatureImportancePersistence.load(featureImportancePath);
+
+                    // Convert to response format
+                    List<FeatureImportanceResponse.FeatureInfo> allFeatures = data.topFeatures.stream()
+                            .map(fw -> {
+                                String direction = fw.weight > 0 ? "positive" :
+                                        (fw.weight < 0 ? "negative" : "neutral");
+                                return new FeatureImportanceResponse.FeatureInfo(
+                                        fw.featureName, fw.weight, fw.significance, direction);
+                            })
+                            .collect(Collectors.toList());
+
+                    FeatureImportanceResponse.Statistics stats = new FeatureImportanceResponse.Statistics(
+                            data.statistics.mean,
+                            data.statistics.stdDev,
+                            data.statistics.median,
+                            data.statistics.percentile95
+                    );
+
+                    // Cache the full result
+                    cachedFeatureImportance = FeatureImportanceResponse.success(
+                            classifier.getAlgorithmName(),
+                            data.statistics.totalFeatures,
+                            allFeatures,
+                            stats,
+                            data.analysisTimeMs
+                    );
+
+                    // Return requested subset
+                    List<FeatureImportanceResponse.FeatureInfo> subset = allFeatures.stream()
+                            .limit(topFeatures)
+                            .collect(Collectors.toList());
+
+                    return ResponseEntity.ok(new FeatureImportanceResponse(
+                            classifier.getAlgorithmName(),
+                            data.statistics.totalFeatures,
+                            subset,
+                            stats,
+                            data.analysisTimeMs,
+                            cachedFeatureImportance.note()
+                    ));
+
+                } catch (Exception e) {
+                    logger.error("Failed to load feature importance: {}", e.getMessage(), e);
+                    return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                            .body(FeatureImportanceResponse.error(
+                                    "Failed to load feature importance data: " + e.getMessage()));
+                }
+            }
+
+        } catch (Exception e) {
+            logger.error("Feature importance analysis failed: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(FeatureImportanceResponse.error(
+                            "Feature importance analysis failed: " + e.getMessage()));
+        }
     }
 
     /**

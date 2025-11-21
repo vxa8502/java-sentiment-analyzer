@@ -3,8 +3,6 @@ package sentiment.evaluation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import weka.classifiers.functions.SMO;
-import weka.classifiers.functions.supportVector.Kernel;
-import weka.classifiers.functions.supportVector.PolyKernel;
 import weka.core.Instances;
 import weka.core.Instance;
 import weka.core.Attribute;
@@ -13,69 +11,25 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * ARIA'S MATHEMATICAL RIGOR: Feature Importance Analysis
- * =======================================================
+ * Analyzes feature importance in trained SVM classifiers by extracting and ranking
+ * features based on their discriminative power.
  *
- * This class addresses the critical gap: "You're using TF-IDF but never examining
- * which features drive predictions."
- *
- * WHAT THIS PROVIDES:
- * ===================
- * 1. Extract SVM weight vectors from trained model
- * 2. Rank features by discriminative power (absolute weight magnitude)
- * 3. Statistical significance testing for feature importance
- * 4. Top-k most discriminative features with confidence intervals
- * 5. Feature attribution analysis for understanding model decisions
- *
- * MATHEMATICAL FOUNDATION:
- * ========================
- * For linear SVM with decision function: f(x) = w^T x + b
- * - Larger |w_i| → feature i has stronger influence on classification
- * - Sign of w_i indicates direction (positive/negative sentiment)
- * - Features with |w_i| near zero are non-discriminative
- *
- * For non-linear kernels (RBF, Polynomial):
- * - Uses support vector coefficients as proxy for importance
- * - Approximates feature contribution via kernel evaluation
- *
- * USAGE:
- * ======
- * ```java
- * FeatureImportanceAnalyzer analyzer = new FeatureImportanceAnalyzer();
- * FeatureImportanceResult result = analyzer.analyzeFeatureImportance(
- *     trainedInstances,
- *     trainedSVM,
- *     100  // top-100 features
- * );
- *
- * // Examine top discriminative features
- * for (FeatureWeight fw : result.topFeatures) {
- *     System.out.printf("%s: weight=%.4f, significance=%.4f\n",
- *         fw.featureName, fw.weight, fw.significance);
- * }
- * ```
- *
- * @author Aria (Mathematical Foundations Mentor)
+ * <p>For linear SVMs with decision function f(x) = w^T x + b, features are ranked by
+ * absolute weight magnitude |w_i|. For non-linear kernels, feature influence is approximated
+ * via perturbation analysis, measuring prediction change when feature values are zeroed.
  */
 public class FeatureImportanceAnalyzer {
 
     private static final Logger logger = LoggerFactory.getLogger(FeatureImportanceAnalyzer.class);
 
     /**
-     * Analyze feature importance from a trained SVM classifier.
+     * Analyzes feature importance by extracting weights from the SVM decision function
+     * and ranking features by absolute contribution to classification.
      *
-     * This method extracts the weight vector from the SVM's decision function
-     * and ranks features by their absolute contribution to classification.
-     *
-     * MATHEMATICAL DETAILS:
-     * - For binary classification: extracts w from f(x) = w^T x + b
-     * - For multi-class: extracts weights for each one-vs-rest classifier
-     * - Computes statistical significance via permutation importance
-     *
-     * @param trainedData The Instances used to train the model (for feature names)
-     * @param trainedSVM The trained SMO classifier
-     * @param topK Number of top features to return
-     * @return FeatureImportanceResult with ranked features
+     * @param trainedData the training instances (used for feature names)
+     * @param trainedSVM the trained SMO classifier
+     * @param topK number of top features to return
+     * @return feature importance results with ranked features and statistics
      */
     public FeatureImportanceResult analyzeFeatureImportance(
             Instances trainedData,
@@ -100,8 +54,7 @@ public class FeatureImportanceAnalyzer {
             Map<String, Double> featureWeights = extractFeatureWeights(trainedData, trainedSVM);
 
             // Step 2: Compute statistical significance (if possible)
-            Map<String, Double> featureSignificance = computeFeatureSignificance(
-                    trainedData, trainedSVM, featureWeights);
+            Map<String, Double> featureSignificance = computeFeatureSignificance(featureWeights);
 
             // Step 3: Rank features by absolute weight magnitude
             List<FeatureWeight> rankedFeatures = rankFeatures(featureWeights, featureSignificance);
@@ -128,18 +81,8 @@ public class FeatureImportanceAnalyzer {
     }
 
     /**
-     * Extract raw feature weights from the SVM model.
-     *
-     * IMPLEMENTATION:
-     * ===============
-     * 1. For linear kernel: directly extract weight vector
-     * 2. For non-linear kernel: approximate via support vector contributions
-     * 3. Handle multi-class via one-vs-rest decomposition
-     *
-     * MATHEMATICAL NOTE:
-     * The SVM decision function is: f(x) = Σ α_i y_i K(x_i, x) + b
-     * For linear kernel K(x_i, x) = x_i^T x, this simplifies to w^T x + b
-     * where w = Σ α_i y_i x_i
+     * Extracts feature weights from the SVM model. For linear kernels, extracts the weight
+     * vector directly. For non-linear kernels, approximates via support vector contributions.
      */
     private Map<String, Double> extractFeatureWeights(Instances trainedData, SMO smo) {
         Map<String, Double> weights = new HashMap<>();
@@ -171,20 +114,8 @@ public class FeatureImportanceAnalyzer {
     }
 
     /**
-     * Compute feature influence via prediction perturbation.
-     *
-     * ALGORITHM:
-     * ==========
-     * 1. For each feature f_i:
-     *    a. Perturb feature values in test set
-     *    b. Measure change in prediction confidence
-     *    c. Average absolute change = feature importance
-     *
-     * This is a form of "permutation importance" adapted for SVM.
-     *
-     * MATHEMATICAL JUSTIFICATION:
-     * If feature f_i is important, perturbing it should significantly
-     * change the decision function output f(x).
+     * Computes feature influence via perturbation analysis. Zeroes out the feature
+     * and measures the average change in prediction confidence across samples.
      */
     private double computeFeatureInfluence(Instances trainedData, SMO smo, int featureIndex) {
         try {
@@ -219,11 +150,8 @@ public class FeatureImportanceAnalyzer {
     }
 
     /**
-     * Fallback: Compute importance based on feature variance and correlation with labels.
-     *
-     * MATHEMATICAL PRINCIPLE:
-     * - Features with high variance AND correlation with class labels are important
-     * - This is a proxy for discriminative power
+     * Fallback method that computes importance based on feature variance as a proxy
+     * for discriminative power.
      */
     private Map<String, Double> computeVarianceBasedImportance(Instances data) {
         Map<String, Double> importance = new HashMap<>();
@@ -243,28 +171,13 @@ public class FeatureImportanceAnalyzer {
     }
 
     /**
-     * Compute statistical significance for each feature.
-     *
-     * METHOD: Bootstrap confidence intervals
-     * =======================================
-     * 1. Resample training data with replacement (1000 iterations)
-     * 2. Compute feature weights for each bootstrap sample
-     * 3. Calculate 95% confidence interval for each weight
-     * 4. Features with CI not containing zero are "significant"
-     *
-     * SIGNIFICANCE METRIC:
-     * significance = 1 - (CI contains zero ? 1 : 0)
+     * Computes statistical significance for each feature using normalized absolute weight
+     * as a simplified metric.
      */
-    private Map<String, Double> computeFeatureSignificance(
-            Instances data, SMO smo, Map<String, Double> weights) {
-
+    private Map<String, Double> computeFeatureSignificance(Map<String, Double> weights) {
         Map<String, Double> significance = new HashMap<>();
 
-        // For efficiency, use a simplified significance metric
-        // Real implementation would use bootstrap resampling
-
         for (Map.Entry<String, Double> entry : weights.entrySet()) {
-            // Simplified: significance = normalized absolute weight
             double normalizedWeight = Math.abs(entry.getValue());
             significance.put(entry.getKey(), normalizedWeight);
         }
@@ -273,7 +186,7 @@ public class FeatureImportanceAnalyzer {
     }
 
     /**
-     * Rank features by absolute weight magnitude.
+     * Ranks features by absolute weight magnitude in descending order.
      */
     private List<FeatureWeight> rankFeatures(
             Map<String, Double> weights,
@@ -290,7 +203,7 @@ public class FeatureImportanceAnalyzer {
     }
 
     /**
-     * Compute summary statistics for feature importance distribution.
+     * Computes summary statistics (mean, std dev, median, p95) for the feature importance distribution.
      */
     private FeatureStatistics computeFeatureStatistics(List<FeatureWeight> features) {
         double[] absWeights = features.stream()
@@ -310,10 +223,9 @@ public class FeatureImportanceAnalyzer {
         return new FeatureStatistics(mean, stdDev, median, p95, features.size());
     }
 
-    // ==================== DATA CLASSES ====================
-
     /**
-     * Result of feature importance analysis.
+     * Contains the results of feature importance analysis including top features,
+     * all ranked features, statistics, and analysis time.
      */
     public static class FeatureImportanceResult {
         public final List<FeatureWeight> topFeatures;
@@ -338,7 +250,7 @@ public class FeatureImportanceAnalyzer {
         }
 
         /**
-         * Print top features to console.
+         * Prints the top N features to console.
          */
         public void printTopFeatures(int limit) {
             System.out.println("\n=== TOP DISCRIMINATIVE FEATURES ===");
@@ -351,7 +263,7 @@ public class FeatureImportanceAnalyzer {
     }
 
     /**
-     * Individual feature weight with significance score.
+     * Represents a single feature with its weight and significance score.
      */
     public static class FeatureWeight {
         public final String featureName;
@@ -372,7 +284,7 @@ public class FeatureImportanceAnalyzer {
     }
 
     /**
-     * Summary statistics for feature importance distribution.
+     * Summary statistics for the feature importance distribution.
      */
     public static class FeatureStatistics {
         public final double mean;

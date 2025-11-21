@@ -133,7 +133,9 @@ public class ModelTrainingCLI implements CommandLineRunner {
                         config.dataPath,
                         outputPath,
                         config.singleAlgorithm,
-                        config.maxSamples
+                        config.maxSamples,
+                        config.showFeatureImportance,
+                        config.topFeaturesCount
                 );
 
                 results = List.of(result);
@@ -150,7 +152,9 @@ public class ModelTrainingCLI implements CommandLineRunner {
                         config.dataPath,
                         config.outputDir,
                         config.algorithms,
-                        config.maxSamples
+                        config.maxSamples,
+                        config.showFeatureImportance,
+                        config.topFeaturesCount
                 );
             }
 
@@ -204,6 +208,16 @@ public class ModelTrainingCLI implements CommandLineRunner {
                 case "--max-samples", "-n":
                     if (i + 1 < args.length) {
                         config.maxSamples = Integer.parseInt(args[++i]);
+                    }
+                    break;
+
+                case "--show-feature-importance", "--feature-importance":
+                    config.showFeatureImportance = true;
+                    break;
+
+                case "--top-features":
+                    if (i + 1 < args.length) {
+                        config.topFeaturesCount = Integer.parseInt(args[++i]);
                     }
                     break;
 
@@ -320,6 +334,12 @@ public class ModelTrainingCLI implements CommandLineRunner {
         System.out.println("  --max-samples, -n <num>     Maximum training samples (0 = use all)");
         System.out.println("                              (default: " + DEFAULT_MAX_SAMPLES + ")");
         System.out.println("");
+        System.out.println("  --show-feature-importance   Analyze and display feature importance after training");
+        System.out.println("                              (works for all model types)");
+        System.out.println("");
+        System.out.println("  --top-features <num>        Number of top features to display");
+        System.out.println("                              (default: 30, used with --show-feature-importance)");
+        System.out.println("");
         System.out.println("  --help, -h                  Show this help message");
         System.out.println("");
         System.out.println("Examples:");
@@ -334,6 +354,14 @@ public class ModelTrainingCLI implements CommandLineRunner {
         System.out.println("  java -jar sentiment-analyzer.jar sentiment.training.ModelTrainingCLI \\");
         System.out.println("    --algorithms svm,naive_bayes --data ./data/reviews.csv");
         System.out.println("");
+        System.out.println("  # Train SVM with feature importance analysis");
+        System.out.println("  java -jar sentiment-analyzer.jar sentiment.training.ModelTrainingCLI \\");
+        System.out.println("    --algorithm svm --show-feature-importance --top-features 50");
+        System.out.println("");
+        System.out.println("  # Train Naive Bayes with feature importance");
+        System.out.println("  java -jar sentiment-analyzer.jar sentiment.training.ModelTrainingCLI \\");
+        System.out.println("    --algorithm naive_bayes --show-feature-importance");
+        System.out.println("");
     }
 
     private static class Config {
@@ -342,5 +370,7 @@ public class ModelTrainingCLI implements CommandLineRunner {
         AlgorithmType singleAlgorithm = null;
         List<AlgorithmType> algorithms = List.of();
         int maxSamples = DEFAULT_MAX_SAMPLES;
+        boolean showFeatureImportance = false;
+        int topFeaturesCount = 30;
     }
 }
