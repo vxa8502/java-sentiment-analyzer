@@ -26,10 +26,6 @@ public class SVMConfig {
         public String getDisplayName() {
             return displayName;
         }
-
-        public String getWekaClassName() {
-            return wekaClassName;
-        }
     }
 
     private final double c;
@@ -127,20 +123,12 @@ public class SVMConfig {
         return c;
     }
 
-    public KernelType getKernelType() {
-        return kernelType;
-    }
-
     public double getGamma() {
         return gamma;
     }
 
     public int getDegree() {
         return degree;
-    }
-
-    public double[] getClassWeights() {
-        return classWeights != null ? classWeights.clone() : null;
     }
 
     public double getEpsilon() {

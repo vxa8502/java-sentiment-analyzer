@@ -79,6 +79,7 @@ public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluati
      * @param enable whether to enable tuning
      * @param numFolds number of CV folds (typically 5 or 10)
      */
+    @SuppressWarnings("unused")
     public void setHyperparameterTuning(boolean enable, int numFolds) {
         this.enableHyperparameterTuning = enable;
         this.cvFolds = numFolds;
@@ -91,6 +92,7 @@ public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluati
      * @param threshold imbalance ratio (max/min class counts) that triggers weighting (must be > 1.0)
      * @throws IllegalArgumentException if threshold <= 1.0
      */
+    @SuppressWarnings("unused")
     public void setClassImbalanceThreshold(double threshold) {
         if (threshold <= 1.0) {
             throw new IllegalArgumentException("Class imbalance threshold must be greater than 1.0");
@@ -555,7 +557,7 @@ public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluati
 
         // Step 4: Select best configuration based on macro-F1
         SVMConfig bestConfig = evaluatedConfigs.stream()
-                .max(Comparator.comparingDouble(c -> c.getCvMacroF1()))
+                .max(Comparator.comparingDouble(SVMConfig::getCvMacroF1))
                 .orElseThrow(() -> new Exception("Failed to find best configuration"));
 
         logger.info("Best configuration found: {}", bestConfig);
