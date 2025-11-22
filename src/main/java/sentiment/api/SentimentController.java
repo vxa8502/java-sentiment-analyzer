@@ -222,33 +222,24 @@ public class SentimentController {
                 }
 
                 try {
-                    FeatureImportancePersistence.SerializableFeatureImportance data =
+                    sentiment.evaluation.domain.FeatureImportanceResult data =
                             FeatureImportancePersistence.load(featureImportancePath);
 
                     // Convert to response format
-                    List<FeatureImportanceResponse.FeatureInfo> allFeatures = data.topFeatures.stream()
-                            .map(fw -> {
-                                String direction = fw.weight > 0 ? "positive" :
-                                        (fw.weight < 0 ? "negative" : "neutral");
-                                return new FeatureImportanceResponse.FeatureInfo(
-                                        fw.featureName, fw.weight, fw.significance, direction);
-                            })
+                    List<FeatureImportanceResponse.FeatureInfo> allFeatures = data.topFeatures().stream()
+                            .map(FeatureImportanceResponse.FeatureInfo::fromDomain)
                             .collect(Collectors.toList());
 
-                    FeatureImportanceResponse.Statistics stats = new FeatureImportanceResponse.Statistics(
-                            data.statistics.mean,
-                            data.statistics.stdDev,
-                            data.statistics.median,
-                            data.statistics.percentile95
-                    );
+                    FeatureImportanceResponse.Statistics stats =
+                            FeatureImportanceResponse.Statistics.fromDomain(data.statistics());
 
                     // Cache the full result
                     cachedFeatureImportance = FeatureImportanceResponse.success(
                             classifier.getAlgorithmName(),
-                            data.statistics.totalFeatures,
+                            data.statistics().totalFeatures(),
                             allFeatures,
                             stats,
-                            data.analysisTimeMs
+                            data.analysisTimeMs()
                     );
 
                     // Return requested subset
@@ -258,10 +249,10 @@ public class SentimentController {
 
                     return ResponseEntity.ok(new FeatureImportanceResponse(
                             classifier.getAlgorithmName(),
-                            data.statistics.totalFeatures,
+                            data.statistics().totalFeatures(),
                             subset,
                             stats,
-                            data.analysisTimeMs,
+                            data.analysisTimeMs(),
                             cachedFeatureImportance.note()
                     ));
 

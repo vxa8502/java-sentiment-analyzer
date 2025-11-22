@@ -1,6 +1,8 @@
 package sentiment.api;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import sentiment.evaluation.domain.FeatureWeight;
+import sentiment.evaluation.domain.FeatureStatistics;
 
 import java.util.List;
 
@@ -55,10 +57,8 @@ public record FeatureImportanceResponse(
             @JsonProperty("significance") double significance,
             @JsonProperty("direction") String direction
     ) {
-        public static FeatureInfo fromAnalyzerResult(
-                sentiment.evaluation.FeatureImportanceAnalyzer.FeatureWeight fw) {
-            String direction = fw.weight > 0 ? "positive" : (fw.weight < 0 ? "negative" : "neutral");
-            return new FeatureInfo(fw.featureName, fw.weight, fw.significance, direction);
+        public static FeatureInfo fromDomain(FeatureWeight fw) {
+            return new FeatureInfo(fw.featureName(), fw.weight(), fw.significance(), fw.direction());
         }
     }
 
@@ -71,9 +71,8 @@ public record FeatureImportanceResponse(
             @JsonProperty("median") double median,
             @JsonProperty("percentile95") double percentile95
     ) {
-        public static Statistics fromAnalyzerResult(
-                sentiment.evaluation.FeatureImportanceAnalyzer.FeatureStatistics stats) {
-            return new Statistics(stats.mean, stats.stdDev, stats.median, stats.percentile95);
+        public static Statistics fromDomain(FeatureStatistics stats) {
+            return new Statistics(stats.mean(), stats.stdDev(), stats.median(), stats.percentile95());
         }
     }
 

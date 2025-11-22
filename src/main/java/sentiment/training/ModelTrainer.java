@@ -10,7 +10,7 @@ import sentiment.data.DatasetLoadResult;
 import sentiment.evaluation.FeatureImportanceAnalyzer;
 import sentiment.evaluation.FeatureImportancePersistence;
 import sentiment.evaluation.StratifiedDataSplitter;
-import sentiment.evaluation.UniversalFeatureImportanceAnalyzer;
+import sentiment.evaluation.domain.FeatureImportanceResult;
 import sentiment.models.*;
 import sentiment.preprocessing.TextPreprocessor;
 import sentiment.preprocessing.WekaInstancesConverter;
@@ -345,32 +345,23 @@ public class ModelTrainer {
             // Analyze feature importance (with larger topK for saving to file)
             int fullTopK = Math.max(topFeaturesCount, 100); // Save top 100 minimum
 
-            FeatureImportanceAnalyzer.FeatureImportanceResult result;
-
-            // Use SVM-specific analyzer if available (faster), otherwise use universal analyzer
-            if (classifier instanceof SVMClassifier) {
-                logger.info("Using SVM-specific feature importance analyzer");
-                SVMClassifier svmClassifier = (SVMClassifier) classifier;
-                FeatureImportanceAnalyzer analyzer = new FeatureImportanceAnalyzer();
-                result = analyzer.analyzeFeatureImportance(trainedInstances, svmClassifier.getSMO(), fullTopK);
-            } else {
-                logger.info("Using universal feature importance analyzer (perturbation method)");
-                UniversalFeatureImportanceAnalyzer universalAnalyzer = new UniversalFeatureImportanceAnalyzer();
-
-                // Get the underlying Weka classifier
-                weka.classifiers.Classifier wekaClassifier = null;
-                if (classifier instanceof WekaClassifier) {
-                    WekaClassifier wekaClassifierInterface = (WekaClassifier) classifier;
-                    wekaClassifier = wekaClassifierInterface.getWekaClassifier();
-                }
-
-                if (wekaClassifier == null) {
-                    logger.error("Could not extract Weka classifier for feature importance analysis");
-                    return;
-                }
-
-                result = universalAnalyzer.analyzeFeatureImportance(trainedInstances, wekaClassifier, fullTopK);
+            // Get the underlying Weka classifier
+            weka.classifiers.Classifier wekaClassifier = null;
+            if (classifier instanceof WekaClassifier) {
+                WekaClassifier wekaClassifierInterface = (WekaClassifier) classifier;
+                wekaClassifier = wekaClassifierInterface.getWekaClassifier();
             }
+
+            if (wekaClassifier == null) {
+                logger.error("Could not extract Weka classifier for feature importance analysis");
+                return;
+            }
+
+            // Use single unified analyzer for all classifier types
+            logger.info("Analyzing feature importance using perturbation method");
+            FeatureImportanceAnalyzer analyzer = new FeatureImportanceAnalyzer();
+            FeatureImportanceResult result = analyzer.analyzeFeatureImportance(
+                    trainedInstances, wekaClassifier, fullTopK);
 
             // Print the results to console
             printFeatureImportanceReport(result, topFeaturesCount, algorithmType);
@@ -396,19 +387,19 @@ public class ModelTrainer {
     /**
      * Prints a formatted feature importance report to console.
      */
-    private void printFeatureImportanceReport(FeatureImportanceAnalyzer.FeatureImportanceResult result,
+    private void printFeatureImportanceReport(FeatureImportanceResult result,
                                                int topFeaturesCount,
                                                AlgorithmType algorithmType) {
         System.out.println("\n" + "=".repeat(80));
         System.out.println("FEATURE IMPORTANCE ANALYSIS - " + algorithmType.getDisplayName());
         System.out.println("=".repeat(80));
-        System.out.println("Analysis completed in " + result.analysisTimeMs + "ms");
+        System.out.println("Analysis completed in " + result.analysisTimeMs() + "ms");
         System.out.println("\nStatistics:");
-        System.out.println("  Total features: " + result.allFeatures.size());
-        System.out.println("  Mean absolute weight: " + String.format("%.6f", result.statistics.mean));
-        System.out.println("  Std deviation: " + String.format("%.6f", result.statistics.stdDev));
-        System.out.println("  Median: " + String.format("%.6f", result.statistics.median));
-        System.out.println("  95th percentile: " + String.format("%.6f", result.statistics.percentile95));
+        System.out.println("  Total features: " + result.allFeatures().size());
+        System.out.println("  Mean absolute weight: " + String.format("%.6f", result.statistics().mean()));
+        System.out.println("  Std deviation: " + String.format("%.6f", result.statistics().stdDev()));
+        System.out.println("  Median: " + String.format("%.6f", result.statistics().median()));
+        System.out.println("  95th percentile: " + String.format("%.6f", result.statistics().percentile95()));
         System.out.println("=".repeat(80));
 
         result.printTopFeatures(topFeaturesCount);

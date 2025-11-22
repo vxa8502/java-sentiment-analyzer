@@ -845,29 +845,29 @@ public class WekaInstancesConverter extends FilterTrainingTemplate<Instances> {
     // ==================== FEATURE IMPORTANCE ANALYSIS ====================
 
     /**
-     * ARIA'S REQUIREMENT: Analyze feature importance from trained SVM.
+     * ARIA'S REQUIREMENT: Analyze feature importance from trained classifier.
      *
      * This method addresses the gap: "TF-IDF weights are computed but never examined.
      * You don't know which features drive predictions."
      *
      * USAGE:
      * ======
-     * After training your SVM classifier:
+     * After training your classifier:
      * ```java
-     * FeatureImportanceAnalyzer.FeatureImportanceResult result =
-     *     converter.analyzeFeatureImportance(trainedInstances, trainedSVM, 100);
+     * FeatureImportanceResult result =
+     *     converter.analyzeFeatureImportance(trainedInstances, trainedClassifier, 100);
      *
      * result.printTopFeatures(20);  // Print top 20 features
      * ```
      *
      * @param trainedData The Instances used to train the model
-     * @param trainedSVM The trained SMO classifier
+     * @param trainedClassifier The trained Weka classifier (SVM, Naive Bayes, etc.)
      * @param topK Number of top features to extract
      * @return FeatureImportanceResult with ranked features and statistics
      */
-    public FeatureImportanceAnalyzer.FeatureImportanceResult analyzeFeatureImportance(
+    public sentiment.evaluation.domain.FeatureImportanceResult analyzeFeatureImportance(
             Instances trainedData,
-            SMO trainedSVM,
+            weka.classifiers.Classifier trainedClassifier,
             int topK) {
 
         if (!areFiltersInitialized()) {
@@ -877,18 +877,18 @@ public class WekaInstancesConverter extends FilterTrainingTemplate<Instances> {
         logger.info("Analyzing feature importance using FeatureImportanceAnalyzer");
 
         FeatureImportanceAnalyzer analyzer = new FeatureImportanceAnalyzer();
-        return analyzer.analyzeFeatureImportance(trainedData, trainedSVM, topK);
+        return analyzer.analyzeFeatureImportance(trainedData, trainedClassifier, topK);
     }
 
     /**
      * Convenience method: Analyze feature importance and print report.
      *
      * @param trainedData The Instances used to train the model
-     * @param trainedSVM The trained SMO classifier
+     * @param trainedClassifier The trained Weka classifier
      */
-    public void printFeatureImportanceReport(Instances trainedData, SMO trainedSVM) {
-        FeatureImportanceAnalyzer.FeatureImportanceResult result =
-                analyzeFeatureImportance(trainedData, trainedSVM, 50);
+    public void printFeatureImportanceReport(Instances trainedData, weka.classifiers.Classifier trainedClassifier) {
+        sentiment.evaluation.domain.FeatureImportanceResult result =
+                analyzeFeatureImportance(trainedData, trainedClassifier, 50);
 
         System.out.println("\n" + "=".repeat(80));
         System.out.println("FEATURE IMPORTANCE ANALYSIS");
@@ -896,7 +896,7 @@ public class WekaInstancesConverter extends FilterTrainingTemplate<Instances> {
         System.out.println("Configuration: maxFeatures=" + maxFeatures +
                 ", minTermFreq=" + minTermFreq + ", useTfIdf=" + useTfIdf);
         System.out.println("Vocabulary size: " + (vocabulary != null ? vocabulary.size() : 0));
-        System.out.println("\nFeature Statistics: " + result.statistics);
+        System.out.println("\nFeature Statistics: " + result.statistics());
         System.out.println("=".repeat(80));
 
         result.printTopFeatures(30);
