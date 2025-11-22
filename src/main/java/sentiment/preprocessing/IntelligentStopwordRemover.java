@@ -372,19 +372,6 @@ public class IntelligentStopwordRemover {
                         entry.getKey(), tokens.size(), String.format("%.1f", retention), tokens);
             }
         }
-
-        public StopwordStrategy getBestStrategy() {
-            // Best strategy preserves sentiment words while removing noise
-            // Look for strategy that removes reasonable amount but preserves key words
-            return results.entrySet().stream()
-                    .filter(entry -> {
-                        double retentionRate = (double) entry.getValue().size() / originalTokens.size();
-                        return retentionRate >= 0.6 && retentionRate <= 0.85; // Sweet spot
-                    })
-                    .findFirst()
-                    .map(Map.Entry::getKey)
-                    .orElse(StopwordStrategy.SENTIMENT_AWARE);
-        }
     }
 
     /**
