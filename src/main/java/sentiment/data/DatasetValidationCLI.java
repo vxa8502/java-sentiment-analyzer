@@ -8,14 +8,14 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.ComponentScan;
 
 /**
- * CLI tool for validating and reporting on dataset quality.
+ * Command-line tool for validating sentiment analysis dataset quality.
  *
- * Sofia's Philosophy: "Validate your data before you validate your model."
- *
- * Usage:
- *   mvn exec:java -Dexec.mainClass="sentiment.data.DatasetValidationCLI"
+ * <p>The tool generates detailed reports identifying potential data quality issues
+ * that could impact model training and performance.
  *
  * @author Victoria Alabi
+ * @see DatasetStatistics
+ * @see IMDBDatasetLoader
  */
 @SpringBootApplication
 @ComponentScan(basePackages = "sentiment.data")
@@ -25,25 +25,44 @@ public class DatasetValidationCLI implements CommandLineRunner {
 
     private final IMDBDatasetLoader imdbLoader;
 
+    /**
+     * Constructs a new dataset validation CLI with the specified loader.
+     *
+     * @param imdbLoader the IMDB dataset loader for accessing training and test data
+     */
     public DatasetValidationCLI(IMDBDatasetLoader imdbLoader) {
         this.imdbLoader = imdbLoader;
     }
 
+    /**
+     * Application entry point.
+     *
+     * <p>Configures Spring Boot to disable the banner for cleaner console output
+     * and runs the validation CLI.
+     *
+     * @param args command-line arguments (currently unused)
+     */
     public static void main(String[] args) {
-        // Disable Spring Boot banner for cleaner output
         SpringApplication app = new SpringApplication(DatasetValidationCLI.class);
         app.setBannerMode(org.springframework.boot.Banner.Mode.OFF);
         app.run(args);
     }
 
+    /**
+     * Executes the dataset validation workflow.
+     *
+     * @param args command-line arguments (currently unused)
+     * @throws Exception if dataset loading or validation fails
+     */
     @Override
     public void run(String... args) throws Exception {
         printHeader();
 
         // Validate training set
-        logger.info("\n" + "=".repeat(70));
+        String separator = "=".repeat(70);
+        logger.info("\n{}", separator);
         logger.info("VALIDATING TRAINING SET");
-        logger.info("=".repeat(70));
+        logger.info(separator);
 
         DatasetLoadResult trainResult = imdbLoader.loadTrainSet();
         DatasetStatistics trainStats = imdbLoader.computeStatistics(trainResult.datasets());
@@ -52,9 +71,9 @@ public class DatasetValidationCLI implements CommandLineRunner {
         logger.info(trainStats.generateReport());
 
         // Validate test set
-        logger.info("\n" + "=".repeat(70));
+        logger.info("\n{}", separator);
         logger.info("VALIDATING TEST SET");
-        logger.info("=".repeat(70));
+        logger.info(separator);
 
         DatasetLoadResult testResult = imdbLoader.loadTestSet();
         DatasetStatistics testStats = imdbLoader.computeStatistics(testResult.datasets());
@@ -71,68 +90,83 @@ public class DatasetValidationCLI implements CommandLineRunner {
         printFooter(trainStats, testStats);
     }
 
+    /**
+     * Prints the application header banner.
+     */
     private void printHeader() {
-        System.out.println("\n");
-        System.out.println("╔═══════════════════════════════════════════════════════════════════╗");
-        System.out.println("║                                                                   ║");
-        System.out.println("║           IMDB DATASET VALIDATION & QUALITY AUDIT                 ║");
-        System.out.println("║                                                                   ║");
-        System.out.println("║           Following Sofia's Data Quality Standards               ║");
-        System.out.println("║                                                                   ║");
-        System.out.println("╚═══════════════════════════════════════════════════════════════════╝");
-        System.out.println();
+        System.out.println("\n" + "=".repeat(70));
+        System.out.println("IMDB DATASET VALIDATION & QUALITY AUDIT");
+        System.out.println("=".repeat(70) + "\n");
     }
 
+    /**
+     * Compares training and test dataset statistics to detect distribution shifts.
+     *
+     * @param train training dataset statistics
+     * @param test test dataset statistics
+     */
     private void printCrossSetComparison(DatasetStatistics train, DatasetStatistics test) {
-        logger.info("\n" + "=".repeat(70));
+        String separator = "=".repeat(70);
+        logger.info("\n{}", separator);
         logger.info("CROSS-SET COMPARISON");
-        logger.info("=".repeat(70));
+        logger.info(separator);
 
-        logger.info("\n📊 SIZE COMPARISON:");
-        logger.info("   Train: {:,} examples", train.getTotalExamples());
-        logger.info("   Test:  {:,} examples", test.getTotalExamples());
+        logger.info("\nSIZE COMPARISON:");
+        logger.info("   Train: {} examples", String.format("%,d", train.getTotalExamples()));
+        logger.info("   Test:  {} examples", String.format("%,d", test.getTotalExamples()));
 
         double sizeRatio = (double) test.getTotalExamples() / train.getTotalExamples();
-        logger.info("   Ratio: {:.3f} {}", sizeRatio,
-            Math.abs(sizeRatio - 1.0) < 0.01 ? "✓ EQUAL SPLIT" : "");
+        String splitStatus = Math.abs(sizeRatio - 1.0) < 0.01 ? " [EQUAL SPLIT]" : "";
+        logger.info("   Ratio: {}{}", String.format("%.3f", sizeRatio), splitStatus);
 
-        logger.info("\n📏 TEXT LENGTH COMPARISON:");
-        logger.info("   Train Avg: {:.0f} chars | Test Avg: {:.0f} chars",
-            train.getAvgTextLength(), test.getAvgTextLength());
-        logger.info("   Train Median: {:.0f} chars | Test Median: {:.0f} chars",
-            train.getMedianTextLength(), test.getMedianTextLength());
+        logger.info("\nTEXT LENGTH COMPARISON:");
+        logger.info("   Train Avg: {} chars | Test Avg: {} chars",
+            String.format("%.0f", train.getAvgTextLength()),
+            String.format("%.0f", test.getAvgTextLength()));
+        logger.info("   Train Median: {} chars | Test Median: {} chars",
+            String.format("%.0f", train.getMedianTextLength()),
+            String.format("%.0f", test.getMedianTextLength()));
 
         double lengthDiff = Math.abs(train.getAvgTextLength() - test.getAvgTextLength());
         double lengthDiffPct = (lengthDiff / train.getAvgTextLength()) * 100;
-        logger.info("   Difference: {:.1f}% {}", lengthDiffPct,
-            lengthDiffPct < 10 ? "✓ SIMILAR DISTRIBUTION" : "⚠ DISTRIBUTION SHIFT");
+        String distStatus = lengthDiffPct < 10 ? " [SIMILAR]" : " [DISTRIBUTION SHIFT]";
+        logger.info("   Difference: {}{}", String.format("%.1f%%", lengthDiffPct), distStatus);
 
-        logger.info("\n🏷️  LABEL BALANCE COMPARISON:");
-        logger.info("   Train Balance Ratio: {:.3f}", train.getLabelBalanceRatio());
-        logger.info("   Test Balance Ratio:  {:.3f}", test.getLabelBalanceRatio());
+        logger.info("\nLABEL BALANCE COMPARISON:");
+        logger.info("   Train Balance Ratio: {}", String.format("%.3f", train.getLabelBalanceRatio()));
+        logger.info("   Test Balance Ratio:  {}", String.format("%.3f", test.getLabelBalanceRatio()));
 
         boolean bothBalanced = train.isBalanced() && test.isBalanced();
-        logger.info("   Status: {}", bothBalanced ? "✓ BOTH BALANCED" : "⚠ IMBALANCE DETECTED");
+        logger.info("   Status: {}", bothBalanced ? "[BALANCED]" : "[IMBALANCE DETECTED]");
 
-        logger.info("\n📚 VOCABULARY COMPARISON:");
-        logger.info("   Train Vocabulary: {:.0f} unique tokens", train.getVocabularySize());
-        logger.info("   Test Vocabulary:  {:.0f} unique tokens", test.getVocabularySize());
+        logger.info("\nVOCABULARY COMPARISON:");
+        logger.info("   Train Vocabulary: {} unique tokens", String.format("%.0f", train.getVocabularySize()));
+        logger.info("   Test Vocabulary:  {} unique tokens", String.format("%.0f", test.getVocabularySize()));
 
         double vocabRatio = test.getVocabularySize() / train.getVocabularySize();
-        logger.info("   Test/Train Ratio: {:.3f}", vocabRatio);
+        logger.info("   Test/Train Ratio: {}", String.format("%.3f", vocabRatio));
 
         if (vocabRatio > 1.1) {
-            logger.warn("   ⚠ WARNING: Test vocabulary significantly larger than train!");
-            logger.warn("   This may indicate out-of-vocabulary issues.");
+            logger.warn("   WARNING: Test vocabulary significantly larger than train");
+            logger.warn("   This may indicate out-of-vocabulary issues");
         } else {
-            logger.info("   ✓ Test vocabulary coverage looks reasonable");
+            logger.info("   Test vocabulary coverage is reasonable");
         }
     }
 
+    /**
+     * Displays sample data from the dataset for manual inspection.
+     *
+     * <p>Shows the first 3 examples with sentiment labels, text length,
+     * and a preview of the text content (truncated to 150 characters).
+     *
+     * @param datasets the dataset examples to preview
+     */
     private void printDataSamples(java.util.List<Dataset> datasets) {
-        logger.info("\n" + "=".repeat(70));
+        String separator = "=".repeat(70);
+        logger.info("\n{}", separator);
         logger.info("DATA PREVIEW (First 3 Examples)");
-        logger.info("=".repeat(70));
+        logger.info(separator);
 
         for (int i = 0; i < Math.min(3, datasets.size()); i++) {
             Dataset d = datasets.get(i);
@@ -147,6 +181,15 @@ public class DatasetValidationCLI implements CommandLineRunner {
         }
     }
 
+    /**
+     * Prints the validation summary with overall quality assessment.
+     *
+     * <p>Reports the pass/fail status of quality checks for both training
+     * and test datasets, along with an overall readiness determination.
+     *
+     * @param train training dataset statistics
+     * @param test test dataset statistics
+     */
     private void printFooter(DatasetStatistics train, DatasetStatistics test) {
         System.out.println("\n" + "=".repeat(70));
         System.out.println("VALIDATION SUMMARY");
@@ -155,19 +198,18 @@ public class DatasetValidationCLI implements CommandLineRunner {
         boolean allChecksPass = train.passesQualityChecks() && test.passesQualityChecks();
 
         System.out.println("\nTrain Set Quality: " +
-            (train.passesQualityChecks() ? "✅ PASS" : "⚠️  WARNINGS"));
+            (train.passesQualityChecks() ? "PASS" : "WARNINGS DETECTED"));
         System.out.println("Test Set Quality:  " +
-            (test.passesQualityChecks() ? "✅ PASS" : "⚠️  WARNINGS"));
+            (test.passesQualityChecks() ? "PASS" : "WARNINGS DETECTED"));
 
-        System.out.println("\n" + (allChecksPass ? "✅" : "⚠️") + " Overall Status: " +
-            (allChecksPass ? "READY FOR TRAINING" : "REVIEW WARNINGS"));
+        System.out.println("\nOverall Status: " +
+            (allChecksPass ? "READY FOR TRAINING" : "REVIEW WARNINGS BEFORE TRAINING"));
 
-        System.out.println("\n" + "=".repeat(70));
-        System.out.println("\nSofia's Note:");
-        System.out.println("  • Data quality validated ✓");
-        System.out.println("  • Label distributions checked ✓");
-        System.out.println("  • Train/test consistency verified ✓");
-        System.out.println("  • Ready to build reliable models!");
+        System.out.println("\nValidation Complete:");
+        System.out.println("  - Data quality validated");
+        System.out.println("  - Label distributions checked");
+        System.out.println("  - Train/test consistency verified");
+
         System.out.println("\n" + "=".repeat(70) + "\n");
     }
 }

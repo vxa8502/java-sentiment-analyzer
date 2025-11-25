@@ -1,5 +1,7 @@
 package sentiment.data;
 
+import sentiment.util.ValidationUtils;
+
 /**
  * Simplified exception for data loading errors.
  * Focuses only on essential information without complex categorization.
@@ -58,7 +60,7 @@ public class DataLoadingException extends Exception {
         sb.append(super.getMessage());
 
         // Add context information
-        if (filePath != null && !filePath.isEmpty()) {
+        if (!ValidationUtils.isNullOrEmpty(filePath)) {
             sb.append(" (file: ").append(getFileName()).append(")");
         }
 
@@ -69,7 +71,7 @@ public class DataLoadingException extends Exception {
      * Get just the filename from the full path
      */
     private String getFileName() {
-        if (filePath == null || filePath.isEmpty()) {
+        if (ValidationUtils.isNullOrEmpty(filePath)) {
             return "unknown file";
         }
 

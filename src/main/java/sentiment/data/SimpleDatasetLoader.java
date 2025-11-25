@@ -6,6 +6,7 @@ import org.apache.commons.csv.CSVRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
+import sentiment.util.ValidationUtils;
 
 import java.io.BufferedReader;
 import java.io.FileReader;
@@ -133,12 +134,12 @@ public class SimpleDatasetLoader {
                         String sentimentStr = record.get(sentimentColumn);
 
                         // Basic validation
-                        if (text == null || text.trim().isEmpty()) {
+                        if (ValidationUtils.isNullOrEmpty(text)) {
                             skippedRows++;
                             continue;
                         }
 
-                        if (sentimentStr == null || sentimentStr.trim().isEmpty()) {
+                        if (ValidationUtils.isNullOrEmpty(sentimentStr)) {
                             skippedRows++;
                             continue;
                         }
@@ -285,7 +286,9 @@ public class SimpleDatasetLoader {
     //  UTILITIES
 
     private void validateFile(String filePath) throws DataLoadingException {
-        if (filePath == null || filePath.trim().isEmpty()) {
+        try {
+            ValidationUtils.requireNonEmpty(filePath, "File path");
+        } catch (IllegalArgumentException e) {
             throw new DataLoadingException("File path cannot be null or empty", filePath, "Unknown");
         }
 

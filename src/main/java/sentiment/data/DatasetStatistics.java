@@ -4,38 +4,45 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * Comprehensive dataset statistics for validation and analysis.
- *
- * Sofia's Philosophy: "You can't validate what you can't measure."
- *
- * This class computes key metrics for dataset quality assessment:
- * - Label distribution (balance check)
- * - Text length statistics (edge case detection)
- * - Vocabulary diversity (representation check)
- * - Duplicate detection (data leakage prevention)
+ * Immutable statistics for dataset validation and quality assessment.
  *
  * @author Victoria Alabi
  */
+@SuppressWarnings("unused") // Public API - methods used by CLI tools and external consumers
 public class DatasetStatistics {
 
-    // Basic counts
+    /** Total number of examples in the dataset. */
     private final int totalExamples;
+
+    /** Count of examples for each sentiment label. */
     private final Map<Dataset.SentimentLabel, Long> labelCounts;
 
-    // Text statistics
+    /** Average text length in characters. */
     private final double avgTextLength;
+
+    /** Minimum text length in characters. */
     private final int minTextLength;
+
+    /** Maximum text length in characters. */
     private final int maxTextLength;
+
+    /** Median text length in characters. */
     private final double medianTextLength;
 
-    // Quality metrics
+    /** Number of duplicate texts (case-insensitive). */
     private final int duplicateCount;
+
+    /** Number of unique texts. */
     private final int uniqueTexts;
+
+    /** Total vocabulary size (unique tokens). */
     private final double vocabularySize;
 
-    // Distribution analysis
+    /** Percentage distribution of each label. */
     private final Map<Dataset.SentimentLabel, Double> labelPercentages;
-    private final double labelBalanceRatio; // Closest to 1.0 = balanced
+
+    /** Ratio of smallest to largest class (0.0 to 1.0, higher is more balanced). */
+    private final double labelBalanceRatio;
 
     private DatasetStatistics(Builder builder) {
         this.totalExamples = builder.totalExamples;
@@ -52,13 +59,11 @@ public class DatasetStatistics {
     }
 
     /**
-     * Compute comprehensive statistics for a dataset.
+     * Computes statistics for the given dataset.
      *
-     * Sofia's checklist:
-     * ✓ Label distribution
-     * ✓ Text length distribution
-     * ✓ Duplicate detection
-     * ✓ Vocabulary diversity
+     * @param datasets the dataset examples to analyze
+     * @return computed statistics
+     * @throws IllegalArgumentException if datasets is null or empty
      */
     public static DatasetStatistics compute(List<Dataset> datasets) {
         if (datasets == null || datasets.isEmpty()) {
@@ -97,7 +102,7 @@ public class DatasetStatistics {
         List<Integer> lengths = datasets.stream()
             .map(Dataset::getTextLength)
             .sorted()
-            .collect(Collectors.toList());
+            .toList();
 
         builder.minTextLength = lengths.get(0);
         builder.maxTextLength = lengths.get(lengths.size() - 1);
@@ -132,61 +137,66 @@ public class DatasetStatistics {
         return builder.build();
     }
 
-    // Getters
+    /** @return total number of examples */
     public int getTotalExamples() { return totalExamples; }
+
+    /** @return count of examples for each label */
     public Map<Dataset.SentimentLabel, Long> getLabelCounts() { return labelCounts; }
+
+    /** @return average text length in characters */
     public double getAvgTextLength() { return avgTextLength; }
+
+    /** @return minimum text length in characters */
     public int getMinTextLength() { return minTextLength; }
+
+    /** @return maximum text length in characters */
     public int getMaxTextLength() { return maxTextLength; }
+
+    /** @return median text length in characters */
     public double getMedianTextLength() { return medianTextLength; }
+
+    /** @return number of duplicate texts */
     public int getDuplicateCount() { return duplicateCount; }
+
+    /** @return number of unique texts */
     public int getUniqueTexts() { return uniqueTexts; }
+
+    /** @return vocabulary size (unique tokens) */
     public double getVocabularySize() { return vocabularySize; }
+
+    /** @return percentage distribution of each label (0-100) */
     public Map<Dataset.SentimentLabel, Double> getLabelPercentages() { return labelPercentages; }
+
+    /** @return label balance ratio (1.0 = perfectly balanced) */
     public double getLabelBalanceRatio() { return labelBalanceRatio; }
 
-    /**
-     * Check if dataset is well-balanced.
-     * Sofia's threshold: Ratio > 0.8 is acceptable, > 0.95 is excellent.
-     */
+    /** @return true if balance ratio >= 0.8 */
     public boolean isBalanced() {
         return labelBalanceRatio >= 0.8;
     }
 
-    /**
-     * Check if there are significant duplicates.
-     * Sofia's threshold: < 1% duplicates is acceptable.
-     */
+    /** @return true if duplicate rate < 1% */
     public boolean hasMinimalDuplicates() {
         double duplicateRate = (duplicateCount * 100.0) / totalExamples;
         return duplicateRate < 1.0;
     }
 
-    /**
-     * Check if text lengths are reasonable (no degenerate cases).
-     * Sofia's rule: Min > 10 chars, no empty texts.
-     */
+    /** @return true if text lengths are reasonable (min > 10, max < 100000) */
     public boolean hasReasonableTextLengths() {
         return minTextLength > 10 && maxTextLength < 100000;
     }
 
-    /**
-     * Overall data quality assessment.
-     *
-     * @return true if dataset passes all quality checks
-     */
+    /** @return true if all quality checks pass */
     public boolean passesQualityChecks() {
         return isBalanced() && hasMinimalDuplicates() && hasReasonableTextLengths();
     }
 
-    /**
-     * Generate a formatted report for logging.
-     */
+    /** @return formatted report of all statistics */
     public String generateReport() {
         StringBuilder sb = new StringBuilder();
 
         sb.append("\n╔════════════════════════════════════════════════════════════╗\n");
-        sb.append("║           DATASET QUALITY REPORT (Sofia's Audit)           ║\n");
+        sb.append("║              DATASET QUALITY REPORT                        ║\n");
         sb.append("╚════════════════════════════════════════════════════════════╝\n\n");
 
         // Basic info
@@ -238,7 +248,6 @@ public class DatasetStatistics {
         return generateReport();
     }
 
-    // Builder pattern
     private static class Builder {
         private int totalExamples;
         private Map<Dataset.SentimentLabel, Long> labelCounts;
