@@ -80,7 +80,7 @@ public class SimpleDatasetLoader {
         );
     }
 
-    // ==================== CSV LOADING ====================
+    // CSV LOADING
 
     /**
      * Load CSV/TSV format with flexible column detection.
@@ -195,8 +195,8 @@ public class SimpleDatasetLoader {
 
         double errorRate = (double) skippedRows / totalRows;
         if (errorRate > 0.5) {
-            logger.warn("High error rate: {}/{} rows skipped ({:.1f}%)",
-                skippedRows, totalRows, errorRate * 100);
+            logger.warn("High error rate: {}/{} rows skipped ({}%)",
+                skippedRows, totalRows, String.format("%.1f", errorRate * 100));
         }
 
         logger.info("CSV loading complete: {}/{} rows loaded successfully", successfulRows, totalRows);
@@ -225,22 +225,28 @@ public class SimpleDatasetLoader {
         String lower = sentiment.toLowerCase();
 
         // Handle text labels
-        if (lower.equals("positive") || lower.equals("pos") || lower.equals("1") || lower.equals("4")) {
-            return Dataset.SentimentLabel.POSITIVE;
-        }
-        if (lower.equals("negative") || lower.equals("neg") || lower.equals("0") || lower.equals("-1")) {
-            return Dataset.SentimentLabel.NEGATIVE;
-        }
-        if (lower.equals("neutral") || lower.equals("2")) {
-            return Dataset.SentimentLabel.NEUTRAL;
+        switch (lower) {
+            case "positive", "pos", "1", "4" -> {
+                return Dataset.SentimentLabel.POSITIVE;
+            }
+            case "negative", "neg", "0", "-1" -> {
+                return Dataset.SentimentLabel.NEGATIVE;
+            }
+            case "neutral", "2" -> {
+                return Dataset.SentimentLabel.NEUTRAL;
+            }
         }
 
         // Handle numeric ratings (1-5 stars)
         try {
             double rating = Double.parseDouble(sentiment);
-            if (rating <= 2.0) return Dataset.SentimentLabel.NEGATIVE;
-            if (rating >= 4.0) return Dataset.SentimentLabel.POSITIVE;
-            if (rating > 2.0 && rating < 4.0) return Dataset.SentimentLabel.NEUTRAL;
+            if (rating <= 2.0) {
+                return Dataset.SentimentLabel.NEGATIVE;
+            } else if (rating >= 4.0) {
+                return Dataset.SentimentLabel.POSITIVE;
+            } else {
+                return Dataset.SentimentLabel.NEUTRAL;
+            }
         } catch (NumberFormatException e) {
             // Not a number, continue
         }
@@ -248,7 +254,7 @@ public class SimpleDatasetLoader {
         return null; // Unknown format
     }
 
-    // ==================== JSONL LOADING (STUB) ====================
+    // JSONL LOADING (STUB)
 
     /**
      * Load JSON Lines format.
@@ -262,7 +268,7 @@ public class SimpleDatasetLoader {
         );
     }
 
-    // ==================== PLAINTEXT LOADING (STUB) ====================
+    // PLAINTEXT LOADING (STUB)
 
     /**
      * Load plaintext format (e.g., FastText: __label__positive This is great).
@@ -276,7 +282,7 @@ public class SimpleDatasetLoader {
         );
     }
 
-    // ==================== UTILITIES ====================
+    //  UTILITIES
 
     private void validateFile(String filePath) throws DataLoadingException {
         if (filePath == null || filePath.trim().isEmpty()) {

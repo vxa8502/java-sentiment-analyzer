@@ -51,9 +51,7 @@ public class Dataset {
          * Parse sentiment from various string representations
          */
         public static SentimentLabel fromString(String label) {
-            if (label == null || label.trim().isEmpty()) {
-                throw new IllegalArgumentException("Sentiment label cannot be null or empty");
-            }
+            ValidationUtils.requireNonEmpty(label, "Sentiment label");
 
             String normalized = label.trim().toLowerCase();
 

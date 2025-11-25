@@ -27,11 +27,22 @@ public class DataLoadingException extends Exception {
         this.datasetType = datasetType;
     }
 
-    // Getters
+    /**
+     * Returns the file path associated with this exception.
+     *
+     * @return the file path, or null if not available
+     */
+    @SuppressWarnings("unused") // Public API for exception handling
     public String getFilePath() {
         return filePath;
     }
 
+    /**
+     * Returns the dataset type associated with this exception.
+     *
+     * @return the dataset type (e.g., "CSV", "JSONL")
+     */
+    @SuppressWarnings("unused") // Public API for exception handling
     public String getDatasetType() {
         return datasetType;
     }

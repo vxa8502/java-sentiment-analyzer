@@ -11,13 +11,14 @@ import java.util.List;
 /**
  * Specialized loader for IMDB Large Movie Review Dataset.
  *
- * Sofia's Principle: "Dataset-specific loaders encapsulate domain knowledge."
- *
- * The IMDB dataset has specific characteristics:
- * - Binary sentiment (positive >= 7/10 rating, negative <= 4/10)
- * - 25K train, 25K test
- * - Balanced class distribution
- * - Movie reviews (longer text, complex language)
+ * <p>Dataset-specific loaders encapsulate domain knowledge. The IMDB dataset
+ * has specific characteristics that require specialized handling:
+ * <ul>
+ *   <li>Binary sentiment (positive: rating >= 7/10, negative: rating <= 4/10)</li>
+ *   <li>25,000 training samples, 25,000 test samples</li>
+ *   <li>Balanced class distribution (50/50)</li>
+ *   <li>Movie reviews with longer text and complex language</li>
+ * </ul>
  *
  * @author Victoria Alabi
  */
@@ -33,10 +34,10 @@ public class IMDBDatasetLoader {
     }
 
     /**
-     * Load IMDB training set (25,000 reviews).
+     * Loads the IMDB training set containing 25,000 reviews.
      *
-     * @return DatasetLoadResult with training data
-     * @throws DataLoadingException if loading fails
+     * @return dataset load result with training data and metadata
+     * @throws DataLoadingException if loading or validation fails
      */
     public DatasetLoadResult loadTrainSet() throws DataLoadingException {
         String path = "src/main/resources/datasets/v1_raw/imdb_train.csv";
@@ -45,16 +46,16 @@ public class IMDBDatasetLoader {
         DatasetLoadResult result = baseLoader.loadWithMetadata(path);
 
         // Validate expected size
-        validateIMDBDataset(result.datasets(), "train", 25000);
+        validateIMDBDataset(result.datasets(), "train");
 
         return result;
     }
 
     /**
-     * Load IMDB test set (25,000 reviews).
+     * Loads the IMDB test set containing 25,000 reviews.
      *
-     * @return DatasetLoadResult with test data
-     * @throws DataLoadingException if loading fails
+     * @return dataset load result with test data and metadata
+     * @throws DataLoadingException if loading or validation fails
      */
     public DatasetLoadResult loadTestSet() throws DataLoadingException {
         String path = "src/main/resources/datasets/v1_raw/imdb_test.csv";
@@ -63,20 +64,25 @@ public class IMDBDatasetLoader {
         DatasetLoadResult result = baseLoader.loadWithMetadata(path);
 
         // Validate expected size
-        validateIMDBDataset(result.datasets(), "test", 25000);
+        validateIMDBDataset(result.datasets(), "test");
 
         return result;
     }
 
     /**
-     * Load stratified subset for quick experiments.
+     * Loads a stratified subset of the IMDB dataset for quick experiments.
      *
-     * Marcus's insight: "Not every experiment needs 25K examples."
+     * <p>Creates a balanced subset by sampling equal numbers of positive and negative
+     * examples. The subset is shuffled to avoid ordering bias. This is useful for
+     * rapid prototyping where the full 25,000 examples are not necessary.
      *
-     * @param subset "train" or "test"
-     * @param size number of examples to load (will be balanced)
-     * @return stratified subset
+     * @param subset the dataset to load ("train" or "test")
+     * @param size the number of examples to load (must be between 1 and 25,000; will be balanced 50/50)
+     * @return dataset load result with stratified subset
+     * @throws IllegalArgumentException if size is not between 1 and 25,000
+     * @throws DataLoadingException if loading fails
      */
+    @SuppressWarnings("unused") // Public API method
     public DatasetLoadResult loadSubset(String subset, int size) throws DataLoadingException {
         if (size <= 0 || size > 25000) {
             throw new IllegalArgumentException("Subset size must be between 1 and 25000, got: " + size);
@@ -123,17 +129,24 @@ public class IMDBDatasetLoader {
     }
 
     /**
-     * Validate IMDB dataset properties.
+     * Validates IMDB dataset properties and logs quality metrics.
      *
-     * Sofia's checklist:
-     * ✓ Expected size (25K for full sets)
-     * ✓ Label balance (50/50)
-     * ✓ No empty texts
+     * <p>Performs validation checks on:
+     * <ul>
+     *   <li>Expected size (25,000 for full sets)</li>
+     *   <li>Label balance (should be 50/50 positive/negative)</li>
+     *   <li>No empty or null text content</li>
+     * </ul>
+     *
+     * @param datasets the list of datasets to validate
+     * @param setName the name of the dataset set (e.g., "train", "test")
+     * @throws DataLoadingException if validation fails critically (e.g., empty texts found)
      */
-    private void validateIMDBDataset(List<Dataset> datasets, String setName, int expectedSize)
+    private void validateIMDBDataset(List<Dataset> datasets, String setName)
             throws DataLoadingException {
 
-        // Check size
+        // Check size (IMDB full sets are always 25,000)
+        int expectedSize = 25000;
         if (datasets.size() != expectedSize) {
             logger.warn("IMDB {} set size mismatch: expected {}, got {}",
                 setName, expectedSize, datasets.size());
@@ -150,8 +163,8 @@ public class IMDBDatasetLoader {
 
         double balanceRatio = (double) posCount / negCount;
 
-        logger.info("IMDB {} set: {} total ({} positive, {} negative, ratio: {:.3f})",
-            setName, datasets.size(), posCount, negCount, balanceRatio);
+        logger.info("IMDB {} set: {} total ({} positive, {} negative, ratio: {})",
+            setName, datasets.size(), posCount, negCount, String.format("%.3f", balanceRatio));
 
         // Warn if imbalanced (should be exactly 50/50 for IMDB)
         if (Math.abs(balanceRatio - 1.0) > 0.01) {
@@ -177,36 +190,41 @@ public class IMDBDatasetLoader {
     }
 
     /**
-     * Load IMDB dataset with proper train/validation/test split.
+     * Loads IMDB dataset with proper train/validation/test split using default ratios.
      *
-     * Aria's Principle: "Proper evaluation protocol requires 3-way split."
-     * Sofia's Principle: "Stratification ensures representative splits."
+     * <p>Proper evaluation protocol requires a 3-way split with stratification to ensure
+     * representative splits. The evaluation protocol is:
+     * <ul>
+     *   <li><b>Train (60%)</b>: Model training</li>
+     *   <li><b>Validation (20%)</b>: Hyperparameter tuning and model selection</li>
+     *   <li><b>Test (20%)</b>: Final unbiased performance evaluation (use ONCE only)</li>
+     * </ul>
      *
-     * EVALUATION PROTOCOL:
-     * ====================
-     * - Train (60%): Model training
-     * - Validation (20%): Hyperparameter tuning and model selection
-     * - Test (20%): Final unbiased performance evaluation (use ONCE)
+     * <p>This prevents information leakage where the test set is used for model selection,
+     * which would lead to overoptimistic performance estimates.
      *
-     * This prevents information leakage where test set is used for model selection,
-     * leading to overoptimistic performance estimates.
-     *
-     * @return IMDBDataSplit with train, validation, and test sets
-     * @throws DataLoadingException if loading fails
+     * @return IMDB data split with train, validation, and test sets
+     * @throws DataLoadingException if loading or splitting fails
      */
+    @SuppressWarnings("unused") // Public API method
     public IMDBDataSplit loadWithValSplit() throws DataLoadingException {
         return loadWithValSplit(0.6, 0.2, 0.2, 42L);
     }
 
     /**
-     * Load IMDB dataset with custom split ratios.
+     * Loads IMDB dataset with custom split ratios and random seed.
      *
-     * @param trainRatio proportion for training (e.g., 0.6)
-     * @param valRatio proportion for validation (e.g., 0.2)
-     * @param testRatio proportion for test (e.g., 0.2)
-     * @param randomSeed seed for reproducibility
-     * @return IMDBDataSplit with train, validation, and test sets
-     * @throws DataLoadingException if loading fails
+     * <p>Combines both IMDB train and test files (50K total) and splits them
+     * according to the specified ratios. This allows true custom splits but
+     * means the test set won't match IMDB's official test set.
+     *
+     * @param trainRatio the proportion for training (e.g., 0.6 for 60%)
+     * @param valRatio the proportion for validation (e.g., 0.2 for 20%)
+     * @param testRatio the proportion for test (e.g., 0.2 for 20%)
+     * @param randomSeed the random seed for reproducibility
+     * @return IMDB data split with train, validation, and test sets
+     * @throws IllegalArgumentException if ratios don't sum to 1.0
+     * @throws DataLoadingException if loading or splitting fails
      */
     public IMDBDataSplit loadWithValSplit(
             double trainRatio,
@@ -214,55 +232,72 @@ public class IMDBDatasetLoader {
             double testRatio,
             long randomSeed) throws DataLoadingException {
 
+        // Validate ratios sum to 1.0
+        double sum = trainRatio + valRatio + testRatio;
+        if (Math.abs(sum - 1.0) > 0.001) {
+            throw new IllegalArgumentException(
+                String.format("Ratios must sum to 1.0, got: %.3f (train=%.2f, val=%.2f, test=%.2f)",
+                    sum, trainRatio, valRatio, testRatio));
+        }
+
         logger.info("Loading IMDB dataset with {}/{}/{} train/val/test split (seed={})",
                 (int)(trainRatio * 100), (int)(valRatio * 100), (int)(testRatio * 100), randomSeed);
 
-        // Load full training set (we'll split it ourselves)
+        // Load both IMDB files to get full 50K dataset
         String trainPath = "src/main/resources/datasets/v1_raw/imdb_train.csv";
         DatasetLoadResult trainResult = baseLoader.loadWithMetadata(trainPath);
-        List<Dataset> fullTrainData = trainResult.datasets();
+        List<Dataset> trainData = trainResult.datasets();
 
-        // Load test set (keep as-is for benchmark comparisons)
         String testPath = "src/main/resources/datasets/v1_raw/imdb_test.csv";
         DatasetLoadResult testResult = baseLoader.loadWithMetadata(testPath);
         List<Dataset> testData = testResult.datasets();
 
-        logger.info("Loaded {} training examples, {} test examples",
-                fullTrainData.size(), testData.size());
+        // Combine both files for true custom split
+        List<Dataset> allData = new java.util.ArrayList<>(trainData);
+        allData.addAll(testData);
 
-        // Perform stratified split on training set to create train/val
-        // Recalculate ratios: if we want 60/20/20 overall and test is separate,
-        // we need to split the training set into 75/25 (which gives 60/20 of total)
-        double adjustedTrainRatio = trainRatio / (trainRatio + valRatio);
-        double adjustedValRatio = valRatio / (trainRatio + valRatio);
+        logger.info("Loaded {} total examples (combining train + test files)",
+                allData.size());
 
-        logger.info("Splitting training set: {:.1f}% train, {:.1f}% validation",
-                adjustedTrainRatio * 100, adjustedValRatio * 100);
-
+        // Perform stratified 3-way split on combined dataset
         DataSplit split = StratifiedDataSplitter.stratifiedSplit(
-                fullTrainData,
-                adjustedTrainRatio,
-                adjustedValRatio,
-                0.0,  // No test set from this split
+                allData,
+                trainRatio,
+                valRatio,
+                testRatio,
                 randomSeed
         );
 
         List<Dataset> trainSplit = split.train;
         List<Dataset> valSplit = split.validation;
+        List<Dataset> testSplit = split.test;
 
         // Validate splits
-        logger.info("Final split sizes: train={}, val={}, test={}",
-                trainSplit.size(), valSplit.size(), testData.size());
+        logger.info("Final split sizes: train={}, val={}, test={} (total={})",
+                trainSplit.size(), valSplit.size(), testSplit.size(), allData.size());
+
+        // Verify actual ratios
+        double actualTrainRatio = (double) trainSplit.size() / allData.size();
+        double actualValRatio = (double) valSplit.size() / allData.size();
+        double actualTestRatio = (double) testSplit.size() / allData.size();
+
+        logger.info("Actual split ratios: {}%/{}%/{}%",
+                String.format("%.1f", actualTrainRatio * 100),
+                String.format("%.1f", actualValRatio * 100),
+                String.format("%.1f", actualTestRatio * 100));
 
         validateSplitDistribution(trainSplit, "train");
         validateSplitDistribution(valSplit, "validation");
-        validateSplitDistribution(testData, "test");
+        validateSplitDistribution(testSplit, "test");
 
-        return new IMDBDataSplit(trainSplit, valSplit, testData);
+        return new IMDBDataSplit(trainSplit, valSplit, testSplit);
     }
 
     /**
-     * Validate that a split maintains label balance.
+     * Validates that a split maintains label balance and logs distribution metrics.
+     *
+     * @param split the dataset split to validate
+     * @param name the name of the split for logging (e.g., "train", "validation", "test")
      */
     private void validateSplitDistribution(List<Dataset> split, String name) {
         long posCount = split.stream()
@@ -274,31 +309,34 @@ public class IMDBDatasetLoader {
 
         double balanceRatio = (double) Math.min(posCount, negCount) / Math.max(posCount, negCount);
 
-        logger.info("{} split: {} examples ({} pos, {} neg, ratio={:.3f})",
-                name, split.size(), posCount, negCount, balanceRatio);
+        logger.info("{} split: {} examples ({} pos, {} neg, ratio={})",
+                name, split.size(), posCount, negCount, String.format("%.3f", balanceRatio));
 
         if (balanceRatio < 0.95) {
-            logger.warn("⚠ {} split is imbalanced (ratio={:.3f})", name, balanceRatio);
+            logger.warn("⚠ {} split is imbalanced (ratio={})", name, String.format("%.3f", balanceRatio));
         } else {
             logger.info("✓ {} split is balanced", name);
         }
     }
 
     /**
-     * Get dataset statistics for reporting.
+     * Computes comprehensive dataset statistics for quality reporting.
      *
-     * Aria's insight: "Always understand your data distribution."
+     * <p>Statistics include label distribution, text length metrics, duplicate detection,
+     * and vocabulary diversity. Use this to understand your data distribution before training.
+     *
+     * @param datasets the list of datasets to analyze
+     * @return dataset statistics with comprehensive metrics
      */
     public DatasetStatistics computeStatistics(List<Dataset> datasets) {
         return DatasetStatistics.compute(datasets);
     }
 
     /**
-     * Result record for 3-way split.
+     * Record encapsulating a 3-way dataset split (train, validation, test).
      *
-     * USAGE:
-     * ======
-     * ```java
+     * <p><b>Usage Example:</b>
+     * <pre>{@code
      * IMDBDataSplit split = loader.loadWithValSplit();
      *
      * // Train model
@@ -309,7 +347,11 @@ public class IMDBDatasetLoader {
      *
      * // Final evaluation on test set (ONCE!)
      * ClassifierEvaluationResult finalResult = classifier.evaluate(split.test());
-     * ```
+     * }</pre>
+     *
+     * @param train the training dataset
+     * @param validation the validation dataset for hyperparameter tuning
+     * @param test the test dataset for final evaluation
      */
     public record IMDBDataSplit(
             List<Dataset> train,
@@ -326,14 +368,18 @@ public class IMDBDatasetLoader {
         }
 
         /**
-         * Get total dataset size.
+         * Returns the total number of samples across all splits.
+         *
+         * @return combined size of train, validation, and test sets
          */
         public int totalSize() {
             return train.size() + validation.size() + test.size();
         }
 
         /**
-         * Get split summary for logging.
+         * Returns a formatted summary of the split sizes for logging.
+         *
+         * @return summary string with split sizes
          */
         public String summary() {
             return String.format("Train: %,d | Val: %,d | Test: %,d | Total: %,d",
