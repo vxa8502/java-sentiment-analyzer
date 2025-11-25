@@ -9,9 +9,13 @@ import java.util.Map;
 import java.util.regex.Pattern;
 
 /**
- * Expands English contractions for improved text preprocessing.
- * Uses regex-based word boundary matching to avoid partial word replacements.
- * Thread-safe and optimized for performance with compiled patterns.
+ * Expands English contractions to normalize text for sentiment analysis.
+ * <p>
+ * Preserves capitalization for component reusability and debugging clarity,
+ * though downstream processing typically lowercases all tokens for ML.
+ * <p>
+ * Uses word boundary matching to prevent false matches (e.g., "candy" won't match "can't").
+ * Thread-safe with pre-compiled regex patterns for performance.
  */
 @Component
 public class ContractionExpander {
@@ -121,10 +125,8 @@ public class ContractionExpander {
 
     /**
      * Expands contractions in the given text using word boundary matching.
-     * Preserves original capitalization patterns where possible.
-     *
-     * @param text The input text containing potential contractions
-     * @return Text with contractions expanded to full forms
+     * @param text the input text containing potential contractions
+     * @return text with contractions expanded to full forms
      */
     public String expand(String text) {
         if (ValidationUtils.isNullOrEmpty(text)) {
@@ -166,10 +168,9 @@ public class ContractionExpander {
 
     /**
      * Preserves capitalization patterns when expanding contractions.
-     * Examples:
-     * - "Don't" -> "Do not" (capitalize first word)
-     * - "DON'T" -> "DO NOT" (all caps)
-     * - "don't" -> "do not" (lowercase)
+     * <p>
+     * Maintains readable output for debugging and supports reuse in contexts
+     * where case preservation matters (though the sentiment pipeline lowercases later).
      */
     private String preserveCapitalization(String original, String replacement) {
         if (original.equals(original.toUpperCase())) {

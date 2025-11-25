@@ -226,10 +226,11 @@ public class TextPreprocessor {
         // HTML tags
         cleaned = HTML_PATTERN.matcher(cleaned).replaceAll(" ");
 
-        // Expand contractions BEFORE lowercase
+        // Expand contractions before lowercasing
+        // (Order doesn't affect final tokens, but maintains readable intermediate output)
         cleaned = contractionExpander.expand(cleaned);
 
-        // Lowercase
+        // Lowercase for normalization
         cleaned = cleaned.toLowerCase();
 
         // Repeated characters
@@ -430,6 +431,7 @@ public class TextPreprocessor {
      *
      * @return comprehensive version info
      */
+    @SuppressWarnings("unused") // Public API for monitoring and diagnostics
     public PipelineVersionInfo getVersionInfo() {
         return new PipelineVersionInfo(
                 VERSION,
@@ -445,6 +447,7 @@ public class TextPreprocessor {
      * @param data datasets to analyze
      * @return preprocessing statistics including word counts and analysis
      */
+    @SuppressWarnings("unused") // Public API for pipeline analysis and monitoring
     public PreprocessingStats getPreprocessingStats(List<Dataset> data) {
         if (data == null || data.isEmpty()) {
             return new PreprocessingStats(0, 0, 0, 0, new CleaningMetrics(), null, null);
@@ -767,27 +770,14 @@ public class TextPreprocessor {
         }
     }
 
-    public static class PreprocessingStats {
-        public final int totalTexts;
-        public final int originalWords;
-        public final int cleanedWords;
-        public final int filteredWords;
-        public final CleaningMetrics cleaningMetrics;
-        public final AdvancedTokenizer.TokenizationAnalysis tokenizationAnalysis;
-        public final IntelligentStopwordRemover.StopwordAnalysis stopwordAnalysis;
-
-        public PreprocessingStats(int totalTexts, int originalWords, int cleanedWords,
-                                  int filteredWords, CleaningMetrics cleaningMetrics,
-                                  AdvancedTokenizer.TokenizationAnalysis tokenizationAnalysis,
-                                  IntelligentStopwordRemover.StopwordAnalysis stopwordAnalysis) {
-            this.totalTexts = totalTexts;
-            this.originalWords = originalWords;
-            this.cleanedWords = cleanedWords;
-            this.filteredWords = filteredWords;
-            this.cleaningMetrics = cleaningMetrics;
-            this.tokenizationAnalysis = tokenizationAnalysis;
-            this.stopwordAnalysis = stopwordAnalysis;
-        }
+    public record PreprocessingStats(
+            int totalTexts,
+            int originalWords,
+            int cleanedWords,
+            int filteredWords,
+            CleaningMetrics cleaningMetrics,
+            AdvancedTokenizer.TokenizationAnalysis tokenizationAnalysis,
+            IntelligentStopwordRemover.StopwordAnalysis stopwordAnalysis) {
 
         @Override
         public String toString() {
@@ -799,14 +789,17 @@ public class TextPreprocessor {
             );
         }
 
+        @SuppressWarnings("unused") // Public API for statistics analysis
         public double getCompressionRatio() {
             return originalWords > 0 ? (double) filteredWords / originalWords : 0.0;
         }
 
+        @SuppressWarnings("unused") // Public API for statistics analysis
         public double getTokenizationEfficiency() {
             return originalWords > 0 ? (double) cleanedWords / originalWords : 0.0;
         }
 
+        @SuppressWarnings("unused") // Public API for statistics analysis
         public double getStopwordFilteringRatio() {
             return cleanedWords > 0 ? (double) filteredWords / cleanedWords : 0.0;
         }
@@ -852,6 +845,7 @@ public class TextPreprocessor {
          *
          * @return compact version string
          */
+        @SuppressWarnings("unused") // Public API for version reporting
         public String getCompactVersion() {
             return String.format("Pipeline-v%s (CE:%s|TOK:%s|SW:%s)",
                     preprocessorVersion, contractionExpanderVersion, tokenizerVersion,
@@ -864,6 +858,7 @@ public class TextPreprocessor {
      *
      * @param sampleText sample text to process
      */
+    @SuppressWarnings("unused") // Public API for demonstration and testing
     public void demonstrateIntegratedPipeline(String sampleText) {
         logger.info("=== Integrated Text Preprocessing Pipeline Demonstration ===");
         logger.info("Original text: '{}'", sampleText);
@@ -895,6 +890,7 @@ public class TextPreprocessor {
      *
      * @param sampleText sample text to clean
      */
+    @SuppressWarnings("unused") // Public API for demonstration and testing
     public void demonstrateCleaning(String sampleText) {
         logger.info("=== Text Cleaning Demonstration (Integrated Pipeline) ===");
         logger.info("Original: '{}'", sampleText);
@@ -918,6 +914,7 @@ public class TextPreprocessor {
      * @param trainingData training datasets
      * @param newText new text to transform
      */
+    @SuppressWarnings("unused") // Public API for demonstration and testing
     public void demonstrateFitTransform(List<Dataset> trainingData, String newText) {
         logger.info("=== Fit/Transform Workflow Demonstration ===");
 
@@ -927,8 +924,8 @@ public class TextPreprocessor {
         fit(trainingData);
 
         logger.info("Step 3: Pipeline state after fitting - Fitted: {}", isFitted);
-        logger.info("  Vocabulary size: {}", pipelineState.vocabularySize);
-        logger.info("  Training samples: {}", pipelineState.trainingSampleCount);
+        logger.info("  Pipeline vocabulary size: {}", pipelineState.vocabularySize);
+        logger.info("  Pipeline training samples: {}", pipelineState.trainingSampleCount);
 
         logger.info("Step 4: Transforming new text: '{}'",
                 newText.substring(0, Math.min(50, newText.length())));
@@ -945,6 +942,7 @@ public class TextPreprocessor {
      * @param loadPath path to load state from
      * @throws IOException if file operations fail
      */
+    @SuppressWarnings("unused") // Public API for demonstration and testing
     public void demonstrateStatePersistence(Path savePath, Path loadPath) throws IOException {
         logger.info("=== State Persistence Demonstration ===");
 
@@ -965,7 +963,7 @@ public class TextPreprocessor {
             logger.info("Step 3: Loading state from: {}", loadPath);
             loadState(loadPath);
             logger.info("  State loaded - Fitted: {}", isFitted);
-            logger.info("  Vocabulary size: {}", pipelineState.vocabularySize);
+            logger.info("  Loaded vocabulary size: {}", pipelineState.vocabularySize);
         } else {
             logger.warn("  Load path does not exist: {}", loadPath);
         }

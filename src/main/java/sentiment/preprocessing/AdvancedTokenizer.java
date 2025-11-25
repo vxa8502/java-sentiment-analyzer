@@ -11,6 +11,13 @@ import java.util.regex.Pattern;
 import java.util.regex.Matcher;
 import java.util.stream.Collectors;
 
+/**
+ * Advanced text tokenizer with configurable handling of hyphenated words, numbers, and punctuation.
+ * <p>
+ * Provides sophisticated tokenization beyond simple whitespace splitting, including preservation
+ * of hyphenated compound words (e.g., "well-known", "state-of-the-art"), intelligent filtering
+ * of single characters and short tokens, and optional number handling.
+ */
 @Component
 public class AdvancedTokenizer {
 
@@ -40,6 +47,9 @@ public class AdvancedTokenizer {
             "I", "a", "!", "?", ".", ":", ";"
     );
 
+    /**
+     * Constructs an AdvancedTokenizer with Spring-injected configuration.
+     */
     public AdvancedTokenizer(
             @Value("${sentiment.tokenizer.preserve-numbers:false}") boolean preserveNumbers,
             @Value("${sentiment.tokenizer.min-token-length:1}") int minTokenLength,
@@ -60,6 +70,11 @@ public class AdvancedTokenizer {
                 preserveNumbers, minTokenLength, preserveHyphenated);
     }
 
+    /**
+     * Tokenizes text into a list of tokens using advanced processing rules.
+     * @param text the input text to tokenize (null or empty returns empty list)
+     * @return list of tokens after applying all processing rules
+     */
     public List<String> tokenize(String text) {
         if (ValidationUtils.isNullOrEmpty(text)) {
             logger.debug("Received null or empty text for tokenization");
@@ -185,8 +200,6 @@ public class AdvancedTokenizer {
                 continue;
             }
 
-            String normalizedToken = token.trim().toLowerCase();
-
             if (NUMBER_PATTERN.matcher(token).matches()) {
                 if (preserveNumbers) {
                     filtered.add("NUMBER_TOKEN");
@@ -233,13 +246,19 @@ public class AdvancedTokenizer {
         return filtered;
     }
 
-    private boolean isMeaningfulPunctuation(String punct) {
-        return punct.matches("[!?]+") ||
-                punct.equals("...") ||
-                punct.equals("!!") ||
-                punct.equals("???");
+    private boolean isMeaningfulPunctuation(String punctuation) {
+        return punctuation.matches("[!?]+") ||
+                punctuation.equals("...") ||
+                punctuation.equals("!!") ||
+                punctuation.equals("???");
     }
 
+    /**
+     * Analyzes text to provide pre-tokenization statistics.
+     *
+     * @param text the text to analyze (null or empty returns zero-valued analysis)
+     * @return analysis containing counts of hyphenated words, numbers, punctuation, and total words
+     */
     public TokenizationAnalysis analyzeTokenization(String text) {
         if (ValidationUtils.isNullOrEmpty(text)) {
             return new TokenizationAnalysis(0, 0, 0, 0);
@@ -258,6 +277,13 @@ public class AdvancedTokenizer {
         return (int) pattern.matcher(text).results().count();
     }
 
+    /**
+     * Logs a detailed demonstration of tokenization for the given sample text.
+     * <p>
+     * Outputs pre-tokenization analysis, final tokens, and categorization by token type.
+     *
+     * @param sampleText the sample text to demonstrate tokenization on
+     */
     public void demonstrateTokenization(String sampleText) {
         logger.info("=== Advanced Tokenization Demonstration ===");
         logger.info("Original text: '{}'", sampleText);
@@ -312,6 +338,9 @@ public class AdvancedTokenizer {
         return TokenType.OTHER;
     }
 
+    /**
+     * Enumeration of token types for classification and analysis.
+     */
     public enum TokenType {
         HYPHENATED("Hyphenated Words"),
         CONTRACTION("Contractions"),
@@ -333,6 +362,11 @@ public class AdvancedTokenizer {
         }
     }
 
+    /**
+     * Tracks detailed metrics during tokenization for debugging and analysis.
+     * <p>
+     * Records counts of tokens found, preserved, and filtered at each processing stage.
+     */
     public static class TokenizationMetrics {
         public int hyphenatedWordsFound = 0;
         public int rawTokensFound = 0;
@@ -366,6 +400,14 @@ public class AdvancedTokenizer {
         }
     }
 
+    /**
+     * Pre-tokenization analysis statistics.
+     *
+     * @param hyphenatedWords count of hyphenated compound words found
+     * @param numbers count of numeric sequences found
+     * @param punctuationSequences count of punctuation sequences found
+     * @param totalWords total word count (whitespace-split)
+     */
     public record TokenizationAnalysis(int hyphenatedWords, int numbers,
                                        int punctuationSequences, int totalWords) {
 
@@ -378,6 +420,12 @@ public class AdvancedTokenizer {
         }
     }
 
+    /**
+     * Compares simple whitespace tokenization against advanced tokenization.
+     *
+     * @param text the text to tokenize and compare
+     * @return comparison object containing both tokenization results and statistics
+     */
     public TokenizationComparison compareTokenization(String text) {
         List<String> simpleTokens = Arrays.stream(text.split("\\s+"))
                 .filter(token -> !token.trim().isEmpty())
@@ -389,6 +437,12 @@ public class AdvancedTokenizer {
         return new TokenizationComparison(simpleTokens, advancedTokens, text);
     }
 
+    /**
+     * Comparison of simple versus advanced tokenization results.
+     * <p>
+     * Provides side-by-side comparison to demonstrate the differences between
+     * basic whitespace splitting and advanced tokenization logic.
+     */
     public static class TokenizationComparison {
         public final List<String> simpleTokens;
         public final List<String> advancedTokens;
@@ -401,15 +455,13 @@ public class AdvancedTokenizer {
             this.originalText = originalText;
             this.improvementCount = Math.abs(advancedTokens.size() - simpleTokens.size());
         }
-
-        public void printComparison() {
-            logger.debug("Tokenization Comparison for: {}", originalText);
-            logger.debug("Simple ({}): {}", simpleTokens.size(), simpleTokens);
-            logger.debug("Advanced ({}): {}", advancedTokens.size(), advancedTokens);
-            logger.debug("Difference: {} tokens", improvementCount);
-        }
     }
 
+    /**
+     * Returns the version of this tokenizer implementation.
+     *
+     * @return version string
+     */
     public String getVersion() {
         return VERSION;
     }
