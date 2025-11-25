@@ -252,9 +252,15 @@ public class SentimentConfiguration {
             // Limit training data for faster startup (with randomization to avoid bias)
             List<Dataset> trainingData;
             if (allData.size() > maxTrainingSamples) {
-                List<Dataset> shuffled = new ArrayList<>(allData);
-                Collections.shuffle(shuffled, new java.util.Random(42)); // Fixed seed for reproducibility
-                trainingData = shuffled.subList(0, maxTrainingSamples);
+                // Efficiently sample without shuffling entire dataset
+                java.util.Random random = new java.util.Random(42); // Fixed seed for reproducibility
+                java.util.Set<Integer> selectedIndices = new java.util.HashSet<>();
+                while (selectedIndices.size() < maxTrainingSamples) {
+                    selectedIndices.add(random.nextInt(allData.size()));
+                }
+                trainingData = selectedIndices.stream()
+                        .map(allData::get)
+                        .collect(java.util.stream.Collectors.toList());
                 logger.info("Randomly sampled {} training samples from {} total",
                         maxTrainingSamples, allData.size());
             } else {

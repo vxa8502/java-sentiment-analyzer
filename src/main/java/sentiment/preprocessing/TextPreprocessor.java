@@ -734,17 +734,20 @@ public class TextPreprocessor {
                 return 0.0;  // 0 * log(0) = 0 by convention
             }
 
-            double expected = (double) rowTotal * colTotal / total;
+            // Compute probabilities
+            double pij = (double) nij / total;           // P(i,j)
+            double pi = (double) rowTotal / total;       // P(i)
+            double pj = (double) colTotal / total;       // P(j)
+            double piPj = pi * pj;                        // P(i) * P(j)
 
             // Add epsilon smoothing for numerical stability when expected is near-zero
-            if (expected < 1e-10) {
+            if (piPj < 1e-10) {
                 return 0.0;
             }
 
-            double pij = (double) nij / total;
-
             // MI contribution: P(i,j) * log(P(i,j) / (P(i) * P(j)))
-            return pij * Math.log(nij / expected);
+            // Using natural log (base e) as is standard for MI calculations
+            return pij * Math.log(pij / piPj);
         }
 
         /**

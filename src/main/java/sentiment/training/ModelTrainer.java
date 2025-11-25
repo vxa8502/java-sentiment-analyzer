@@ -20,9 +20,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
+import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * Utility class for training and serializing sentiment analysis models offline.
@@ -247,16 +246,24 @@ public class ModelTrainer {
         long neutral = allData.stream().filter(d -> d.getSentiment() == Dataset.SentimentLabel.NEUTRAL).count();
         logger.info("Distribution: positive={}, negative={}, neutral={}", positive, negative, neutral);
 
-        // Shuffle for better training
-        List<Dataset> shuffled = new ArrayList<>(allData);
-        Collections.shuffle(shuffled);
-
-        // Limit samples if requested
-        if (maxSamples > 0 && shuffled.size() > maxSamples) {
-            logger.info("Limiting to {} samples (from {})", maxSamples, shuffled.size());
-            return shuffled.subList(0, maxSamples);
+        // Shuffle and limit samples if requested
+        if (maxSamples > 0 && allData.size() > maxSamples) {
+            // Efficiently sample without shuffling entire dataset
+            Random random = new Random();
+            Set<Integer> selectedIndices = new HashSet<>();
+            while (selectedIndices.size() < maxSamples) {
+                selectedIndices.add(random.nextInt(allData.size()));
+            }
+            List<Dataset> sampled = selectedIndices.stream()
+                    .map(allData::get)
+                    .collect(Collectors.toList());
+            logger.info("Limiting to {} samples (from {})", maxSamples, allData.size());
+            return sampled;
         }
 
+        // Shuffle all data for better training
+        List<Dataset> shuffled = new ArrayList<>(allData);
+        Collections.shuffle(shuffled);
         return shuffled;
     }
 

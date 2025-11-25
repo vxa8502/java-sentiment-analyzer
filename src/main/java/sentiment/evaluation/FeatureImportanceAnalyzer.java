@@ -125,12 +125,14 @@ public class FeatureImportanceAnalyzer {
             // Use subset of data for efficiency (full dataset would be slow)
             int sampleSize = Math.min(DEFAULT_SAMPLE_SIZE, trainedData.numInstances());
             Random random = new Random(42);
-            List<Integer> sampleIndices = new ArrayList<>();
-            for (int i = 0; i < trainedData.numInstances(); i++) {
-                sampleIndices.add(i);
+
+            // Efficiently generate random sample indices without creating full list
+            Set<Integer> sampleIndicesSet = new HashSet<>();
+            int totalInstances = trainedData.numInstances();
+            while (sampleIndicesSet.size() < sampleSize) {
+                sampleIndicesSet.add(random.nextInt(totalInstances));
             }
-            Collections.shuffle(sampleIndices, random);
-            sampleIndices = sampleIndices.subList(0, sampleSize);
+            List<Integer> sampleIndices = new ArrayList<>(sampleIndicesSet);
 
             for (int featureIdx = 0; featureIdx < numFeatures; featureIdx++) {
                 Attribute attr = trainedData.attribute(featureIdx);
@@ -250,15 +252,40 @@ public class FeatureImportanceAnalyzer {
                 .mapToDouble(fw -> Math.abs(fw.weight()))
                 .toArray();
 
-        double mean = Arrays.stream(absWeights).average().orElse(0.0);
-        double variance = Arrays.stream(absWeights)
-                .map(w -> Math.pow(w - mean, 2))
-                .average().orElse(0.0);
+        // Compute mean and variance in single pass to avoid redundant streaming
+        double sum = 0.0;
+        double sumSq = 0.0;
+        for (double w : absWeights) {
+            sum += w;
+            sumSq += w * w;
+        }
+        double mean = sum / absWeights.length;
+        double variance = (sumSq / absWeights.length) - (mean * mean);
         double stdDev = Math.sqrt(variance);
 
+        // Sort for median and percentiles
         Arrays.sort(absWeights);
-        double median = absWeights[absWeights.length / 2];
-        double p95 = absWeights[(int) (absWeights.length * 0.95)];
+
+        // Correct median calculation (average of two middle values for even-length arrays)
+        double median;
+        int n = absWeights.length;
+        if (n % 2 == 0) {
+            median = (absWeights[n / 2 - 1] + absWeights[n / 2]) / 2.0;
+        } else {
+            median = absWeights[n / 2];
+        }
+
+        // Correct 95th percentile with linear interpolation
+        double p95Index = 0.95 * (n - 1);
+        int lowerIndex = (int) Math.floor(p95Index);
+        int upperIndex = (int) Math.ceil(p95Index);
+        double p95;
+        if (lowerIndex == upperIndex) {
+            p95 = absWeights[lowerIndex];
+        } else {
+            double fraction = p95Index - lowerIndex;
+            p95 = absWeights[lowerIndex] + fraction * (absWeights[upperIndex] - absWeights[lowerIndex]);
+        }
 
         return new FeatureStatistics(mean, stdDev, median, p95, features.size());
     }
