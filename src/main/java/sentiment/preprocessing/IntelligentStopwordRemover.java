@@ -82,9 +82,7 @@ public class IntelligentStopwordRemover {
     // Negation words that are critical for sentiment analysis
     private static final Set<String> NEGATION_WORDS = Set.of(
             "not", "no", "never", "none", "nothing", "nobody", "nowhere",
-            "neither", "nor", "cannot", "can't", "won't", "wouldn't",
-            "couldn't", "shouldn't", "mustn't", "needn't", "daren't",
-            "isn't", "aren't", "wasn't", "weren't", "haven't", "hasn't", "hadn't"
+            "neither", "nor", "cannot"
     );
 
     // Intensifier words that amplify sentiment
@@ -189,20 +187,18 @@ public class IntelligentStopwordRemover {
      * Sentiment-aware stopword detection - the most sophisticated approach
      */
     private boolean isSentimentAwareStopword(String token) {
-        String normalized = token.toLowerCase().trim();
-
         // Always preserve negation words
-        if (preserveNegations && NEGATION_WORDS.contains(normalized)) {
+        if (preserveNegations && NEGATION_WORDS.contains(token)) {
             return false;
         }
 
         // Always preserve intensifiers
-        if (preserveIntensifiers && INTENSIFIER_WORDS.contains(normalized)) {
+        if (preserveIntensifiers && INTENSIFIER_WORDS.contains(token)) {
             return false;
         }
 
         // Don't remove preserved sentiment indicators (from tokenizer)
-        if (isPreservedSentimentToken(normalized)) {
+        if (isPreservedSentimentToken(token)) {
             return false;
         }
 
@@ -217,7 +213,7 @@ public class IntelligentStopwordRemover {
         }
 
         // Standard stopword check
-        return EXTENDED_STOPWORDS.contains(normalized);
+        return EXTENDED_STOPWORDS.contains(token);
     }
 
     /**
@@ -267,26 +263,6 @@ public class IntelligentStopwordRemover {
         }
 
         return new StopwordComparisonResult(results, tokens);
-    }
-
-    /**
-     * Demonstrate stopword removal with different strategies
-     */
-    public void demonstrateStopwordRemoval(String sampleText) {
-        logger.info("=== Stopword Removal Demonstration ===");
-        logger.info("Sample text: '{}'", sampleText);
-
-        // Simple tokenization for demonstration
-        List<String> tokens = Arrays.asList(sampleText.toLowerCase().split("\\s+"));
-        logger.info("Tokens ({}): {}", tokens.size(), tokens);
-
-        StopwordComparisonResult comparison = compareStrategies(tokens);
-        comparison.printComparison();
-
-        StopwordAnalysis analysis = analyzeStopwordRemoval(tokens);
-        logger.info("Analysis: {}", analysis);
-
-        logger.info("=== End Stopword Demonstration ===");
     }
 
     /**

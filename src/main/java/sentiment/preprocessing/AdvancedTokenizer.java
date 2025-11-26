@@ -44,7 +44,7 @@ public class AdvancedTokenizer {
     );
 
     private static final Set<String> MEANINGFUL_SINGLE_CHARS = Set.of(
-            "I", "a", "!", "?", ".", ":", ";"
+            "i", "!", "?", ".", ":", ";"
     );
 
     /**
@@ -211,8 +211,7 @@ public class AdvancedTokenizer {
             }
 
             if (token.length() == 1) {
-                if (MEANINGFUL_SINGLE_CHARS.contains(token) ||
-                        MEANINGFUL_SINGLE_CHARS.contains(token.toUpperCase())) {
+                if (MEANINGFUL_SINGLE_CHARS.contains(token)) {
                     filtered.add(token);
                     metrics.meaningfulSingleCharsPreserved++;
                 } else {
@@ -275,67 +274,6 @@ public class AdvancedTokenizer {
 
     private int countMatches(Pattern pattern, String text) {
         return (int) pattern.matcher(text).results().count();
-    }
-
-    /**
-     * Logs a detailed demonstration of tokenization for the given sample text.
-     * <p>
-     * Outputs pre-tokenization analysis, final tokens, and categorization by token type.
-     *
-     * @param sampleText the sample text to demonstrate tokenization on
-     */
-    public void demonstrateTokenization(String sampleText) {
-        logger.info("=== Advanced Tokenization Demonstration ===");
-        logger.info("Original text: '{}'", sampleText);
-
-        TokenizationAnalysis analysis = analyzeTokenization(sampleText);
-        logger.info("Pre-tokenization analysis: {}", analysis);
-
-        List<String> tokens = tokenize(sampleText);
-        logger.info("Tokenized ({} tokens): {}", tokens.size(), tokens);
-
-        Map<TokenType, List<String>> categorizedTokens = categorizeTokens(tokens);
-        for (Map.Entry<TokenType, List<String>> entry : categorizedTokens.entrySet()) {
-            if (!entry.getValue().isEmpty()) {
-                logger.info("{}: {}", entry.getKey(), entry.getValue());
-            }
-        }
-
-        logger.info("=== End Tokenization Demonstration ===");
-    }
-
-    private Map<TokenType, List<String>> categorizeTokens(List<String> tokens) {
-        Map<TokenType, List<String>> categorized = new EnumMap<>(TokenType.class);
-
-        for (TokenType type : TokenType.values()) {
-            categorized.put(type, new ArrayList<>());
-        }
-
-        for (String token : tokens) {
-            TokenType type = classifyToken(token);
-            categorized.get(type).add(token);
-        }
-
-        return categorized;
-    }
-
-    private TokenType classifyToken(String token) {
-        if (token.contains("-") && HYPHENATED_WORD_PATTERN.matcher(token).matches()) {
-            return TokenType.HYPHENATED;
-        }
-        if (NUMBER_PATTERN.matcher(token).matches()) {
-            return TokenType.NUMBER;
-        }
-        if (token.matches("[^a-zA-Z0-9]+")) {
-            return TokenType.PUNCTUATION;
-        }
-        if (token.length() == 1) {
-            return TokenType.SINGLE_CHAR;
-        }
-        if (token.matches("\\w+")) {
-            return TokenType.REGULAR_WORD;
-        }
-        return TokenType.OTHER;
     }
 
     /**
