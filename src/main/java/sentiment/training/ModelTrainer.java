@@ -24,36 +24,8 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * Utility class for training and serializing sentiment analysis models offline.
- *
- * PURPOSE:
- * ========
- * This class enables pre-training models before application startup, eliminating
- * the need for training during server initialization. This approach:
- * - Reduces startup time dramatically (seconds instead of minutes)
- * - Enables model versioning and A/B testing
- * - Separates training concerns from serving concerns
- * - Allows training on larger datasets without impacting production
- *
- * USAGE:
- * ======
- * 1. Standalone: Run ModelTrainingCLI.main() to train all models
- * 2. Programmatic: Use this class in your own training pipelines
- * 3. CI/CD: Integrate into build process for automated model updates
- *
- * EXAMPLE:
- * ========
- * // With Spring (recommended):
- * @Autowired
- * ModelTrainer trainer;
- *
- * // Programmatic usage:
- * trainer.trainAndSave(
- *     "./data/datasets/Reviews.csv",
- *     "./models/svm-model.ser",
- *     AlgorithmType.SVM,
- *     10000
- * );
+ * Service for training and persisting sentiment analysis models.
+ * Orchestrates data loading, stratified splitting, training, validation, and serialization.
  */
 @Component
 public class ModelTrainer {
@@ -64,9 +36,6 @@ public class ModelTrainer {
     private final TextPreprocessor textPreprocessor;
     private final WekaInstancesConverter wekaInstancesConverter;
 
-    /**
-     * Creates a ModelTrainer with Spring-injected components.
-     */
     @Autowired
     public ModelTrainer(SimpleDatasetLoader datasetLoader,
                         TextPreprocessor textPreprocessor,
@@ -79,18 +48,15 @@ public class ModelTrainer {
     }
 
     /**
-     * Trains a model and saves it to disk.
+     * Trains a model and saves it to disk with stratified 60/20/20 train/val/test split.
      *
-     * This is the main entry point for offline model training.
-     *
-     * @param dataPath Path to training data (CSV, JSON, etc.)
-     * @param outputPath Path where trained model should be saved
-     * @param algorithmType Type of classifier to train
-     * @param maxSamples Maximum number of training samples (0 = use all)
-     * @param showFeatureImportance Whether to analyze and display feature importance (SVM only)
-     * @param topFeaturesCount Number of top features to display
-     * @return Training statistics
-     * @throws Exception if training or saving fails
+     * @param dataPath training data path
+     * @param outputPath where to save trained model
+     * @param algorithmType classifier algorithm
+     * @param maxSamples max training samples (0 = all)
+     * @param showFeatureImportance analyze feature importance
+     * @param topFeaturesCount number of top features to display
+     * @return training statistics
      */
     public TrainingResult trainAndSave(String dataPath, String outputPath,
                                         AlgorithmType algorithmType, int maxSamples,
@@ -134,7 +100,7 @@ public class ModelTrainer {
         SentimentClassifier classifier = createClassifier(algorithmType);
         classifier.train(split.train);  // ✅ Train ONLY on training set
         long trainTime = System.currentTimeMillis() - trainStartTime;
-        logger.info("✅ Training completed in {}ms ({:.2f}s)",
+        logger.info("✅ Training completed in {}ms ({}s)",
                 trainTime, trainTime / 1000.0);
 
         // Step 4: Validate trained model (on train set for sanity check)
@@ -166,8 +132,7 @@ public class ModelTrainer {
                 outputPath,
                 trainTime,
                 totalTime,
-                classifier.isTrained(),
-                split
+                classifier.isTrained()
         );
 
         logger.info("=== Training Complete ===");
@@ -177,15 +142,7 @@ public class ModelTrainer {
     }
 
     /**
-     * Trains multiple models in parallel and saves them.
-     *
-     * @param dataPath Path to training data
-     * @param outputDir Directory where models should be saved
-     * @param algorithms List of algorithm types to train
-     * @param maxSamples Maximum training samples per model
-     * @param showFeatureImportance Whether to analyze and display feature importance (SVM only)
-     * @param topFeaturesCount Number of top features to display
-     * @return List of training results
+     * Trains multiple models sequentially and saves them.
      */
     public List<TrainingResult> trainMultipleModels(String dataPath, String outputDir,
                                                      List<AlgorithmType> algorithms,
@@ -219,14 +176,6 @@ public class ModelTrainer {
 
     // ==================== PRIVATE HELPERS ====================
 
-    /**
-     * Reset preprocessing components to allow training multiple models sequentially.
-     * This is necessary because Spring beans are singletons and retain state.
-     * <p>
-     * NOTE: WekaInstancesConverter.reset() now also resets the TextPreprocessor it manages,
-     * so we only need to reset the converter explicitly. However, we keep the textPreprocessor
-     * reset as a defensive measure in case the converter is bypassed.
-     */
     private void resetPreprocessingComponents() {
         try {
             wekaInstancesConverter.reset();  // This now resets the preprocessor too
@@ -296,22 +245,21 @@ public class ModelTrainer {
         for (int i = 0; i < samplesToTest; i++) {
             Dataset sample = trainingData.get(i);
             String prediction = classifier.classify(sample.getText());
-            double[] probs = classifier.getClassificationProbabilities(sample.getText());
+            double[] probabilities = classifier.getClassificationProbabilities(sample.getText());
 
-            logger.debug("Sample {}: actual={}, predicted={}, confidence={:.3f}",
-                    i + 1, sample.getSentiment(), prediction, getMaxProb(probs));
+            logger.debug("Sample {}: actual={}, predicted={}, confidence={}",
+                    i + 1, sample.getSentiment(), prediction, getMaxProb(probabilities));
         }
     }
 
-    private double getMaxProb(double[] probs) {
+    private double getMaxProb(double[] probabilities) {
         double max = 0.0;
-        for (double prob : probs) {
+        for (double prob : probabilities) {
             if (prob > max) max = prob;
         }
         return max;
     }
 
-    @SuppressWarnings("unchecked")
     private void saveModel(SentimentClassifier classifier, String outputPath,
                            AlgorithmType algorithmType) throws IOException {
 
@@ -331,15 +279,6 @@ public class ModelTrainer {
         logger.info("Model file size: {} bytes ({} KB)", fileSize, fileSize / 1024);
     }
 
-    /**
-     * Analyzes and prints feature importance for ANY classifier model.
-     * This method converts the training data back to Weka Instances and analyzes
-     * which features (words/n-grams) have the strongest influence on predictions.
-     *
-     * Works for: SVM, Naive Bayes, Random Forest, Logistic Regression
-     *
-     * Also saves the results to a JSON file for runtime API serving.
-     */
     private void analyzeAndPrintFeatureImportance(SentimentClassifier classifier,
                                                    StratifiedDataSplitter.DataSplit split,
                                                    int topFeaturesCount,
@@ -357,16 +296,12 @@ public class ModelTrainer {
             int fullTopK = Math.max(topFeaturesCount, 100); // Save top 100 minimum
 
             // Get the underlying Weka classifier
-            weka.classifiers.Classifier wekaClassifier = null;
-            if (classifier instanceof WekaClassifier) {
-                WekaClassifier wekaClassifierInterface = (WekaClassifier) classifier;
-                wekaClassifier = wekaClassifierInterface.getWekaClassifier();
-            }
-
-            if (wekaClassifier == null) {
+            if (!(classifier instanceof WekaClassifier wekaClassifierInterface)) {
                 logger.error("Could not extract Weka classifier for feature importance analysis");
                 return;
             }
+
+            weka.classifiers.Classifier wekaClassifier = wekaClassifierInterface.getWekaClassifier();
 
             // Use single unified analyzer for all classifier types
             logger.info("Analyzing feature importance using perturbation method");
@@ -395,9 +330,6 @@ public class ModelTrainer {
         }
     }
 
-    /**
-     * Prints a formatted feature importance report to console.
-     */
     private void printFeatureImportanceReport(FeatureImportanceResult result,
                                                int topFeaturesCount,
                                                AlgorithmType algorithmType) {
@@ -423,10 +355,8 @@ public class ModelTrainer {
         System.out.println("=".repeat(80) + "\n");
     }
 
-    // ==================== RESULT CLASSES ====================
-
     /**
-     * Training result metadata.
+     * Training result with metrics.
      */
     public static class TrainingResult {
         private final AlgorithmType algorithm;
@@ -438,20 +368,18 @@ public class ModelTrainer {
         private final long totalTimeMs;
         private final boolean success;
         private final String errorMessage;
-        private final StratifiedDataSplitter.DataSplit dataSplit;  // Store split for later evaluation
 
         public TrainingResult(AlgorithmType algorithm, int trainSampleCount, int valSampleCount,
                               int testSampleCount, String outputPath,
-                              long trainingTimeMs, long totalTimeMs, boolean success,
-                              StratifiedDataSplitter.DataSplit dataSplit) {
+                              long trainingTimeMs, long totalTimeMs, boolean success) {
             this(algorithm, trainSampleCount, valSampleCount, testSampleCount, outputPath,
-                    trainingTimeMs, totalTimeMs, success, null, dataSplit);
+                    trainingTimeMs, totalTimeMs, success, null);
         }
 
         private TrainingResult(AlgorithmType algorithm, int trainSampleCount, int valSampleCount,
                                int testSampleCount, String outputPath,
                                long trainingTimeMs, long totalTimeMs, boolean success,
-                               String errorMessage, StratifiedDataSplitter.DataSplit dataSplit) {
+                               String errorMessage) {
             this.algorithm = algorithm;
             this.trainSampleCount = trainSampleCount;
             this.valSampleCount = valSampleCount;
@@ -461,11 +389,10 @@ public class ModelTrainer {
             this.totalTimeMs = totalTimeMs;
             this.success = success;
             this.errorMessage = errorMessage;
-            this.dataSplit = dataSplit;
         }
 
         public static TrainingResult failed(AlgorithmType algorithm, String errorMessage) {
-            return new TrainingResult(algorithm, 0, 0, 0, null, 0, 0, false, errorMessage, null);
+            return new TrainingResult(algorithm, 0, 0, 0, null, 0, 0, false, errorMessage);
         }
 
         public AlgorithmType getAlgorithm() { return algorithm; }
@@ -475,10 +402,8 @@ public class ModelTrainer {
         public int getTotalSampleCount() { return trainSampleCount + valSampleCount + testSampleCount; }
         public String getOutputPath() { return outputPath; }
         public long getTrainingTimeMs() { return trainingTimeMs; }
-        public long getTotalTimeMs() { return totalTimeMs; }
         public boolean isSuccess() { return success; }
         public String getErrorMessage() { return errorMessage; }
-        public StratifiedDataSplitter.DataSplit getDataSplit() { return dataSplit; }
 
         @Override
         public String toString() {

@@ -5,23 +5,6 @@ import sentiment.evaluation.ClassifierEvaluationResult;
 
 /**
  * Interface for classifier evaluation operations.
- * <p>
- * <strong>DESIGN PRINCIPLE: Interface Segregation</strong>
- * <p>
- * Separated from core SentimentClassifier to follow ISP:
- * <ul>
- *   <li>Not all classifiers need evaluation capabilities</li>
- *   <li>Some use cases only need prediction, not model analysis</li>
- *   <li>Allows lightweight classifier implementations</li>
- * </ul>
- * <p>
- * Implement this interface if your classifier supports:
- * <ul>
- *   <li>Performance evaluation on test sets</li>
- *   <li>Model introspection and summaries</li>
- *   <li>Quality metrics and diagnostics</li>
- * </ul>
- *
  */
 public interface ClassifierEvaluator {
 
