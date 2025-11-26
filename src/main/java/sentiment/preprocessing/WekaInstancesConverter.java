@@ -17,18 +17,26 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * Converts preprocessed text to Weka Instances for machine learning.
+ * Converts raw text to Weka Instances for machine learning.
  * <p>
- * Configures and trains TF-IDF vectorization and normalization filters,
- * then transforms text into numeric feature vectors. Supports stratified
- * train/test splitting and provides conversion statistics.
+ * <strong>OWNERSHIP:</strong> This class owns the complete text→features vectorization pipeline:
+ * <ul>
+ *   <li>Text preprocessing (tokenization, stopword removal via {@link TextPreprocessor})</li>
+ *   <li>TF-IDF vectorization (term frequency, inverse document frequency)</li>
+ *   <li>Feature normalization (optional)</li>
+ * </ul>
  * <p>
- * Thread-safe for concurrent inference after training completes.
+ * During {@link #fit(List)}, the preprocessor is automatically trained first, then TF-IDF filters
+ * are trained on the preprocessed text. This ensures the dependency order is always correct and
+ * prevents invalid state errors.
+ * <p>
+ * <strong>Thread-safe</strong> for concurrent inference after training completes.
  *
- * @see FilterTrainingTemplate for state management and thread safety
+ * @see sentiment.TrainingTemplate for state management and thread safety
+ * @see TextPreprocessor for text preprocessing logic
  */
 @Component
-public class WekaInstancesConverter extends FilterTrainingTemplate<Instances> {
+public class WekaInstancesConverter extends sentiment.TrainingTemplate<Instances> {
 
     private static final String VERSION = "1.0.0";
     private static final Logger logger = LoggerFactory.getLogger(WekaInstancesConverter.class);
@@ -75,42 +83,99 @@ public class WekaInstancesConverter extends FilterTrainingTemplate<Instances> {
                 maxFeatures, minTermFreq, useTfIdf, useBigrams);
     }
 
+    // PUBLIC API
+
     /**
-     * Trains Weka filters on provided datasets.
+     * Fits the converter on training data.
+     * <p>
+     * Public wrapper around {@link #trainInternal(List)} that uses sklearn-style naming convention.
+     *
+     * @param datasets training data
+     * @return transformed Weka instances with TF-IDF features
+     * @throws IllegalStateException if already training or in error state
+     * @throws IllegalArgumentException if datasets is null or empty
+     * @throws RuntimeException if training fails
+     */
+    public final Instances fit(List<sentiment.data.Dataset> datasets) {
+        try {
+            return trainInternal(datasets);
+        } catch (Exception e) {
+            if (e instanceof RuntimeException) {
+                throw (RuntimeException) e;
+            }
+            throw new RuntimeException(e.getMessage(), e);
+        }
+    }
+
+    // TRAINING IMPLEMENTATION
+
+    /**
+     * Trains the complete vectorization pipeline on provided datasets.
+     * <p>
+     * OWNERSHIP: This method owns the full text→features pipeline including:
+     * <ul>
+     *   <li>Text preprocessing (tokenization, stopword removal)</li>
+     *   <li>TF-IDF vectorization</li>
+     *   <li>Feature normalization</li>
+     * </ul>
+     * <p>
      * Called by base class within write lock.
+     *
+     * @param datasets raw training datasets
+     * @return transformed Weka instances with TF-IDF features
+     * @throws Exception if any pipeline stage fails
      */
     @Override
-    protected Instances doFit(List<Dataset> datasets) throws Exception {
-        logger.info("Training Weka conversion filters on {} samples", datasets.size());
+    protected Instances doTrain(List<Dataset> datasets) throws Exception {
+        logger.info("Training full vectorization pipeline (preprocessing + TF-IDF) on {} samples",
+                    datasets.size());
 
-        // Step 1: Create raw instances with preprocessing
+        // Step 1: Fit text preprocessor (WE own this dependency)
+        if (textPreprocessor.isFitted()) {
+            logger.warn("TextPreprocessor already fitted. Resetting for clean training.");
+            textPreprocessor.reset();
+        }
+
+        logger.info("Step 1/4: Fitting text preprocessor");
+        textPreprocessor.fit(datasets);
+        logger.info("✓ Preprocessor trained. Vocabulary: {}",
+                    textPreprocessor.getPipelineState().vocabularySize);
+
+        // Step 2: Create preprocessed instances
+        logger.info("Step 2/4: Creating preprocessed Weka instances");
         Instances rawInstances = createRawInstances(datasets);
         this.filterTrainingStructure = new Instances(rawInstances, 0);
 
-        // Step 2: Train StringToWordVector filter
+        // Step 3: Train StringToWordVector filter (TF-IDF)
+        logger.info("Step 3/4: Training TF-IDF vectorizer");
         trainStringToWordVectorFilter(rawInstances);
-
-        // Step 3: Apply TF-IDF transformation
         Instances tfidfInstances = Filter.useFilter(rawInstances, trainedStringToWordFilter);
 
         // Step 4: Train normalization filter if enabled
         Instances finalInstances;
         if (normalizeFeatures) {
+            logger.info("Step 4/4: Training normalization filter");
             trainNormalizationFilter(tfidfInstances);
             finalInstances = Filter.useFilter(tfidfInstances, trainedNormalizationFilter);
         } else {
+            logger.info("Step 4/4: Skipping normalization (disabled in config)");
             finalInstances = tfidfInstances;
         }
 
-        // Step 5: Extract vocabulary
+        // Step 5: Extract vocabulary for diagnostics
         extractVocabulary(finalInstances);
 
-        logger.info("Weka conversion training complete. Vocabulary: {} terms", vocabulary.size());
+        logger.info("✓ Full vectorization pipeline trained. Features: {}, TF-IDF vocabulary: {}",
+                    finalInstances.numAttributes() - 1, vocabulary.size());
         return finalInstances;
     }
 
     /**
      * Clears trained filters and cached state.
+     * <p>
+     * OWNERSHIP: Since we own the preprocessor's lifecycle, we reset it here too.
+     * This ensures a clean state for retraining and prevents stale state bugs.
+     * <p>
      * Called by base class within write lock.
      */
     @Override
@@ -119,11 +184,36 @@ public class WekaInstancesConverter extends FilterTrainingTemplate<Instances> {
         trainedNormalizationFilter = null;
         filterTrainingStructure = null;
         vocabulary = null;
+
+        // Reset the preprocessor we manage
+        if (textPreprocessor != null && textPreprocessor.isFitted()) {
+            textPreprocessor.reset();
+            logger.debug("Reset text preprocessor as part of resource cleanup");
+        }
     }
 
     @Override
     protected Logger getLogger() {
         return logger;
+    }
+
+    @Override
+    protected String getComponentType() {
+        return "filter";
+    }
+
+    /**
+     * Executes inference with exception wrapping for filter API compatibility.
+     */
+    private <R> R executeFilterInference(InferenceTask<R> task) {
+        try {
+            return executeInference(task);
+        } catch (Exception e) {
+            if (e instanceof RuntimeException) {
+                throw (RuntimeException) e;
+            }
+            throw new RuntimeException(e.getMessage(), e);
+        }
     }
 
     /**
@@ -136,7 +226,7 @@ public class WekaInstancesConverter extends FilterTrainingTemplate<Instances> {
     public Instance transform(String text, String defaultSentiment) {
         ValidationUtils.requireNonEmpty(text);
 
-        // Use base class executeInference for thread-safe execution
+        // Use base class executeFilterInference for thread-safe execution
         return executeFilterInference(() -> {
             logger.debug("INFERENCE: Transforming single text (thread-safe): '{}'",
                     text.substring(0, Math.min(50, text.length())));
@@ -366,6 +456,8 @@ public class WekaInstancesConverter extends FilterTrainingTemplate<Instances> {
         }
     }
 
+    // PUBLIC API
+
     public String getVersion() {
         return VERSION;
     }
@@ -376,23 +468,51 @@ public class WekaInstancesConverter extends FilterTrainingTemplate<Instances> {
         );
     }
 
+    /**
+     * Returns the text preprocessor managed by this converter.
+     * <p>
+     * OBSERVABILITY: Exposes the preprocessor for logging, diagnostics, and monitoring.
+     * Useful for checking preprocessing state, vocabulary size, and pipeline health.
+     *
+     * @return the text preprocessor
+     */
+    public TextPreprocessor getPreprocessor() {
+        return textPreprocessor;
+    }
+
     @Override
     protected String getSubclassDiagnostics() {
         StringBuilder diag = new StringBuilder();
         diag.append("=== WekaInstancesConverter Specific Diagnostics ===\n");
+
+        // Preprocessor state (we own this now)
+        diag.append(String.format("Text preprocessor: %s\n",
+                textPreprocessor != null ?
+                    (textPreprocessor.isFitted() ? "fitted" : "unfitted") : "null"));
+        if (textPreprocessor != null && textPreprocessor.isFitted()) {
+            diag.append(String.format("  Preprocessor vocabulary: %d\n",
+                    textPreprocessor.getPipelineState().vocabularySize));
+        }
+
+        // TF-IDF filter state
         diag.append(String.format("StringToWordVector filter: %s\n",
                 trainedStringToWordFilter != null ? "trained" : "null"));
         diag.append(String.format("Normalization filter: %s\n",
                 trainedNormalizationFilter != null ? "trained" : "null"));
+
+        // Configuration
         diag.append(String.format("Configuration: maxFeatures=%d, minTermFreq=%d, useTfIdf=%s\n",
                 maxFeatures, minTermFreq, useTfIdf));
+
+        // Vocabulary stats
         if (vocabulary != null) {
-            diag.append(String.format("Vocabulary size: %d\n", vocabulary.size()));
+            diag.append(String.format("TF-IDF vocabulary size: %d\n", vocabulary.size()));
         }
         if (filterTrainingStructure != null) {
             diag.append(String.format("Training structure: %d attributes\n",
                     filterTrainingStructure.numAttributes()));
         }
+
         return diag.toString();
     }
 

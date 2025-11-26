@@ -465,26 +465,21 @@ public abstract class ClassifierTrainingTemplate<T> extends TrainingTemplate<T> 
         getLogger().info("Training {} on {} raw datasets with full pipeline",
                 getAlgorithmName(), rawDatasets.size());
 
-        // Step 1: Fit preprocessing pipeline
-        getLogger().info("Step 1/3: Fitting preprocessing pipeline");
-        getPreprocessor().fit(rawDatasets);
-        getLogger().info("Preprocessor fitted. Vocabulary: {}",
-                getPreprocessor().getPipelineState().vocabularySize);
-
-        // Step 2: Fit feature extraction
-        getLogger().info("Step 2/3: Fitting feature extraction");
+        // Step 1: Fit FULL vectorization pipeline (preprocessing + TF-IDF)
+        // WekaInstancesConverter now owns the complete text→features transformation
+        getLogger().info("Step 1/2: Fitting vectorization pipeline (preprocessing + TF-IDF)");
         Instances trainingInstances = converter.fit(rawDatasets);
-        getLogger().info("Converter fitted. Features: {}, Vocabulary: {}",
+        getLogger().info("✓ Vectorization complete. Features: {}, TF-IDF vocabulary: {}",
                 trainingInstances.numAttributes() - 1,
                 converter.getVocabulary().size());
 
-        // Step 3: Train classifier (algorithm-specific)
-        getLogger().info("Step 3/3: Training {} classifier", getAlgorithmName());
+        // Step 2: Train classifier (algorithm-specific)
+        getLogger().info("Step 2/2: Training {} classifier", getAlgorithmName());
         validateWekaTrainingData(trainingInstances);
         modelTrainer.train(trainingInstances);
         finalizeTraining(trainingInstances);
 
-        getLogger().info("{} training complete. Pipeline ready for inference.", getAlgorithmName());
+        getLogger().info("✓ {} training complete. Pipeline ready for inference.", getAlgorithmName());
 
         return trainingInstances;
     }

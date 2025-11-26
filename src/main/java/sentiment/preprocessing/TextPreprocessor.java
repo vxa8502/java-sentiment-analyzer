@@ -236,8 +236,8 @@ public class TextPreprocessor {
         // Repeated characters
         cleaned = REPEATED_CHARS_PATTERN.matcher(cleaned).replaceAll("$1$1");
 
-        // Special characters
-        cleaned = cleaned.replaceAll("[^a-zA-Z0-9\\s_]", " ");
+        // Let tokenizer handle punctuation intelligently - it's designed to preserve
+        // sentiment-bearing punctuation (!, ?, etc.) while filtering noise
 
         // Whitespace
         cleaned = EXTRA_WHITESPACE_PATTERN.matcher(cleaned).replaceAll(" ");
@@ -637,7 +637,13 @@ public class TextPreprocessor {
         }
 
         /**
-         * Computes mutual information between a term and class labels.
+         * Computes mutual information between a term and class labels using correct multi-class formula.
+         * <p>
+         * MI(T; C) = Σₜ Σ_c P(t,c) log(P(t,c) / (P(t) P(c)))
+         * <p>
+         * Where T ∈ {0,1} (term absent/present) and C ∈ {all class labels}.
+         * This creates a 2×k contingency table and computes MI over all cells.
+         * <p>
          * Higher scores indicate greater discriminative power.
          *
          * @param term term to evaluate
@@ -652,17 +658,14 @@ public class TextPreprocessor {
 
             int totalDocs = docTokenSets.size();
 
-            // Count documents with/without term for each class
-            int withTerm = 0;
-            int withoutTerm = 0;
+            // Build contingency table: counts[termPresence][classLabel]
             Map<String, Integer> classGivenTerm = new HashMap<>();
             Map<String, Integer> classGivenNoTerm = new HashMap<>();
             Map<String, Integer> classTotal = new HashMap<>();
+            int withTerm = 0;
+            int withoutTerm = 0;
 
             for (int i = 0; i < totalDocs; i++) {
-                // CORRECTNESS FIX: Use proper token matching, not substring matching
-                // Previously: preprocessedTexts.get(i).contains(term)
-                // This was incorrect because "good" would match "goodness", "goody", etc.
                 boolean hasTerm = docTokenSets.get(i).contains(term);
                 String label = originalDatasets.get(i).getSentiment().toString();
 
@@ -677,81 +680,34 @@ public class TextPreprocessor {
                 }
             }
 
-            // Compute mutual information
+            // Compute MI using correct multi-class formula:
+            // MI(T; C) = Σₜ Σ_c P(t,c) log(P(t,c) / (P(t) P(c)))
             double mi = 0.0;
 
-            // For each class
+            // Sum over all cells in the 2×k contingency table
             for (String classLabel : classTotal.keySet()) {
-                int n11 = classGivenTerm.getOrDefault(classLabel, 0);  // term present, class present
-                int n10 = withTerm - n11;                               // term present, class absent
-                int n01 = classGivenNoTerm.getOrDefault(classLabel, 0); // term absent, class present
-                int n00 = withoutTerm - n01;                            // term absent, class absent
+                // Cell: (term present, this class)
+                int n_t1_c = classGivenTerm.getOrDefault(classLabel, 0);
+                if (n_t1_c > 0) {
+                    double p_t1_c = (double) n_t1_c / totalDocs;  // P(t=1, c)
+                    double p_t1 = (double) withTerm / totalDocs;   // P(t=1)
+                    double p_c = (double) classTotal.get(classLabel) / totalDocs; // P(c)
+                    mi += p_t1_c * Math.log(p_t1_c / (p_t1 * p_c));
+                }
 
-                // Compute MI contribution for this class
-                mi += computeMIComponent(n11, n10, n01, n00, totalDocs);
+                // Cell: (term absent, this class)
+                int n_t0_c = classGivenNoTerm.getOrDefault(classLabel, 0);
+                if (n_t0_c > 0) {
+                    double p_t0_c = (double) n_t0_c / totalDocs;  // P(t=0, c)
+                    double p_t0 = (double) withoutTerm / totalDocs; // P(t=0)
+                    double p_c = (double) classTotal.get(classLabel) / totalDocs; // P(c)
+                    mi += p_t0_c * Math.log(p_t0_c / (p_t0 * p_c));
+                }
             }
 
             return Math.max(0.0, mi);  // MI should be non-negative
         }
 
-        /**
-         * Computes mutual information contribution from a 2x2 contingency table.
-         *
-         * @param n11 count of (term present, class present)
-         * @param n10 count of (term present, class absent)
-         * @param n01 count of (term absent, class present)
-         * @param n00 count of (term absent, class absent)
-         * @param total total number of documents
-         * @return MI contribution
-         */
-        private double computeMIComponent(int n11, int n10, int n01, int n00, int total) {
-            double mi = 0.0;
-
-            // Row and column totals
-            int row1 = n11 + n10;  // term present
-            int row0 = n01 + n00;  // term absent
-            int col1 = n11 + n01;  // class present
-            int col0 = n10 + n00;  // class absent
-
-            // Add each cell's contribution to MI
-            mi += addMITerm(n11, row1, col1, total);
-            mi += addMITerm(n10, row1, col0, total);
-            mi += addMITerm(n01, row0, col1, total);
-            mi += addMITerm(n00, row0, col0, total);
-
-            return mi;
-        }
-
-        /**
-         * Adds a single cell's contribution to the mutual information calculation.
-         * Handles edge cases where counts are zero.
-         *
-         * @param nij count in cell (i,j)
-         * @param rowTotal total for row i
-         * @param colTotal total for column j
-         * @param total overall total
-         * @return contribution of this cell to MI
-         */
-        private double addMITerm(int nij, int rowTotal, int colTotal, int total) {
-            if (nij == 0 || rowTotal == 0 || colTotal == 0) {
-                return 0.0;  // 0 * log(0) = 0 by convention
-            }
-
-            // Compute probabilities
-            double pij = (double) nij / total;           // P(i,j)
-            double pi = (double) rowTotal / total;       // P(i)
-            double pj = (double) colTotal / total;       // P(j)
-            double piPj = pi * pj;                        // P(i) * P(j)
-
-            // Add epsilon smoothing for numerical stability when expected is near-zero
-            if (piPj < 1e-10) {
-                return 0.0;
-            }
-
-            // MI contribution: P(i,j) * log(P(i,j) / (P(i) * P(j)))
-            // Using natural log (base e) as is standard for MI calculations
-            return pij * Math.log(pij / piPj);
-        }
 
         /**
          * Stores configuration snapshot from the preprocessor.

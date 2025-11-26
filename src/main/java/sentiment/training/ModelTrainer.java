@@ -222,11 +222,15 @@ public class ModelTrainer {
     /**
      * Reset preprocessing components to allow training multiple models sequentially.
      * This is necessary because Spring beans are singletons and retain state.
+     * <p>
+     * NOTE: WekaInstancesConverter.reset() now also resets the TextPreprocessor it manages,
+     * so we only need to reset the converter explicitly. However, we keep the textPreprocessor
+     * reset as a defensive measure in case the converter is bypassed.
      */
     private void resetPreprocessingComponents() {
         try {
-            textPreprocessor.reset();
-            wekaInstancesConverter.reset();
+            wekaInstancesConverter.reset();  // This now resets the preprocessor too
+            textPreprocessor.reset();        // Defensive: ensure preprocessor is also reset
             logger.debug("Successfully reset preprocessing components");
         } catch (Exception e) {
             logger.warn("Failed to reset preprocessing components: {}", e.getMessage());
