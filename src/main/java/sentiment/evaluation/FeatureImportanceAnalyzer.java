@@ -15,20 +15,6 @@ import java.util.stream.Collectors;
 
 /**
  * Analyzes feature importance for any trained Weka classifier using permutation importance.
- * <p>
- * This analyzer uses permutation importance, a model-agnostic method that measures
- * the impact of each feature by perturbing its values and observing the change in
- * model predictions. The algorithm:
- * <ol>
- * <li>Measures baseline model performance for each feature</li>
- * <li>Zeros out the feature values and re-measures performance</li>
- * <li>Calculates importance as the drop in prediction confidence</li>
- * </ol>
- * <p>
- * This approach is compatible with all Weka classifiers that implement
- * {@code distributionForInstance()}, including SVM, Naive Bayes, Random Forest,
- * Logistic Regression, and Neural Networks.
- *
  * @see weka.classifiers.Classifier#distributionForInstance(weka.core.Instance)
  * @see sentiment.evaluation.domain.FeatureImportanceResult
  */
@@ -98,15 +84,6 @@ public class FeatureImportanceAnalyzer {
 
     /**
      * Extracts feature importance using the perturbation method.
-     * <p>
-     * For each feature, this method:
-     * <ol>
-     * <li>Measures baseline prediction confidence across a sample of instances</li>
-     * <li>Zeros out the feature values</li>
-     * <li>Re-measures prediction confidence</li>
-     * <li>Computes importance as the average absolute change in confidence</li>
-     * </ol>
-     * <p>
      * To improve efficiency, this method uses a random sample of up to 200 instances
      * from the training data rather than the entire dataset.
      *
@@ -202,7 +179,6 @@ public class FeatureImportanceAnalyzer {
 
     /**
      * Computes statistical significance scores for features based on their weights.
-     * <p>
      * Currently returns the absolute value of each weight as the significance score.
      *
      * @param weights a map of feature names to their importance weights
@@ -240,10 +216,6 @@ public class FeatureImportanceAnalyzer {
 
     /**
      * Computes summary statistics for a list of ranked features.
-     * <p>
-     * Calculates mean, standard deviation, median, and 95th percentile of
-     * the absolute importance weights.
-     *
      * @param features the list of ranked features
      * @return feature statistics including mean, standard deviation, median, 95th percentile, and total count
      */

@@ -12,15 +12,6 @@ import java.nio.file.Path;
 
 /**
  * Handles saving and loading feature importance analysis results to/from JSON files.
- *
- * This enables:
- * 1. Persisting feature importance computed during training
- * 2. Loading pre-computed results at runtime for API serving
- * 3. Notebook-based exploration without recomputation
- *
- * File format: JSON
- * File naming convention: {model-name}-feature-importance.json
- * Example: svm-model-feature-importance.json
  */
 public class FeatureImportancePersistence {
 

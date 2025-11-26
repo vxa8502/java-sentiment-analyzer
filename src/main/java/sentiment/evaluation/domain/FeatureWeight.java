@@ -5,13 +5,6 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 /**
  * Represents a single feature with its importance weight and statistical significance.
  *
- * <p>Immutable value object used across:
- * <ul>
- * <li>Feature importance analysis (domain layer)</li>
- * <li>JSON serialization/deserialization (persistence layer)</li>
- * <li>API responses (after mapping to presentation layer)</li>
- * </ul>
- *
  * @param featureName The name of the feature (word, n-gram, or other text feature)
  * @param weight The importance weight (positive = positive sentiment, negative = negative sentiment)
  * @param significance Statistical significance score (absolute value of normalized weight)

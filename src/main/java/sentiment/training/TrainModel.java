@@ -7,7 +7,6 @@ import sentiment.models.AlgorithmType;
 
 /**
  * Bootstrap tool for training initial models using minimal Spring context.
- * For operational retraining, use POST /admin/train endpoint instead.
  */
 public class TrainModel {
 

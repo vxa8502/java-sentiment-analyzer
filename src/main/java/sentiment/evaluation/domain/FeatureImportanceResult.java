@@ -7,16 +7,6 @@ import java.util.List;
 /**
  * Contains the complete results of feature importance analysis.
  *
- * <p>This immutable value object encapsulates:
- * <ul>
- * <li>Top-K most important features (for display/API)</li>
- * <li>All ranked features (for comprehensive analysis)</li>
- * <li>Summary statistics (mean, std dev, percentiles)</li>
- * <li>Analysis performance metrics (execution time)</li>
- * </ul>
- *
- * <p>Used by all feature importance analyzers as a common return type.
- *
  * @param topFeatures The top-K most important features (subset of allFeatures)
  * @param allFeatures All features ranked by absolute importance (descending)
  * @param statistics Summary statistics for the importance distribution
