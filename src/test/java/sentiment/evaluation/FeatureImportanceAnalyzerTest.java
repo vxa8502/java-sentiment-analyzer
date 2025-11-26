@@ -244,6 +244,64 @@ class FeatureImportanceAnalyzerTest {
                 "Top features should include features from training data");
     }
 
+    @Test
+    @DisplayName("Should handle multi-class classification (3 classes)")
+    void testMultiClassClassification() throws Exception {
+        // Create instances with 3 classes: positive, negative, neutral
+        Instances multiClassInstances = createMultiClassInstances();
+
+        SMO smo = new SMO();
+        smo.buildClassifier(multiClassInstances);
+
+        // Analyze feature importance - should not throw exception
+        FeatureImportanceResult result =
+                analyzer.analyzeFeatureImportance(multiClassInstances, smo, 10);
+
+        // Validate results
+        assertNotNull(result, "Result should not be null");
+        assertNotNull(result.topFeatures(), "Top features should not be null");
+        assertTrue(result.topFeatures().size() > 0, "Should have at least one feature");
+        assertTrue(result.analysisTimeMs() >= 0, "Analysis time should be non-negative");
+
+        // Verify feature weights are valid
+        for (sentiment.evaluation.domain.FeatureWeight fw : result.topFeatures()) {
+            assertTrue(Double.isFinite(fw.weight()), "Weight should be finite");
+            assertTrue(Double.isFinite(fw.significance()), "Significance should be finite");
+        }
+    }
+
+    private Instances createMultiClassInstances() {
+        // Create attributes
+        ArrayList<weka.core.Attribute> attributes = new ArrayList<>();
+
+        // Add word features
+        attributes.add(new weka.core.Attribute("excellent"));
+        attributes.add(new weka.core.Attribute("terrible"));
+        attributes.add(new weka.core.Attribute("okay"));
+        attributes.add(new weka.core.Attribute("average"));
+
+        // Add class attribute with 3 values
+        ArrayList<String> classValues = new ArrayList<>();
+        classValues.add("positive");
+        classValues.add("negative");
+        classValues.add("neutral");
+        attributes.add(new weka.core.Attribute("sentiment", classValues));
+
+        // Create dataset
+        Instances instances = new Instances("MultiClassTestData", attributes, 0);
+        instances.setClassIndex(attributes.size() - 1);
+
+        // Add instances for each class
+        addInstance(instances, new double[]{1.0, 0.0, 0.0, 0.0, 0}); // positive
+        addInstance(instances, new double[]{0.0, 1.0, 0.0, 0.0, 1}); // negative
+        addInstance(instances, new double[]{0.0, 0.0, 1.0, 0.8, 2}); // neutral
+        addInstance(instances, new double[]{0.9, 0.0, 0.0, 0.0, 0}); // positive
+        addInstance(instances, new double[]{0.0, 0.9, 0.0, 0.0, 1}); // negative
+        addInstance(instances, new double[]{0.0, 0.0, 0.8, 1.0, 2}); // neutral
+
+        return instances;
+    }
+
     // ==================== HELPER METHODS ====================
 
     private Instances createLargeInstances() {

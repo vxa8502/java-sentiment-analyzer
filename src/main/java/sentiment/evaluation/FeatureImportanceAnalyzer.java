@@ -138,6 +138,8 @@ public class FeatureImportanceAnalyzer {
      * For each instance in the sample, this method zeros out the specified feature,
      * measures the change in prediction confidence, and returns the average change
      * across all sampled instances.
+     * <p>
+     * Confidence is measured as the maximum probability (works for binary and multi-class).
      *
      * @param trainedData the training instances
      * @param classifier the trained classifier
@@ -153,9 +155,9 @@ public class FeatureImportanceAnalyzer {
             for (int idx : sampleIndices) {
                 Instance instance = trainedData.instance(idx);
 
-                // Get original prediction confidence
+                // Get original prediction confidence (max probability across all classes)
                 double[] originalProbs = classifier.distributionForInstance(instance);
-                double originalConfidence = Math.abs(originalProbs[0] - originalProbs[1]);
+                double originalConfidence = getMaxProbability(originalProbs);
 
                 // Perturb feature (zero it out)
                 Instance perturbedInstance = (Instance) instance.copy();
@@ -163,7 +165,7 @@ public class FeatureImportanceAnalyzer {
 
                 // Get perturbed prediction confidence
                 double[] perturbedProbs = classifier.distributionForInstance(perturbedInstance);
-                double perturbedConfidence = Math.abs(perturbedProbs[0] - perturbedProbs[1]);
+                double perturbedConfidence = getMaxProbability(perturbedProbs);
 
                 // Feature influence = change in confidence
                 totalInfluence += Math.abs(originalConfidence - perturbedConfidence);
@@ -175,6 +177,23 @@ public class FeatureImportanceAnalyzer {
             logger.debug("Failed to compute influence for feature {}: {}", featureIndex, e.getMessage());
             return 0.0;
         }
+    }
+
+    /**
+     * Returns the maximum probability from a distribution.
+     * Works for both binary and multi-class classification.
+     *
+     * @param probabilities probability distribution over classes
+     * @return the maximum probability value
+     */
+    private double getMaxProbability(double[] probabilities) {
+        double max = probabilities[0];
+        for (int i = 1; i < probabilities.length; i++) {
+            if (probabilities[i] > max) {
+                max = probabilities[i];
+            }
+        }
+        return max;
     }
 
     /**

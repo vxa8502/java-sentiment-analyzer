@@ -16,19 +16,15 @@ import java.util.Map;
 
 /**
  * Global exception handler for REST API endpoints.
- *
  * Catches exceptions thrown by controllers and converts them to
  * appropriate HTTP responses with proper status codes and error messages.
- *
- * <p><b>Design Pattern:</b> Centralized error response builder to eliminate duplication
- * across exception handlers.
  */
 @ControllerAdvice
 public class RestApiExceptionHandler {
 
     private static final Logger logger = LoggerFactory.getLogger(RestApiExceptionHandler.class);
 
-    // ==================== HELPER METHODS ====================
+    // HELPER METHODS
 
     /**
      * Create a standardized ErrorResponse with automatic timestamp.
@@ -44,12 +40,6 @@ public class RestApiExceptionHandler {
 
     /**
      * Log error at appropriate level and create ResponseEntity.
-     *
-     * <p>Uses different log levels based on HTTP status:
-     * <ul>
-     *   <li>4xx (client errors): INFO level</li>
-     *   <li>5xx (server errors): ERROR level</li>
-     * </ul>
      *
      * @param logPrefix Log message prefix (e.g., "Model not trained")
      * @param ex The exception being handled
@@ -87,7 +77,7 @@ public class RestApiExceptionHandler {
         return logAndBuildResponse(logPrefix, ex, errorTitle, ex.getMessage(), status);
     }
 
-    // ==================== EXCEPTION HANDLERS ====================
+    // EXCEPTION HANDLERS
 
     /**
      * Handles validation errors from @Valid annotations.

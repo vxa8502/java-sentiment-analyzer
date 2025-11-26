@@ -10,23 +10,16 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.beans.factory.annotation.Value;
 import sentiment.evaluation.FeatureImportancePersistence;
-import sentiment.models.SVMClassifier;
 import sentiment.models.SentimentClassifier;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
 /**
  * REST API controller for sentiment analysis operations.
- * Endpoints:
- * - POST /api/v1/sentiment/analyze - Analyze single text
- * - POST /api/v1/sentiment/batch - Batch analysis
- * - GET /api/v1/model/feature-importance - Get feature importance (SVM only)
- * - GET /api/v1/health - Health check
  */
 @RestController
 @RequestMapping("/api/v1")
@@ -38,7 +31,6 @@ public class SentimentController {
     private final String svmModelPath;
     private final long startTime;
 
-    // Cache feature importance to avoid reloading on every request
     private FeatureImportanceResponse cachedFeatureImportance;
     private final Object featureImportanceLock = new Object();
 
@@ -53,19 +45,6 @@ public class SentimentController {
 
     /**
      * Analyzes sentiment for a single text input.
-     * Example request:
-     * POST /api/v1/sentiment/analyze
-     * {
-     *   "text": "This movie was absolutely amazing!",
-     *   "confidenceThreshold": 0.7
-     * }
-     * Example response:
-     * {
-     *   "sentiment": "positive",
-     *   "confidence": 0.92,
-     *   "text": "This movie was absolutely amazing!",
-     *   "processingTimeMs": 45
-     * }
      */
     @PostMapping("/sentiment/analyze")
     @RateLimiter(name = "sentimentApi")
@@ -89,23 +68,8 @@ public class SentimentController {
     }
 
     /**
-     * Analyzes sentiment for multiple texts in batch.
-     *
-     * ✅ THREAD-SAFE: Uses parallel processing with order preservation
-     * - Preprocessor is thread-safe (ReadWriteLock for concurrent reads)
-     * - Classifier is thread-safe (ReadWriteLock via executeInference)
-     * - Order is preserved using indexed parallel streams
-     *
-     * Example request:
-     * POST /api/v1/sentiment/batch
-     * {
-     *   "texts": [
-     *     "Great product!",
-     *     "Terrible experience.",
-     *     "It's okay, nothing special."
-     *   ],
-     *   "confidenceThreshold": 0.7
-     * }
+     * Analyzes sentiment for multiple texts in batch using parallel processing.
+     * Results maintain input order despite concurrent execution.
      */
     @PostMapping("/sentiment/batch")
     @RateLimiter(name = "batchApi")
@@ -115,8 +79,7 @@ public class SentimentController {
         long batchStartTime = System.currentTimeMillis();
         logger.info("Batch classification request: {} texts", request.texts().size());
 
-        // ✅ PARALLEL PROCESSING: Process texts concurrently using parallel streams
-        // Order preservation: Use indexed stream to maintain input order
+        // Process texts concurrently using indexed parallel streams for order preservation
         List<SentimentResponse> results = java.util.stream.IntStream.range(0, request.texts().size())
             .parallel()
             .mapToObj(i -> {
@@ -138,8 +101,7 @@ public class SentimentController {
     }
 
     /**
-     * Helper class to preserve order during parallel processing.
-     * Each result is paired with its original index for sorting.
+     * Pairs result with original index for order-preserving parallel processing.
      */
     private record IndexedResult(int index, SentimentResponse result) {
         int getIndex() { return index; }
@@ -147,30 +109,10 @@ public class SentimentController {
     }
 
     /**
-     * Returns feature importance analysis for the trained model.
+     * Returns feature importance analysis from pre-computed data.
+     * Results are cached after first request.
      *
-     * This endpoint is designed for notebook-based exploration and model understanding.
-     * It shows which features (words/n-grams) most strongly influence predictions.
-     *
-     * IMPORTANT:
-     * - Available for all model types (SVM, Naive Bayes, Random Forest, Logistic Regression)
-     * - Results are cached after first request for performance
-     * - Use topFeatures parameter to control response size
-     *
-     * Example request:
-     * GET /api/v1/model/feature-importance?topFeatures=50
-     *
-     * Example response:
-     * {
-     *   "modelType": "SVM",
-     *   "totalFeatures": 5000,
-     *   "topFeatures": [
-     *     {"feature": "excellent", "weight": 0.234, "significance": 0.234, "direction": "positive"},
-     *     {"feature": "terrible", "weight": -0.198, "significance": 0.198, "direction": "negative"}
-     *   ],
-     *   "statistics": {"mean": 0.002, "stdDev": 0.004, "median": 0.001, "percentile95": 0.009},
-     *   "analysisTimeMs": 234
-     * }
+     * @param topFeatures Number of top features to return (default: 30)
      */
     @GetMapping("/model/feature-importance")
     public ResponseEntity<FeatureImportanceResponse> getFeatureImportance(
@@ -179,21 +121,17 @@ public class SentimentController {
         logger.info("Feature importance request: topFeatures={}", topFeatures);
 
         try {
-            // Check if model is trained
             if (!classifier.isTrained()) {
                 return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                         .body(FeatureImportanceResponse.error(
                                 "Model not trained yet. Check /api/v1/health for status."));
             }
 
-            // Note: Feature importance now works for all model types, not just SVM
-
             // Use cached result if available
             synchronized (featureImportanceLock) {
                 if (cachedFeatureImportance != null &&
                     cachedFeatureImportance.topFeatures().size() >= topFeatures) {
                     logger.info("Returning cached feature importance");
-                    // Return subset if requested fewer features
                     List<FeatureImportanceResponse.FeatureInfo> subset =
                             cachedFeatureImportance.topFeatures().subList(0,
                                     Math.min(topFeatures, cachedFeatureImportance.topFeatures().size()));
@@ -208,7 +146,6 @@ public class SentimentController {
                     ));
                 }
 
-                // Load pre-computed feature importance from file
                 logger.info("Loading pre-computed feature importance from file...");
                 Path featureImportancePath = FeatureImportancePersistence.getFeatureImportancePath(
                         Paths.get(svmModelPath));
@@ -225,7 +162,6 @@ public class SentimentController {
                     sentiment.evaluation.domain.FeatureImportanceResult data =
                             FeatureImportancePersistence.load(featureImportancePath);
 
-                    // Convert to response format
                     List<FeatureImportanceResponse.FeatureInfo> allFeatures = data.topFeatures().stream()
                             .map(FeatureImportanceResponse.FeatureInfo::fromDomain)
                             .collect(Collectors.toList());
@@ -233,7 +169,6 @@ public class SentimentController {
                     FeatureImportanceResponse.Statistics stats =
                             FeatureImportanceResponse.Statistics.fromDomain(data.statistics());
 
-                    // Cache the full result
                     cachedFeatureImportance = FeatureImportanceResponse.success(
                             classifier.getAlgorithmName(),
                             data.statistics().totalFeatures(),
@@ -242,7 +177,6 @@ public class SentimentController {
                             data.analysisTimeMs()
                     );
 
-                    // Return requested subset
                     List<FeatureImportanceResponse.FeatureInfo> subset = allFeatures.stream()
                             .limit(topFeatures)
                             .collect(Collectors.toList());
@@ -273,16 +207,7 @@ public class SentimentController {
     }
 
     /**
-     * Health check endpoint.
-     *
-     * Example response:
-     * {
-     *   "status": "UP",
-     *   "version": "1.0.0",
-     *   "modelLoaded": true,
-     *   "modelType": "SVM (SMO)",
-     *   "uptimeMs": 45000
-     * }
+     * Health check endpoint returning service status and model information.
      */
     @GetMapping("/health")
     public ResponseEntity<HealthResponse> health() {
@@ -302,18 +227,12 @@ public class SentimentController {
     }
 
     /**
-     * Internal method to classify a single text and apply confidence thresholding.
-     * Extracted to avoid code duplication between single and batch endpoints.
-     *
-     * @param text The text to classify
-     * @param confidenceThreshold Optional threshold for uncertain classification
-     * @return ResponseEntity with classification result
+     * Classifies text and applies optional confidence thresholding.
      */
     private ResponseEntity<SentimentResponse> classifyText(String text, Double confidenceThreshold) {
         long startTime = System.currentTimeMillis();
 
         try {
-            // Check if model is trained
             if (!classifier.isTrained()) {
                 logger.error("Attempted classification with untrained model");
                 return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
@@ -322,11 +241,9 @@ public class SentimentController {
                             "Check /api/v1/health for status.", text));
             }
 
-            // Get prediction and confidence
             String sentiment = classifier.classify(text);
             double[] probabilities = classifier.getClassificationProbabilities(text);
 
-            // Find confidence for predicted class
             String[] classes = classifier.getSupportedClasses();
             double confidence = 0.0;
             for (int i = 0; i < classes.length; i++) {
@@ -336,7 +253,6 @@ public class SentimentController {
                 }
             }
 
-            // Apply confidence threshold if provided
             if (confidenceThreshold != null && confidence < confidenceThreshold) {
                 logger.debug("Confidence {} below threshold {}, marking uncertain",
                            confidence, confidenceThreshold);
@@ -360,11 +276,7 @@ public class SentimentController {
     }
 
     /**
-     * Extracts the client IP address from the HTTP request.
-     * Checks common proxy headers (X-Forwarded-For, X-Real-IP) before falling back to remote address.
-     *
-     * @param request The HTTP servlet request
-     * @return The client IP address
+     * Extracts client IP from request, checking proxy headers first.
      */
     private String extractClientIp(HttpServletRequest request) {
         String ip = request.getHeader("X-Forwarded-For");
@@ -374,7 +286,6 @@ public class SentimentController {
         if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
             ip = request.getRemoteAddr();
         }
-        // If X-Forwarded-For contains multiple IPs, take the first one (original client)
         if (ip != null && ip.contains(",")) {
             ip = ip.split(",")[0].trim();
         }
