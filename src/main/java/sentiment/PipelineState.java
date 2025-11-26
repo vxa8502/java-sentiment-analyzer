@@ -4,40 +4,26 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Unified lifecycle state for all pipeline components (preprocessing, models, etc.).
- * Eliminates duplication between FilterState and ClassifierState.
+ * Lifecycle state for pipeline components.
  *
- * Provides STRICT state management with enforced transitions.
- *
- * CRITICAL: All state changes MUST go through validateTransition()
- * to enforce the state machine.
- *
- * STATE MACHINE:
- * UNINITIALIZED --train()/fit()--> TRAINING --success--> READY
- *      ^                              |                    |
- *      |                           failure              reset()
- *      |                              |                    |
- *      +--------<-----------------ERROR---------<---------+
+ * <p>State transitions:
+ * <pre>
+ * UNINITIALIZED → TRAINING → READY
+ *       ↑            ↓         ↓
+ *       ←─────── ERROR ←───────┘
+ * </pre>
  */
 public enum PipelineState {
-    /**
-     * Initial state - component has not been configured or trained
-     */
+    /** Component not initialized */
     UNINITIALIZED("Component not initialized"),
 
-    /**
-     * Transient state - training is in progress
-     */
+    /** Training in progress */
     TRAINING("Training in progress"),
 
-    /**
-     * Ready state - component is trained and ready for inference
-     */
+    /** Trained and ready for inference */
     READY("Trained and ready"),
 
-    /**
-     * Error state - training failed
-     */
+    /** Training failed */
     ERROR("Training failed");
 
     private final String description;
@@ -50,36 +36,22 @@ public enum PipelineState {
         return description;
     }
 
-    /**
-     * Check if component is ready for inference
-     */
+    /** @return true if component is ready for inference */
     public boolean isReady() {
         return this == READY;
     }
 
-    /**
-     * Check if component can accept training
-     */
+    /** @return true if component can accept training */
     public boolean canStartTraining() {
         return this == UNINITIALIZED || this == ERROR;
     }
 
-    /**
-     * Check if state is in error
-     */
+    /** @return true if state is in error */
     public boolean isError() {
         return this == ERROR;
     }
 
-    /**
-     * Check if transition to new state is valid.
-     *
-     * Valid transitions:
-     * - UNINITIALIZED → TRAINING, ERROR
-     * - TRAINING → READY, ERROR
-     * - READY → UNINITIALIZED, ERROR (for reset)
-     * - ERROR → UNINITIALIZED (for recovery)
-     */
+    /** @return true if transition to new state is valid */
     public boolean canTransitionTo(PipelineState newState) {
         return switch (this) {
             case UNINITIALIZED -> newState == TRAINING || newState == ERROR;
@@ -90,12 +62,9 @@ public enum PipelineState {
     }
 
     /**
-     * ENFORCED state transition validation.
-     * Throws IllegalStateException if transition is not allowed.
+     * Validates state transition.
      *
-     * Use this method for ALL state transitions to enforce the state machine.
-     *
-     * @param newState Target state
+     * @param newState target state
      * @throws IllegalStateException if transition is invalid
      */
     public void validateTransition(PipelineState newState) {
@@ -107,10 +76,7 @@ public enum PipelineState {
         }
     }
 
-    /**
-     * Get list of valid target states from current state.
-     * Derives valid transitions programmatically from canTransitionTo().
-     */
+    /** @return comma-separated list of valid target states */
     private String getValidTransitions() {
         List<String> validTransitions = new ArrayList<>();
 
