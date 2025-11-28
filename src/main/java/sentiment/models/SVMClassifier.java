@@ -18,17 +18,8 @@ import java.util.*;
 /**
  * SVM classifier for sentiment analysis using Weka's SMO implementation.
  *
- * <p>Manages the complete training pipeline from raw text to trained model:
- * <ol>
- *   <li>Fits text preprocessor (cleaning, tokenization, stop words)</li>
- *   <li>Fits feature extractor (TF-IDF vectorization)</li>
- *   <li>Trains SVM on transformed features</li>
- * </ol>
- *
  * <p>Supports optional hyperparameter tuning via cross-validation to optimize
  * kernel type, complexity parameter (C), and kernel-specific parameters.
- *
- * <p><b>Thread Safety:</b> Training operations use exclusive locks; predictions are thread-safe.
  */
 public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluationResult>
         implements ClassifierEvaluator, WekaClassifier {
@@ -75,11 +66,13 @@ public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluati
 
     /**
      * Enables hyperparameter tuning via grid search with k-fold cross-validation.
+     * Training time increases 5-10x but may improve accuracy by 2-5%.
+     * Enable for final production models, disable for experimentation.
+     * Configurable via {@code SENTIMENT_SVM_TUNE_ENABLED} env var.
      *
      * @param enable whether to enable tuning
      * @param numFolds number of CV folds (typically 5 or 10)
      */
-    @SuppressWarnings("unused")
     public void setHyperparameterTuning(boolean enable, int numFolds) {
         this.enableHyperparameterTuning = enable;
         this.cvFolds = numFolds;
@@ -88,11 +81,12 @@ public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluati
 
     /**
      * Sets the class imbalance threshold for automatic class weighting.
+     * When max_class_count / min_class_count exceeds threshold, class weighting is enabled.
+     * Configurable via {@code SENTIMENT_SVM_CLASS_IMBALANCE_THRESHOLD} env var (default: 3.0).
      *
      * @param threshold imbalance ratio (max/min class counts) that triggers weighting (must be > 1.0)
      * @throws IllegalArgumentException if threshold <= 1.0
      */
-    @SuppressWarnings("unused")
     public void setClassImbalanceThreshold(double threshold) {
         if (threshold <= 1.0) {
             throw new IllegalArgumentException("Class imbalance threshold must be greater than 1.0");
@@ -712,9 +706,12 @@ public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluati
     }
 
     /**
-     * Returns the optimal configuration from hyperparameter search, or null if tuning was disabled.
+     * Returns the optimal configuration from hyperparameter grid search.
+     * Returns null if hyperparameter tuning was disabled during training.
+     * Use this to inspect selected kernel, C parameter, and CV accuracy.
+     *
+     * @return optimal config or null if tuning was not performed
      */
-    @SuppressWarnings("unused")
     public SVMConfig getOptimalConfig() {
         return optimalConfig;
     }

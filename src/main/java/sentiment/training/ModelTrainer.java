@@ -56,11 +56,13 @@ public class ModelTrainer {
      * @param maxSamples max training samples (0 = all)
      * @param showFeatureImportance analyze feature importance
      * @param topFeaturesCount number of top features to display
+     * @param enableHyperparameterTuning enable grid search for SVM (increases training time 5-10x)
      * @return training statistics
      */
     public TrainingResult trainAndSave(String dataPath, String outputPath,
                                         AlgorithmType algorithmType, int maxSamples,
-                                        boolean showFeatureImportance, int topFeaturesCount)
+                                        boolean showFeatureImportance, int topFeaturesCount,
+                                        boolean enableHyperparameterTuning)
             throws Exception {
 
         // CRITICAL: Reset preprocessing components before each training
@@ -98,10 +100,27 @@ public class ModelTrainer {
         logger.info("Step 3/5: Training {} classifier on TRAIN SET ONLY...", algorithmType.getDisplayName());
         long trainStartTime = System.currentTimeMillis();
         SentimentClassifier classifier = createClassifier(algorithmType);
+
+        // Configure SVM-specific settings before training
+        if (classifier instanceof SVMClassifier svm) {
+            if (enableHyperparameterTuning) {
+                logger.info("Hyperparameter tuning ENABLED for SVM (training will take longer)");
+                svm.setHyperparameterTuning(true, 5);
+            }
+        }
+
         classifier.train(split.train);  // ✅ Train ONLY on training set
         long trainTime = System.currentTimeMillis() - trainStartTime;
         logger.info("✅ Training completed in {}ms ({}s)",
                 trainTime, trainTime / 1000.0);
+
+        // Log optimal config if hyperparameter tuning was used
+        if (classifier instanceof SVMClassifier svm && svm.getOptimalConfig() != null) {
+            SVMConfig optimal = svm.getOptimalConfig();
+            logger.info("Grid search results: kernel={}, C={}, CV accuracy={}",
+                optimal.getKernelType().getDisplayName(), optimal.getC(),
+                String.format("%.3f", optimal.getCvAccuracy()));
+        }
 
         // Step 4: Validate trained model (on train set for sanity check)
         logger.info("Step 4/5: Validating trained model...");
@@ -148,7 +167,8 @@ public class ModelTrainer {
                                                      List<AlgorithmType> algorithms,
                                                      int maxSamples,
                                                      boolean showFeatureImportance,
-                                                     int topFeaturesCount) throws Exception {
+                                                     int topFeaturesCount,
+                                                     boolean enableHyperparameterTuning) throws Exception {
 
         logger.info("Training {} models from {}", algorithms.size(), dataPath);
 
@@ -163,7 +183,7 @@ public class ModelTrainer {
 
             try {
                 TrainingResult result = trainAndSave(dataPath, outputPath, algorithm, maxSamples,
-                        showFeatureImportance, topFeaturesCount);
+                        showFeatureImportance, topFeaturesCount, enableHyperparameterTuning);
                 results.add(result);
             } catch (Exception e) {
                 logger.error("Failed to train {} model: {}", algorithm, e.getMessage(), e);

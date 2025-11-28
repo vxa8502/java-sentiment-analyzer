@@ -106,13 +106,21 @@ sentiment:
     # Enable probability estimates
     enable-probability: true
 
-    # Cross-validation folds for hyperparameter tuning
-    cv-folds: 5
+    # Hyperparameter tuning configuration
+    hyperparameter-tuning:
+      # Enable grid search during training (disabled by default for fast training)
+      # WARNING: Increases training time 5-10x but may improve accuracy by 2-5%
+      # Recommended: Enable for final production models, disable for experimentation
+      enabled: ${SENTIMENT_SVM_TUNE_ENABLED:false}
+
+      # Cross-validation folds for grid search
+      cv-folds: ${SENTIMENT_SVM_TUNE_FOLDS:5}
 
     # Class imbalance threshold (ratio) for enabling class weighting
     # If max_class_count / min_class_count > threshold, class weighting is enabled
     # Default: 3.0 (e.g., 3:1 ratio triggers weighting)
-    class-imbalance-threshold: 3.0
+    # This threshold is automatically applied during training and model loading
+    class-imbalance-threshold: ${SENTIMENT_SVM_CLASS_IMBALANCE_THRESHOLD:3.0}
 
   # Model comparison settings
   comparison:

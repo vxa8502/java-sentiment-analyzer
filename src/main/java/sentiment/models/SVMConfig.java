@@ -135,6 +135,10 @@ public class SVMConfig {
         return epsilon;
     }
 
+    public KernelType getKernelType() {
+        return kernelType;
+    }
+
     public Double getCvMacroF1() {
         return cvMacroF1;
     }

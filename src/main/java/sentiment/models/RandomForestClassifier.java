@@ -18,17 +18,6 @@ import java.util.*;
  * <p>Random Forest combines multiple decision trees to reduce overfitting and improve
  * accuracy over single models. Well-suited for capturing non-linear patterns and feature
  * interactions in text data.
- *
- * <p><b>Key characteristics:</b>
- * <ul>
- *   <li>High accuracy through ensemble strength (100 trees by default)
- *   <li>Robust to irrelevant features via random feature selection
- *   <li>Provides feature importance rankings
- *   <li>Higher memory/compute cost than SVM or Naive Bayes
- * </ul>
- *
- * <p><b>Thread safety:</b>
- * Training acquires exclusive lock; inference supports concurrent predictions.
  */
 public class RandomForestClassifier extends ClassifierTrainingTemplate<ClassifierEvaluationResult>
         implements ClassifierEvaluator, WekaClassifier {

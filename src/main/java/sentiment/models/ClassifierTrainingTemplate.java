@@ -14,19 +14,7 @@ import java.util.*;
 
 /**
  * Template base class implementing common classifier training/inference logic.
- * <p>
- * Extends {@link TrainingTemplate} to provide unified state management and lifecycle control.
- * Uses Template Method pattern - subclasses implement {@link #doTrain(List)} and {@link #doClearResources()}.
- *
- * <p>Adds classifier-specific features:
- * <ul>
- *   <li>Weka integration ({@link weka.classifiers.Classifier})</li>
- *   <li>Training data structure management</li>
- *   <li>Class label support</li>
- *   <li>Feature extraction pipeline</li>
- *   <li>Evaluation and metrics</li>
- *   <li>Model persistence support</li>
- * </ul>
+ * <p> Extends {@link TrainingTemplate} to provide unified state management and lifecycle control.
  *
  * @param <T> type of training result (optional, can be {@link Void})
  */
@@ -57,9 +45,6 @@ public abstract class ClassifierTrainingTemplate<T> extends TrainingTemplate<T> 
 
     /**
      * Trains the classifier on the provided training data.
-     * <p>
-     * Implements {@link SentimentClassifier#train(List)} by delegating to
-     * {@link TrainingTemplate#trainInternal(List)}.
      *
      * @param trainingData the training datasets
      * @throws Exception if training fails
@@ -105,7 +90,6 @@ public abstract class ClassifierTrainingTemplate<T> extends TrainingTemplate<T> 
 
     /**
      * Returns the underlying Weka classifier instance.
-     * <p>
      * This is used by the consolidated inference methods in the base class.
      *
      * @return the Weka classifier (e.g., NaiveBayes, SMO, Logistic, RandomForest)
@@ -114,7 +98,6 @@ public abstract class ClassifierTrainingTemplate<T> extends TrainingTemplate<T> 
 
     /**
      * Sets the underlying Weka classifier instance.
-     * <p>
      * Used by persistence utilities to restore a saved model.
      *
      * @param classifier the Weka classifier to set
@@ -123,8 +106,6 @@ public abstract class ClassifierTrainingTemplate<T> extends TrainingTemplate<T> 
 
     /**
      * Returns the text preprocessor instance.
-     * <p>
-     * Required for pipeline operations and {@code WekaClassifier} interface.
      *
      * @return the text preprocessor
      */
@@ -144,9 +125,6 @@ public abstract class ClassifierTrainingTemplate<T> extends TrainingTemplate<T> 
 
     /**
      * Returns the current classifier state.
-     * <p>
-     * Convenience method that delegates to {@link #getState()}.
-     * Thread-safe via volatile read.
      *
      * @return the current {@link PipelineState}
      */
@@ -157,9 +135,6 @@ public abstract class ClassifierTrainingTemplate<T> extends TrainingTemplate<T> 
 
     /**
      * Checks if the classifier is ready for inference.
-     * <p>
-     * Implements {@link SentimentClassifier#isTrained()}.
-     * Thread-safe via volatile read.
      *
      * @return {@code true} if the classifier is trained and ready, {@code false} otherwise
      */
@@ -197,8 +172,6 @@ public abstract class ClassifierTrainingTemplate<T> extends TrainingTemplate<T> 
 
     /**
      * Logs Weka dataset statistics including instances, features, and class distribution.
-     * <p>
-     * Common logging logic shared across all Weka-based classifiers.
      *
      * @param data Weka Instances to log statistics for
      */
@@ -241,10 +214,7 @@ public abstract class ClassifierTrainingTemplate<T> extends TrainingTemplate<T> 
 
     /**
      * Logs probability distribution at DEBUG level and returns the probabilities.
-     * <p>
-     * This is a convenience method that centralizes the common pattern of
-     * logging probability distributions in classification methods across all
-     * classifier implementations.
+     *
      * @param probs probability array to log and return
      * @return the same probability array (for convenient return statements)
      */
@@ -314,8 +284,6 @@ public abstract class ClassifierTrainingTemplate<T> extends TrainingTemplate<T> 
 
     /**
      * Builds additional statistics map for evaluation results.
-     * <p>
-     * Subclasses can override to add algorithm-specific statistics.
      *
      * @param evaluation Weka evaluation object
      * @param testData test dataset
@@ -345,8 +313,6 @@ public abstract class ClassifierTrainingTemplate<T> extends TrainingTemplate<T> 
 
     /**
      * Builds a {@link sentiment.evaluation.ClassifierEvaluationResult} from Weka Evaluation.
-     * <p>
-     * Subclasses can override {@link #getAlgorithmName()} to customize the algorithm name.
      *
      * @param evaluation Weka evaluation object
      * @param testData test dataset
@@ -407,8 +373,6 @@ public abstract class ClassifierTrainingTemplate<T> extends TrainingTemplate<T> 
 
     /**
      * Returns the algorithm name for evaluation results.
-     * <p>
-     * Subclasses should override to provide a specific algorithm name.
      *
      * @return algorithm name (default: class simple name)
      */
@@ -420,9 +384,6 @@ public abstract class ClassifierTrainingTemplate<T> extends TrainingTemplate<T> 
 
     /**
      * Finalizes training by storing metadata required for inference.
-     * <p>
-     * Called after successful model training to prepare the classifier for inference operations.
-     * This method extracts the training data structure (schema only) and supported class labels.
      *
      * @param trainingData the training Instances used for model training
      */
@@ -441,15 +402,13 @@ public abstract class ClassifierTrainingTemplate<T> extends TrainingTemplate<T> 
     /**
      * Performs the standard training pipeline orchestration.
      * <p>
-     * Subclasses can call this method from {@link #doTrain(List)} to avoid code duplication.
-     * The pipeline consists of three steps:
+     * The pipeline consists of two steps:
      * <ol>
-     *   <li>Fit preprocessing pipeline (text cleaning, tokenization, etc.)</li>
-     *   <li>Fit feature extraction (convert text to Weka instances)</li>
+     *   <li>Fit vectorization pipeline (preprocessing + TF-IDF feature extraction)</li>
      *   <li>Train classifier using the provided {@link ModelTrainer}</li>
      * </ol>
      * <p>
-     * <b>Note:</b> The return value is optional and can be ignored by subclasses.
+     * The return value is optional and can be ignored by subclasses.
      * Training metadata is automatically stored via {@link #finalizeTraining(Instances)}.
      *
      * @param rawDatasets raw training datasets
@@ -555,9 +514,7 @@ public abstract class ClassifierTrainingTemplate<T> extends TrainingTemplate<T> 
 
     /**
      * Evaluates the classifier on test data.
-     * <p>
-     * This method provides thread-safe evaluation via read lock protection.
-     *
+
      * @param testData Weka Instances to evaluate on
      * @return evaluation results with all metrics
      * @throws Exception if evaluation fails or classifier is not trained
@@ -580,8 +537,6 @@ public abstract class ClassifierTrainingTemplate<T> extends TrainingTemplate<T> 
 
     /**
      * Validates that test data structure matches training data.
-     * <p>
-     * Ensures the number of attributes in the test data matches the training data.
      *
      * @param testData test Instances to validate
      * @throws Exception if structure mismatch is detected
@@ -624,9 +579,6 @@ public abstract class ClassifierTrainingTemplate<T> extends TrainingTemplate<T> 
 
     /**
      * Executes an inference task using the {@link java.util.concurrent.Callable} interface.
-     * <p>
-     * This adapter method allows compatibility with code that uses {@code Callable}
-     * instead of {@link InferenceTask}.
      *
      * @param <R> return type
      * @param task the inference task to execute
@@ -641,9 +593,6 @@ public abstract class ClassifierTrainingTemplate<T> extends TrainingTemplate<T> 
 
     /**
      * Clears classifier-specific resources during reset.
-     * <p>
-     * Consolidated implementation that clears Weka-specific state managed by this template.
-     * Final to ensure consistent cleanup behavior across all classifier implementations.
      */
     @Override
     protected final void doClearResources() {
@@ -655,7 +604,6 @@ public abstract class ClassifierTrainingTemplate<T> extends TrainingTemplate<T> 
 
     /**
      * Returns the training data structure for persistence operations.
-     * Package-private to allow {@code WekaModelPersistence} access.
      *
      * @return training data structure containing schema only (no instances)
      */
@@ -665,7 +613,6 @@ public abstract class ClassifierTrainingTemplate<T> extends TrainingTemplate<T> 
 
     /**
      * Sets training metadata after loading from persistence.
-     * Package-private to allow {@code WekaModelPersistence} access.
      *
      * @param structure training data structure
      * @param classes supported class labels

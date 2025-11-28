@@ -637,13 +637,7 @@ public class TextPreprocessor {
         }
 
         /**
-         * Computes mutual information between a term and class labels using correct multi-class formula.
-         * <p>
-         * MI(T; C) = Σₜ Σ_c P(t,c) log(P(t,c) / (P(t) P(c)))
-         * <p>
-         * Where T ∈ {0,1} (term absent/present) and C ∈ {all class labels}.
-         * This creates a 2×k contingency table and computes MI over all cells.
-         * <p>
+         * Computes mutual information between a term and class labels using multi-class formula.
          * Higher scores indicate greater discriminative power.
          *
          * @param term term to evaluate

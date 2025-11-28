@@ -15,8 +15,7 @@ import java.util.*;
 
 /**
  * Naive Bayes sentiment classifier using Weka's NaiveBayes implementation.
- * <p>
- * A fast, probabilistic classifier ideal for baseline comparisons and real-time applications.
+ * <p> A fast, probabilistic classifier ideal for baseline comparisons and real-time applications.
  * Assumes conditional independence between features (often violated in text),
  * therefore may underperform when feature interactions are critical.
  */

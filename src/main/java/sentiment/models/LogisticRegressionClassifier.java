@@ -17,14 +17,6 @@ import java.util.*;
  *
  * <p>A fast, interpretable linear classifier that produces well-calibrated probabilities.
  * Effective as a baseline model and for applications requiring feature interpretability.
- *
- * <p>Strengths: Simple linear decision boundary with clear feature weights, fast training
- * and inference, built-in L2 regularization prevents overfitting.
- *
- * <p>Limitations: Cannot capture non-linear patterns or feature interactions without
- * manual feature engineering. Requires normalized features (TF-IDF provides this naturally).
- *
- * <p><b>Thread Safety:</b> Training operations use exclusive locks; predictions are thread-safe.
  */
 public class LogisticRegressionClassifier extends ClassifierTrainingTemplate<ClassifierEvaluationResult>
         implements ClassifierEvaluator, WekaClassifier {

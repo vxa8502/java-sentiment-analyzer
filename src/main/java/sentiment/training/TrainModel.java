@@ -31,6 +31,7 @@ public class TrainModel {
         int maxSamples = args.length > 2 ? Integer.parseInt(args[2]) : 10000;
         boolean showFeatureImportance = args.length > 3 && Boolean.parseBoolean(args[3]);
         int topFeaturesCount = args.length > 4 ? Integer.parseInt(args[4]) : 30;
+        boolean enableHyperparameterTuning = args.length > 5 && Boolean.parseBoolean(args[5]);
 
         System.out.println("========================================");
         System.out.println("  Sentiment Model Training Tool");
@@ -39,6 +40,7 @@ public class TrainModel {
         System.out.println("Output: " + outputPath);
         System.out.println("Max samples: " + maxSamples);
         System.out.println("Feature importance: " + showFeatureImportance);
+        System.out.println("Hyperparameter tuning: " + enableHyperparameterTuning);
         System.out.println("========================================\n");
 
         try {
@@ -58,7 +60,8 @@ public class TrainModel {
                     AlgorithmType.SVM,
                     maxSamples,
                     showFeatureImportance,
-                    topFeaturesCount
+                    topFeaturesCount,
+                    enableHyperparameterTuning
             );
 
             // Clean up Spring context
@@ -91,9 +94,12 @@ public class TrainModel {
     }
 
     private static void printUsage() {
-        System.out.println("\nUsage: TrainModel <dataPath> <outputPath> [maxSamples] [showFeatureImportance] [topFeaturesCount]");
+        System.out.println("\nUsage: TrainModel <dataPath> <outputPath> [maxSamples] [showFeatureImportance] [topFeaturesCount] [enableHyperparameterTuning]");
         System.out.println("\nExample:");
         System.out.println("  mvn exec:java -Dexec.mainClass=\"sentiment.training.TrainModel\" \\");
-        System.out.println("    -Dexec.args=\"./data/datasets/Reviews.csv ./models/svm-model.ser 10000 true\"");
+        System.out.println("    -Dexec.args=\"./data/datasets/Reviews.csv ./models/svm-model.ser 10000 true 30 false\"");
+        System.out.println("\nWith hyperparameter tuning (slower but more accurate):");
+        System.out.println("  mvn exec:java -Dexec.mainClass=\"sentiment.training.TrainModel\" \\");
+        System.out.println("    -Dexec.args=\"./data/datasets/Reviews.csv ./models/svm-model.ser 10000 true 30 true\"");
     }
 }
