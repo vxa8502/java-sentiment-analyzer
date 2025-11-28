@@ -18,15 +18,11 @@ import java.util.stream.Collectors;
 
 /**
  * Converts raw text to Weka Instances for machine learning.
- * <p> This class owns the complete text→features vectorization pipeline:
- * During {@link #fit(List)}, the preprocessor is automatically trained first, then TF-IDF filters
+ * <p> This class owns the complete text → features vectorization pipeline:
+ *
+ * <p> During {@link #fit(List)}, the preprocessor is automatically trained first, then TF-IDF filters
  * are trained on the preprocessed text. This ensures the dependency order is always correct and
  * prevents invalid state errors.
- * <p>
- * <strong>Thread-safe</strong> for concurrent inference after training completes.
- *
- * @see sentiment.TrainingTemplate for state management and thread safety
- * @see TextPreprocessor for text preprocessing logic
  */
 @Component
 public class WekaInstancesConverter extends sentiment.TrainingTemplate<Instances> {

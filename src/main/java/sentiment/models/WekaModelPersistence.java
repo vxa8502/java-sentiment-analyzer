@@ -13,38 +13,6 @@ import java.util.Date;
 
 /**
  * Generic model persistence for Weka-based classifiers.
- *
- * PURPOSE:
- * ========
- * Provides unified save/load functionality for all Weka classifier types
- * (Naive Bayes, Random Forest, Logistic Regression, etc.).
- *
- * DESIGN:
- * =======
- * Uses Java serialization to save complete classifier state including:
- * - Trained Weka classifier instance
- * - Training data structure (for validation)
- * - Supported class labels
- * - Training metadata (time, version)
- *
- * THREAD SAFETY:
- * ==============
- * This class is stateless and thread-safe. However, the classifiers being
- * saved/loaded must handle their own thread safety.
- *
- * USAGE:
- * ======
- * <pre>
- * // Save a trained classifier
- * WekaModelPersistence<NaiveBayesClassifier> persistence = new WekaModelPersistence<>();
- * persistence.saveModel(classifier, Path.of("./models/nb-model.ser"));
- *
- * // Load a classifier
- * NaiveBayesClassifier loaded = persistence.loadModel(
- *     new NaiveBayesClassifier(preprocessor, converter),
- *     Path.of("./models/nb-model.ser")
- * );
- * </pre>
  */
 public class WekaModelPersistence<T extends ClassifierTrainingTemplate<?>> {
 
@@ -90,7 +58,7 @@ public class WekaModelPersistence<T extends ClassifierTrainingTemplate<?>> {
             }
 
             long fileSize = Files.size(modelPath);
-            logger.info("✅ Model saved successfully: {} bytes ({} KB)",
+            logger.info("Model saved successfully: {} bytes ({} KB)",
                     fileSize, fileSize / 1024);
 
         } catch (IOException e) {
@@ -148,7 +116,7 @@ public class WekaModelPersistence<T extends ClassifierTrainingTemplate<?>> {
             // Transition to READY state
             classifier.setState(PipelineState.READY);
 
-            logger.info("✅ Model loaded: {} classes, trained at {}",
+            logger.info("Model loaded: {} classes, trained at {}",
                     bundle.supportedClasses.length, new Date(bundle.timestamp));
 
             return classifier;
@@ -173,12 +141,10 @@ public class WekaModelPersistence<T extends ClassifierTrainingTemplate<?>> {
                 new BufferedInputStream(Files.newInputStream(modelPath)))) {
 
             Object obj = ois.readObject();
-            if (!(obj instanceof ModelBundle)) {
+            if (!(obj instanceof ModelBundle bundle)) {
                 logger.warn("File is not a valid ModelBundle: {}", modelPath);
                 return false;
             }
-
-            ModelBundle bundle = (ModelBundle) obj;
 
             // Basic validation
             if (bundle.wekaClassifier == null || bundle.trainingStructure == null
@@ -225,8 +191,7 @@ public class WekaModelPersistence<T extends ClassifierTrainingTemplate<?>> {
         }
     }
 
-    // ==================== HELPER METHODS ====================
-    // REFACTORED: Eliminated 52 lines of duplicate type-checking by using abstract methods
+    // HELPER METHODS
 
     /**
      * Extract Weka classifier using polymorphism instead of type-checking.
@@ -256,12 +221,13 @@ public class WekaModelPersistence<T extends ClassifierTrainingTemplate<?>> {
         classifier.setTrainingMetadata(structure, classes);
     }
 
-    // ==================== DATA CLASSES ====================
+    // DATA CLASSES
 
     /**
      * Serializable bundle containing all trained model state.
      */
     private static class ModelBundle implements Serializable {
+        @Serial
         private static final long serialVersionUID = 1L;
 
         final Classifier wekaClassifier;
