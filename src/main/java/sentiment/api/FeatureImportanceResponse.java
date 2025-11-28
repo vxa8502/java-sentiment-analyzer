@@ -8,36 +8,6 @@ import java.util.List;
 
 /**
  * Response object for feature importance analysis endpoint.
- *
- * Used for notebook-based model exploration and understanding which features
- * (words/n-grams) most strongly influence sentiment predictions.
- *
- * Example response:
- * {
- *   "modelType": "SVM",
- *   "totalFeatures": 5000,
- *   "topFeatures": [
- *     {
- *       "feature": "excellent",
- *       "weight": 0.234567,
- *       "significance": 0.2346,
- *       "direction": "positive"
- *     },
- *     {
- *       "feature": "terrible",
- *       "weight": -0.198234,
- *       "significance": 0.1982,
- *       "direction": "negative"
- *     }
- *   ],
- *   "statistics": {
- *     "mean": 0.002341,
- *     "stdDev": 0.004123,
- *     "median": 0.001234,
- *     "percentile95": 0.009876
- *     },
- *   "analysisTimeMs": 234
- * }
  */
 public record FeatureImportanceResponse(
         @JsonProperty("modelType") String modelType,
@@ -111,17 +81,16 @@ public record FeatureImportanceResponse(
     }
 
     /**
-     * Creates a response for non-SVM models.
+     * Creates a response when feature importance analysis is unavailable.
      */
-    public static FeatureImportanceResponse unsupported(String modelType) {
+    public static FeatureImportanceResponse unavailable(String modelType, String reason) {
         return new FeatureImportanceResponse(
                 modelType,
                 0,
                 List.of(),
                 new Statistics(0, 0, 0, 0),
                 0,
-                "Feature importance analysis is only supported for SVM models. " +
-                "Current model type: " + modelType
+                reason
         );
     }
 }

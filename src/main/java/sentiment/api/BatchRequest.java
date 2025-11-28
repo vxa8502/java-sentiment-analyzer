@@ -9,10 +9,6 @@ import static sentiment.api.ValidationConstants.*;
 
 /**
  * Request DTO for batch sentiment analysis.
- *
- * Validates both the batch size and individual text lengths to prevent:
- * - Overwhelming the system with too many requests
- * - Bypassing single-request validation with oversized texts
  */
 public record BatchRequest(
     @NotEmpty(message = BATCH_TOO_SMALL_MESSAGE)

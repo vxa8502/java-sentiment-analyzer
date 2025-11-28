@@ -62,11 +62,11 @@ X-RateLimit-Reset: 2025-11-12T10:35:00Z
 
 ```json
 {
-  "timestamp": "2025-11-12T10:30:45Z",
-  "status": 429,
   "error": "Too Many Requests",
   "message": "Rate limit exceeded. Please try again later.",
-  "path": "/api/v1/sentiment/analyze"
+  "status": 429,
+  "timestamp": 1731408645000,
+  "details": null
 }
 ```
 
@@ -165,12 +165,18 @@ Content-Type: application/json
       "processingTimeMs": 35
     }
   ],
+  "totalProcessed": 3,
+  "successCount": 3,
+  "errorCount": 0,
   "totalProcessingTimeMs": 95
 }
 ```
 
 **Field Descriptions**:
 - `results`: Array of sentiment results (matches input order)
+- `totalProcessed`: Total number of texts processed
+- `successCount`: Number of successful analyses
+- `errorCount`: Number of failed analyses
 - `totalProcessingTimeMs`: Total wall-clock time for batch processing
 
 **Performance Notes**:
@@ -180,7 +186,117 @@ Content-Type: application/json
 
 ---
 
-### 3. Health Check
+### 3. Feature Importance Analysis
+
+Retrieve feature importance analysis showing which words/n-grams most strongly influence sentiment predictions.
+
+**Endpoint**: `GET /api/v1/model/feature-importance`
+
+**Request Headers**: None required
+
+**Query Parameters**:
+- `topFeatures` (optional, default: 30): Number of top features to return
+
+**Request Example**:
+```bash
+curl "http://localhost:8080/api/v1/model/feature-importance?topFeatures=20"
+```
+
+**Response** (Success - 200 OK):
+```json
+{
+  "modelType": "SVM",
+  "totalFeatures": 5000,
+  "topFeatures": [
+    {
+      "feature": "excellent",
+      "weight": 2.45,
+      "significance": 2.45,
+      "direction": "positive"
+    },
+    {
+      "feature": "terrible",
+      "weight": -2.18,
+      "significance": 2.18,
+      "direction": "negative"
+    },
+    {
+      "feature": "amazing",
+      "weight": 2.03,
+      "significance": 2.03,
+      "direction": "positive"
+    }
+  ],
+  "statistics": {
+    "mean": 0.42,
+    "stdDev": 0.38,
+    "median": 0.31,
+    "percentile95": 1.24
+  },
+  "analysisTimeMs": 1250,
+  "note": "Feature importance shows which words/n-grams most strongly influence predictions. Positive weights indicate positive sentiment, negative weights indicate negative sentiment."
+}
+```
+
+**Field Descriptions**:
+- `modelType`: Classification algorithm used
+- `totalFeatures`: Total number of features in the model
+- `topFeatures`: Array of most important features
+  - `feature`: Word or n-gram
+  - `weight`: Importance score (positive = positive sentiment, negative = negative sentiment)
+  - `significance`: Absolute importance value
+  - `direction`: "positive" or "negative"
+- `statistics`: Distribution statistics of all feature weights
+  - `mean`: Average feature importance
+  - `stdDev`: Standard deviation
+  - `median`: Median importance
+  - `percentile95`: 95th percentile value
+- `analysisTimeMs`: Time taken to compute or load feature importance
+- `note`: Explanatory note about interpretation
+
+**Response** (Model Not Trained - 503):
+```json
+{
+  "modelType": "unknown",
+  "totalFeatures": 0,
+  "topFeatures": [],
+  "statistics": {
+    "mean": 0,
+    "stdDev": 0,
+    "median": 0,
+    "percentile95": 0
+  },
+  "analysisTimeMs": 0,
+  "note": "Model not trained yet. Check /api/v1/health for status."
+}
+```
+
+**Response** (Feature Importance Not Found - 404):
+```json
+{
+  "modelType": "unknown",
+  "totalFeatures": 0,
+  "topFeatures": [],
+  "statistics": {
+    "mean": 0,
+    "stdDev": 0,
+    "median": 0,
+    "percentile95": 0
+  },
+  "analysisTimeMs": 0,
+  "note": "Feature importance data not found. Please re-train the model with feature importance analysis enabled."
+}
+```
+
+**Notes**:
+- Feature importance is computed during model training using permutation importance
+- Results are cached in memory after first load
+- Works with any classifier algorithm (SVM, Naive Bayes, Random Forest, Logistic Regression)
+- Pre-computed results are stored alongside model files
+
+---
+
+### 4. Health Check
 
 Check API and model health status.
 
@@ -191,34 +307,20 @@ Check API and model health status.
 **Response** (Success - 200 OK):
 ```json
 {
-  "status": "UP | DOWN",
+  "status": "UP",
+  "version": "1.0.0",
   "modelLoaded": true,
-  "algorithmType": "SVM",
-  "timestamp": "2025-11-12T10:30:45Z",
-  "version": "1.0.0"
+  "modelType": "SVM",
+  "uptimeMs": 123456
 }
 ```
 
 **Field Descriptions**:
-- `status`: Overall health status
-  - `"UP"`: API operational, model loaded
-  - `"DOWN"`: API operational, but model not loaded or failed
-- `modelLoaded`: Whether classifier is ready for inference
-- `algorithmType`: Active classification algorithm
-- `timestamp`: Current server time (ISO 8601)
+- `status`: Overall health status (`"UP"` when operational)
 - `version`: API version
-
-**Response** (Service Unavailable - 503):
-```json
-{
-  "status": "DOWN",
-  "modelLoaded": false,
-  "algorithmType": null,
-  "timestamp": "2025-11-12T10:30:45Z",
-  "version": "1.0.0",
-  "error": "Model failed to load: file not found"
-}
-```
+- `modelLoaded`: Whether classifier is ready for inference
+- `modelType`: Active classification algorithm (e.g., "SVM", "NaiveBayes", "RandomForest", "LogisticRegression")
+- `uptimeMs`: Application uptime in milliseconds
 
 ---
 
@@ -230,19 +332,22 @@ All errors follow a consistent structure:
 
 ```json
 {
-  "timestamp": "2025-11-12T10:30:45Z",
-  "status": 400,
   "error": "Bad Request",
   "message": "Detailed error message",
-  "path": "/api/v1/sentiment/analyze",
-  "validationErrors": [
-    {
-      "field": "text",
-      "message": "Text cannot be null"
-    }
-  ]
+  "status": 400,
+  "timestamp": 1731408645000,
+  "details": {
+    "text": "Text cannot be null"
+  }
 }
 ```
+
+**Field Descriptions**:
+- `error`: Error type/title
+- `message`: Detailed error message
+- `status`: HTTP status code
+- `timestamp`: Unix timestamp in milliseconds
+- `details`: Optional map of field-level validation errors (field name â†’ error message)
 
 ---
 
@@ -272,17 +377,13 @@ All errors follow a consistent structure:
 **Response** (400 Bad Request):
 ```json
 {
-  "timestamp": "2025-11-12T10:30:45Z",
+  "error": "Validation failed",
+  "message": null,
   "status": 400,
-  "error": "Bad Request",
-  "message": "Validation failed",
-  "path": "/api/v1/sentiment/analyze",
-  "validationErrors": [
-    {
-      "field": "text",
-      "message": "Text cannot be null"
-    }
-  ]
+  "timestamp": 1731408645000,
+  "details": {
+    "text": "Text cannot be blank"
+  }
 }
 ```
 
@@ -300,17 +401,13 @@ All errors follow a consistent structure:
 **Response** (400 Bad Request):
 ```json
 {
-  "timestamp": "2025-11-12T10:30:45Z",
+  "error": "Validation failed",
+  "message": null,
   "status": 400,
-  "error": "Bad Request",
-  "message": "Validation failed",
-  "path": "/api/v1/sentiment/analyze",
-  "validationErrors": [
-    {
-      "field": "text",
-      "message": "Text must be 1-10000 characters"
-    }
-  ]
+  "timestamp": 1731408645000,
+  "details": {
+    "text": "Text cannot exceed 10000 characters"
+  }
 }
 ```
 
@@ -329,17 +426,13 @@ All errors follow a consistent structure:
 **Response** (400 Bad Request):
 ```json
 {
-  "timestamp": "2025-11-12T10:30:45Z",
+  "error": "Validation failed",
+  "message": null,
   "status": 400,
-  "error": "Bad Request",
-  "message": "Validation failed",
-  "path": "/api/v1/sentiment/analyze",
-  "validationErrors": [
-    {
-      "field": "confidenceThreshold",
-      "message": "Confidence threshold must be 0-1"
-    }
-  ]
+  "timestamp": 1731408645000,
+  "details": {
+    "confidenceThreshold": "Confidence threshold must be between 0.0 and 1.0"
+  }
 }
 ```
 
@@ -357,11 +450,13 @@ All errors follow a consistent structure:
 **Response** (400 Bad Request):
 ```json
 {
-  "timestamp": "2025-11-12T10:30:45Z",
+  "error": "Validation failed",
+  "message": null,
   "status": 400,
-  "error": "Bad Request",
-  "message": "Batch size exceeds maximum allowed (100)",
-  "path": "/api/v1/sentiment/batch"
+  "timestamp": 1731408645000,
+  "details": {
+    "texts": "Cannot process more than 100 texts at once"
+  }
 }
 ```
 
@@ -379,11 +474,13 @@ All errors follow a consistent structure:
 **Response** (400 Bad Request):
 ```json
 {
-  "timestamp": "2025-11-12T10:30:45Z",
+  "error": "Validation failed",
+  "message": null,
   "status": 400,
-  "error": "Bad Request",
-  "message": "Texts array cannot be empty",
-  "path": "/api/v1/sentiment/batch"
+  "timestamp": 1731408645000,
+  "details": {
+    "texts": "Batch must contain at least 1 text"
+  }
 }
 ```
 
@@ -396,11 +493,11 @@ All errors follow a consistent structure:
 **Response** (503 Service Unavailable):
 ```json
 {
-  "timestamp": "2025-11-12T10:30:45Z",
-  "status": 503,
-  "error": "Service Unavailable",
+  "error": "Service unavailable",
   "message": "Sentiment classifier not loaded. Check model files.",
-  "path": "/api/v1/sentiment/analyze"
+  "status": 503,
+  "timestamp": 1731408645000,
+  "details": null
 }
 ```
 
@@ -535,6 +632,9 @@ curl -X POST http://localhost:8080/api/v1/sentiment/batch \
       "processingTimeMs": 29
     }
   ],
+  "totalProcessed": 5,
+  "successCount": 5,
+  "errorCount": 0,
   "totalProcessingTimeMs": 145
 }
 ```
@@ -552,10 +652,10 @@ curl http://localhost:8080/api/v1/health
 ```json
 {
   "status": "UP",
+  "version": "1.0.0",
   "modelLoaded": true,
-  "algorithmType": "SVM",
-  "timestamp": "2025-11-12T10:30:45Z",
-  "version": "1.0.0"
+  "modelType": "SVM",
+  "uptimeMs": 123456
 }
 ```
 
@@ -654,9 +754,8 @@ java -jar sentiment-analyzer.jar --spring.profiles.active=production
 ```java
 RestTemplate restTemplate = new RestTemplate();
 
-SentimentRequest request = new SentimentRequest();
-request.setText("Great product!");
-request.setConfidenceThreshold(0.7);
+// SentimentRequest is a record - use constructor
+SentimentRequest request = new SentimentRequest("Great product!", 0.7);
 
 SentimentResponse response = restTemplate.postForObject(
     "http://localhost:8080/api/v1/sentiment/analyze",
@@ -664,8 +763,8 @@ SentimentResponse response = restTemplate.postForObject(
     SentimentResponse.class
 );
 
-System.out.println("Sentiment: " + response.getSentiment());
-System.out.println("Confidence: " + response.getConfidence());
+System.out.println("Sentiment: " + response.sentiment());
+System.out.println("Confidence: " + response.confidence());
 ```
 
 ---
@@ -804,7 +903,13 @@ curl http://localhost:8080/api/v1/health \
 **A**: Validation error (400 Bad Request):
 ```json
 {
-  "message": "Text must be 1-10000 characters"
+  "error": "Validation failed",
+  "message": null,
+  "status": 400,
+  "timestamp": 1731408645000,
+  "details": {
+    "text": "Text cannot be blank"
+  }
 }
 ```
 
@@ -830,7 +935,7 @@ curl http://localhost:8080/api/v1/health \
 
 **A**:
 - Single request: 10,000 characters per text
-- Batch request: 100 texts × 10,000 characters = ~1MB total
+- Batch request: 100 texts ï¿½ 10,000 characters = ~1MB total
 
 ---
 

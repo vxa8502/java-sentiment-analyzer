@@ -6,8 +6,7 @@ import java.util.Map;
 
 /**
  * Standardized error response for all REST API endpoints.
- *
- * Provides consistent error formatting across the application with support
+ * <p> Provides consistent error formatting across the application with support
  * for simple error messages and detailed validation errors.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
