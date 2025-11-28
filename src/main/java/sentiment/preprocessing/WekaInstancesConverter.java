@@ -18,14 +18,7 @@ import java.util.stream.Collectors;
 
 /**
  * Converts raw text to Weka Instances for machine learning.
- * <p>
- * <strong>OWNERSHIP:</strong> This class owns the complete text→features vectorization pipeline:
- * <ul>
- *   <li>Text preprocessing (tokenization, stopword removal via {@link TextPreprocessor})</li>
- *   <li>TF-IDF vectorization (term frequency, inverse document frequency)</li>
- *   <li>Feature normalization (optional)</li>
- * </ul>
- * <p>
+ * <p> This class owns the complete text→features vectorization pipeline:
  * During {@link #fit(List)}, the preprocessor is automatically trained first, then TF-IDF filters
  * are trained on the preprocessed text. This ensures the dependency order is always correct and
  * prevents invalid state errors.

@@ -105,13 +105,6 @@ public abstract class ClassifierTrainingTemplate<T> extends TrainingTemplate<T> 
     protected abstract void setWekaClassifierInstance(weka.classifiers.Classifier classifier);
 
     /**
-     * Returns the text preprocessor instance.
-     *
-     * @return the text preprocessor
-     */
-    public abstract TextPreprocessor getPreprocessor();
-
-    /**
      * Returns the component type for logging.
      *
      * @return "classifier"

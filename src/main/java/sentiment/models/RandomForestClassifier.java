@@ -113,10 +113,6 @@ public class RandomForestClassifier extends ClassifierTrainingTemplate<Classifie
         this.randomForest = (weka.classifiers.trees.RandomForest) classifier;
     }
 
-    @Override
-    public TextPreprocessor getPreprocessor() {
-        return preprocessor;
-    }
 
     // NOTE: getTrainingInstanceCount() and getFeatureCount() now inherited from base class
 
@@ -209,17 +205,6 @@ public class RandomForestClassifier extends ClassifierTrainingTemplate<Classifie
 
     // NOTE: setRandomForest(), getTrainingStructure(), setTrainingMetadata() removed
     // Persistence now uses abstract methods from ClassifierTrainingTemplate
-
-    // NOTE: getPreprocessor() implemented above to satisfy abstract method
-
-    /**
-     * Returns the feature extractor and Weka converter.
-     *
-     * @return the converter instance used for feature extraction
-     */
-    public WekaInstancesConverter getConverter() {
-        return converter;
-    }
 
     // WEKA CLASSIFIER INTERFACE
 

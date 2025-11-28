@@ -126,10 +126,6 @@ public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluati
         this.smo = (weka.classifiers.functions.SMO) classifier;
     }
 
-    @Override
-    public TextPreprocessor getPreprocessor() {
-        return preprocessor;
-    }
 
     /**
      * Trains the classifier on raw datasets, fitting the complete preprocessing and feature extraction pipeline.
@@ -698,12 +694,6 @@ public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluati
         return smo;
     }
 
-    /**
-     * Returns the feature converter.
-     */
-    public WekaInstancesConverter getConverter() {
-        return converter;
-    }
 
     /**
      * Returns the optimal configuration from hyperparameter grid search.

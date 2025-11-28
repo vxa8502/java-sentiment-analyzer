@@ -9,40 +9,11 @@ import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
- * Abstract base template for all trainable components (classifiers, filters, etc.).
- * <p>
- * Provides unified thread-safe state management, lifecycle control, and training workflow
- * using the Template Method pattern. Eliminates ~280 lines of duplicate code between
- * ClassifierTrainingTemplate and FilterTrainingTemplate.
+ * Abstract template for trainable components with thread-safe state management.
+ * Implements Template Method pattern with state machine: UNINITIALIZED → TRAINING → READY.
+ * Uses ReadWriteLock for training exclusivity and concurrent inference.
  *
- * <h3>Design Pattern</h3>
- * <p>This class implements the invariant parts of training workflows:
- * <ul>
- *   <li>Thread-safe state management using {@code ReadWriteLock}</li>
- *   <li>State machine enforcement (UNINITIALIZED → TRAINING → READY)</li>
- *   <li>Training phase protection (write lock)</li>
- *   <li>Inference phase concurrency (read lock)</li>
- *   <li>Lazy initialization for Spring CGLIB proxy compatibility</li>
- * </ul>
- *
- * <p>Subclasses implement the variant parts:
- * <ul>
- *   <li>Specific training logic ({@link #doTrain(List)})</li>
- *   <li>Resource cleanup ({@link #doClearResources()})</li>
- *   <li>Component-specific diagnostics ({@link #getSubclassDiagnostics()})</li>
- *   <li>Logger instance ({@link #getLogger()})</li>
- * </ul>
- *
- * <h3>State Machine</h3>
- * <pre>
- * UNINITIALIZED --train()--> TRAINING --success--> READY
- *      ^                        |                    |
- *      |                     failure              reset()
- *      |                        |                    |
- *      +--------&lt;----------ERROR---------&lt;---------+
- * </pre>
- *
- * @param <T> type of training result (e.g., Instances, Void)
+ * @param <T> type of training result
  */
 public abstract class TrainingTemplate<T> {
 
@@ -55,11 +26,7 @@ public abstract class TrainingTemplate<T> {
     protected volatile long lastTrainingTimeMs;
 
     /**
-     * Gets or creates the state lock using lazy initialization for CGLIB proxy compatibility.
-     * <p>
-     * Ensures the lock is always available, even when Spring proxies bypass normal initialization.
-     *
-     * @return the state lock instance
+     * Gets or creates state lock with lazy initialization for CGLIB proxy compatibility.
      */
     private ReadWriteLock getStateLock() {
         if (stateLock == null) {
@@ -72,9 +39,7 @@ public abstract class TrainingTemplate<T> {
         return stateLock;
     }
 
-    /**
-     * Ensures pipeline state is initialized using lazy initialization for CGLIB proxy compatibility.
-     */
+    /** Ensures pipeline state is initialized (lazy init for CGLIB proxies). */
     private void ensureStateInitialized() {
         if (pipelineState == null) {
             pipelineState = PipelineState.UNINITIALIZED;
@@ -84,16 +49,12 @@ public abstract class TrainingTemplate<T> {
     // TEMPLATE METHOD: TRAINING PHASE
 
     /**
-     * Trains the component on the provided training data.
-     * <p>
-     * NOT DESIGNED for concurrent training calls - call ONCE during initialization.
-     * After successful completion, inference methods become thread-safe for concurrent access.
+     * Trains the component on provided data. NOT thread-safe - call once during initialization.
      *
-     * @param trainingData the training datasets
-     * @return training result (e.g., transformed Instances)
-     * @throws IllegalStateException if already training or in error state
-     * @throws IllegalArgumentException if trainingData is null or empty
-     * @throws Exception if training fails
+     * @param trainingData training datasets
+     * @return training result
+     * @throws IllegalStateException if already training
+     * @throws IllegalArgumentException if trainingData null/empty
      */
     protected final T trainInternal(List<Dataset> trainingData) throws Exception {
         validateTrainingInput(trainingData);
@@ -138,26 +99,12 @@ public abstract class TrainingTemplate<T> {
     // TEMPLATE METHOD: INFERENCE PHASE
 
     /**
-     * Executes an inference task with thread-safe read lock protection.
-     * <p>
-     * This method allows multiple concurrent reads while ensuring no state modifications
-     * occur during inference. The read lock permits concurrent execution by multiple threads.
+     * Executes inference task with read lock (allows concurrent execution).
      *
-     * <p><b>Example usage in subclass:</b>
-     * <pre>{@code
-     * public Instance transform(String text) {
-     *     return executeInference(() -> {
-     *         // Your transformation logic here
-     *         return filter.transform(input);
-     *     });
-     * }
-     * }</pre>
-     *
-     * @param <R> the return type of the inference task
-     * @param task lambda containing inference logic
-     * @return result of the inference task
-     * @throws IllegalStateException if not in READY state
-     * @throws Exception if inference execution fails
+     * @param <R> return type
+     * @param task inference logic
+     * @return inference result
+     * @throws IllegalStateException if not READY
      */
     protected final <R> R executeInference(InferenceTask<R> task) throws Exception {
         getStateLock().readLock().lock(); // CONCURRENT READS ALLOWED
@@ -175,72 +122,34 @@ public abstract class TrainingTemplate<T> {
         }
     }
 
-    /**
-     * Functional interface for inference tasks that allows lambdas to throw checked exceptions.
-     *
-     * @param <R> the return type of the task
-     */
+    /** Functional interface for inference tasks with exception support. */
     @FunctionalInterface
     protected interface InferenceTask<R> {
-        /**
-         * Executes the inference task.
-         *
-         * @return the result of the inference
-         * @throws Exception if the inference fails
-         */
         R execute() throws Exception;
     }
 
     // ABSTRACT METHODS FOR SUBCLASSES
 
     /**
-     * Implements component-specific training logic.
-     * <p>
-     * Called by {@link #trainInternal(List)} within write lock. Thread safety is not required
-     * as exclusive access is guaranteed.
+     * Implements component-specific training logic (called within write lock).
      *
-     * @param trainingData the training datasets
-     * @return training result (can be null if no result is needed)
-     * @throws Exception if training fails (will transition to ERROR state)
+     * @param trainingData training datasets
+     * @return training result (nullable)
      */
     protected abstract T doTrain(List<Dataset> trainingData) throws Exception;
 
-    /**
-     * Implements component-specific resource cleanup logic.
-     * <p>
-     * Called by {@link #reset()} within write lock. Thread safety is not required
-     * as exclusive access is guaranteed.
-     */
+    /** Implements component-specific resource cleanup (called within write lock). */
     protected abstract void doClearResources();
 
-    /**
-     * Provides the logger instance for this component.
-     * <p>
-     * Required for consistent logging across template and subclass implementations.
-     *
-     * @return the logger instance
-     */
+    /** Returns logger for this component. */
     protected abstract Logger getLogger();
 
-    /**
-     * Returns the component type name for logging and error messages.
-     * <p>
-     * Examples: "classifier", "filter", "preprocessor"
-     *
-     * @return component type name (lowercase, singular)
-     */
+    /** Returns component type name (e.g., "classifier", "filter"). */
     protected abstract String getComponentType();
 
     // STATE MANAGEMENT
 
-    /**
-     * Performs state transition with validation.
-     * <p>
-     * All state changes must go through this method to ensure proper state machine enforcement.
-     *
-     * @param newState the target state
-     * @throws IllegalStateException if transition is invalid
-     */
+    /** Performs validated state transition. */
     private void transitionToState(PipelineState newState) {
         PipelineState oldState = pipelineState;
         oldState.validateTransition(newState); // Throws if invalid
@@ -248,11 +157,7 @@ public abstract class TrainingTemplate<T> {
         getLogger().debug("State transition: {} -> {}", oldState, newState);
     }
 
-    /**
-     * Validates that the component is ready for inference.
-     *
-     * @throws IllegalStateException if not in READY state
-     */
+    /** Validates component is in READY state. */
     protected void validateReadyForInference() {
         if (pipelineState != PipelineState.READY) {
             throw new IllegalStateException(
@@ -261,11 +166,7 @@ public abstract class TrainingTemplate<T> {
         }
     }
 
-    /**
-     * Validates that the current state allows training to start.
-     *
-     * @throws IllegalStateException if already training or already trained
-     */
+    /** Validates state allows training to start. */
     private void validateStateBeforeTraining() {
         if (pipelineState == PipelineState.TRAINING) {
             throw new IllegalStateException(
@@ -280,12 +181,7 @@ public abstract class TrainingTemplate<T> {
         }
     }
 
-    /**
-     * Validates training input parameters.
-     *
-     * @param trainingData the training data to validate
-     * @throws IllegalArgumentException if trainingData is null or empty
-     */
+    /** Validates training input is non-null and non-empty. */
     private void validateTrainingInput(List<Dataset> trainingData) {
         if (trainingData == null || trainingData.isEmpty()) {
             throw new IllegalArgumentException("Training data cannot be null or empty");
@@ -294,16 +190,7 @@ public abstract class TrainingTemplate<T> {
 
     // RESET AND CLEANUP
 
-    /**
-     * Resets the component to UNINITIALIZED state.
-     * <p>
-     * This method is NOT thread-safe and should only be called during:
-     * <ul>
-     *   <li>Application shutdown</li>
-     *   <li>Controlled retraining scenarios</li>
-     *   <li>Error recovery</li>
-     * </ul>
-     */
+    /** Resets component to UNINITIALIZED state (NOT thread-safe). */
     public void reset() {
         getStateLock().writeLock().lock(); // EXCLUSIVE ACCESS
         try {
@@ -330,11 +217,7 @@ public abstract class TrainingTemplate<T> {
         }
     }
 
-    /**
-     * Performs automatic cleanup on bean destruction.
-     * <p>
-     * Spring calls this method automatically via {@code @PreDestroy} annotation.
-     */
+    /** Cleanup hook called by Spring on bean destruction. */
     @PreDestroy
     public void cleanup() {
         getLogger().info("Cleaning up {} resources", getComponentType());
@@ -343,46 +226,24 @@ public abstract class TrainingTemplate<T> {
 
     // READ-ONLY STATE ACCESS
 
-    /**
-     * Gets the current pipeline state.
-     * <p>
-     * Thread-safe via volatile read.
-     *
-     * @return the current pipeline state
-     */
+    /** Gets current pipeline state (thread-safe). */
     public PipelineState getState() {
         return pipelineState;
     }
 
-    /**
-     * Checks if the component is ready for inference.
-     * <p>
-     * Thread-safe via volatile read.
-     *
-     * @return {@code true} if in READY state, {@code false} otherwise
-     */
+    /** Checks if component is in READY state (thread-safe). */
     public boolean isReady() {
         return pipelineState == PipelineState.READY;
     }
 
-    /**
-     * Gets the last training time in milliseconds.
-     * <p>
-     * Thread-safe via volatile read.
-     *
-     * @return training duration in milliseconds
-     */
+    /** Gets last training time in milliseconds (thread-safe). */
     public long getLastTrainingTimeMs() {
         return lastTrainingTimeMs;
     }
 
     // DIAGNOSTICS
 
-    /**
-     * Gets comprehensive diagnostics information.
-     *
-     * @return formatted diagnostics string
-     */
+    /** Gets comprehensive diagnostics information. */
     @SuppressWarnings("unused")
     public String getDiagnostics() {
         getStateLock().readLock().lock();
@@ -409,60 +270,31 @@ public abstract class TrainingTemplate<T> {
         }
     }
 
-    /**
-     * Provides additional subclass-specific diagnostics.
-     * <p>
-     * Subclasses can override this method to include component-specific diagnostic information.
-     *
-     * @return subclass diagnostic information, or empty string if none
-     */
+    /** Returns subclass-specific diagnostics (override for custom info). */
     protected String getSubclassDiagnostics() {
         return "";
     }
 
     // PERSISTENCE SUPPORT
 
-    /**
-     * Acquires the write lock for external operations (e.g., model persistence).
-     * <p>
-     * Public to allow persistence utilities and subclasses access.
-     * <b>IMPORTANT:</b> Caller MUST release the lock via {@link #releaseWriteLock()} in a finally block.
-     */
+    /** Acquires write lock for external operations. MUST release via {@link #releaseWriteLock()}. */
     public void acquireWriteLock() {
         getStateLock().writeLock().lock();
     }
 
-    /**
-     * Releases the write lock after external operations.
-     * <p>
-     * Public to allow persistence utilities and subclasses access.
-     * Should be called in a finally block after {@link #acquireWriteLock()}.
-     */
+    /** Releases write lock after external operations (call in finally block). */
     public void releaseWriteLock() {
         getStateLock().writeLock().unlock();
     }
 
-    /**
-     * Sets the pipeline state directly.
-     * <p>
-     * Public to allow persistence utilities and subclasses to set state during model loading.
-     * <b>WARNING:</b> This bypasses state machine validation - use with extreme caution!
-     * Only for use by persistence utilities during model restoration.
-     *
-     * @param state the state to set
-     */
+    /** Sets state directly (bypasses validation - use only for model loading). */
     public void setState(PipelineState state) {
         this.pipelineState = state;
     }
 
-    //  UTILITY METHODS
+    // UTILITY METHODS
 
-    /**
-     * Capitalizes the first letter of a string.
-     *
-     * @param str string to capitalize
-     * @return capitalized string
-     */
+    /** Capitalizes first letter of string. */
     private String capitalize(String str) {
         if (str == null || str.isEmpty()) {
             return str;

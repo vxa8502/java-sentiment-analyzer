@@ -30,7 +30,7 @@ public class SentimentConfiguration {
     @Autowired
     private WekaInstancesConverter wekaInstancesConverter;
 
-    @Value("${sentiment.model-type:svm}")
+    @Value("${sentiment.model-type}")
     private String modelType;
 
     @Value("${sentiment.models.svm-model-path:./models/svm-model.ser}")
@@ -45,8 +45,6 @@ public class SentimentConfiguration {
     @Value("${sentiment.models.logistic-model-path:./models/logistic_regression-model.ser}")
     private String logisticModelPath;
 
-    @Value("${sentiment.svm.class-imbalance-threshold:3.0}")
-    private double classImbalanceThreshold;
 
     /**
      * Creates WekaModelPersistence bean for model save/load operations.
@@ -82,11 +80,6 @@ public class SentimentConfiguration {
         String modelPath = getModelPath(algorithm);
 
         logger.info("Loading pre-trained {} model from: {}", algorithm.getDisplayName(), modelPath);
-
-        // Apply SVM-specific configuration
-        if (classifier instanceof SVMClassifier) {
-            ((SVMClassifier) classifier).setClassImbalanceThreshold(classImbalanceThreshold);
-        }
 
         @SuppressWarnings("unchecked")
         WekaModelPersistence<ClassifierTrainingTemplate<?>> persistence = wekaModelPersistence();

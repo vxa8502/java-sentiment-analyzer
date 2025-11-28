@@ -99,10 +99,6 @@ public class NaiveBayesClassifier extends ClassifierTrainingTemplate<ClassifierE
         this.naiveBayes = (weka.classifiers.bayes.NaiveBayes) classifier;
     }
 
-    @Override
-    public TextPreprocessor getPreprocessor() {
-        return preprocessor;
-    }
 
 
     // TEMPLATE METHOD IMPLEMENTATIONS
@@ -185,9 +181,6 @@ public class NaiveBayesClassifier extends ClassifierTrainingTemplate<ClassifierE
     // ACCESSORS
 
 
-    public WekaInstancesConverter getConverter() {
-        return converter;
-    }
 
     // WEKA CLASSIFIER INTERFACE
 

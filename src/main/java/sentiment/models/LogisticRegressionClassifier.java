@@ -99,10 +99,6 @@ public class LogisticRegressionClassifier extends ClassifierTrainingTemplate<Cla
         this.logistic = (weka.classifiers.functions.Logistic) classifier;
     }
 
-    @Override
-    public TextPreprocessor getPreprocessor() {
-        return preprocessor;
-    }
 
     // NOTE: getTrainingInstanceCount() and getFeatureCount() now inherited from base class
 
@@ -200,17 +196,6 @@ public class LogisticRegressionClassifier extends ClassifierTrainingTemplate<Cla
 
     // NOTE: setLogistic(), getTrainingStructure(), setTrainingMetadata() removed
     // Persistence now uses abstract methods from ClassifierTrainingTemplate
-
-    // NOTE: getPreprocessor() implemented above to satisfy abstract method
-
-    /**
-     * Gets the Weka instances converter.
-     *
-     * @return the converter instance
-     */
-    public WekaInstancesConverter getConverter() {
-        return converter;
-    }
 
     // WEKA CLASSIFIER INTERFACE
 
