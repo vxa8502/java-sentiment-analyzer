@@ -42,6 +42,19 @@ public class WekaModelPersistence<T extends ClassifierTrainingTemplate<?>> {
             Instances trainingStructure = extractTrainingStructure(classifier);
             String[] supportedClasses = classifier.getSupportedClasses();
 
+            // Extract converter components (filters and structure)
+            sentiment.preprocessing.WekaInstancesConverter converter = classifier.getConverter();
+            weka.filters.unsupervised.attribute.StringToWordVector stringToWordFilter = null;
+            weka.filters.unsupervised.attribute.Normalize normalizeFilter = null;
+            Instances filterTrainingStructure = null;
+
+            if (converter != null) {
+                stringToWordFilter = converter.getTrainedStringToWordFilter();
+                normalizeFilter = converter.getTrainedNormalizationFilter();
+                // CRITICAL: Save the RAW structure (before filters), not the final structure
+                filterTrainingStructure = converter.getFilterTrainingStructure();
+            }
+
             ModelBundle bundle = new ModelBundle(
                     wekaClassifier,
                     trainingStructure,
@@ -49,7 +62,10 @@ public class WekaModelPersistence<T extends ClassifierTrainingTemplate<?>> {
                     classifier.getLastTrainingTimeMs(),
                     classifier.getAlgorithmType(),
                     MODEL_VERSION,
-                    System.currentTimeMillis()
+                    System.currentTimeMillis(),
+                    stringToWordFilter,
+                    normalizeFilter,
+                    filterTrainingStructure
             );
 
             try (ObjectOutputStream oos = new ObjectOutputStream(
@@ -112,6 +128,14 @@ public class WekaModelPersistence<T extends ClassifierTrainingTemplate<?>> {
             // Set classifier components
             setWekaClassifier(classifier, bundle.wekaClassifier);
             setTrainingMetadata(classifier, bundle.trainingStructure, bundle.supportedClasses);
+
+            // Restore converter filters if available (version 2+ bundles)
+            sentiment.preprocessing.WekaInstancesConverter converter = classifier.getConverter();
+            if (converter != null && bundle.stringToWordFilter != null) {
+                converter.setTrainedStringToWordFilter(bundle.stringToWordFilter);
+                converter.setTrainedNormalizationFilter(bundle.normalizeFilter);
+                // Note: filterTrainingStructure is already set by setTrainingMetadata
+            }
 
             // Transition to READY state
             classifier.setState(PipelineState.READY);
@@ -225,10 +249,13 @@ public class WekaModelPersistence<T extends ClassifierTrainingTemplate<?>> {
 
     /**
      * Serializable bundle containing all trained model state.
+     *
+     * IMPORTANT: This must remain backwards compatible. New models can include converter filters,
+     * but old models without filters should still load successfully.
      */
     private static class ModelBundle implements Serializable {
         @Serial
-        private static final long serialVersionUID = 1L;
+        private static final long serialVersionUID = 2L; // Version 2: includes filter state
 
         final Classifier wekaClassifier;
         final Instances trainingStructure;
@@ -237,10 +264,26 @@ public class WekaModelPersistence<T extends ClassifierTrainingTemplate<?>> {
         final AlgorithmType algorithmType;
         final String modelVersion;
         final long timestamp;
+        // Optional fields for converter state (may be null in old models)
+        final weka.filters.unsupervised.attribute.StringToWordVector stringToWordFilter;
+        final weka.filters.unsupervised.attribute.Normalize normalizeFilter;
+        final Instances filterTrainingStructure;
 
+        // Constructor for old format (backwards compatibility)
         ModelBundle(Classifier wekaClassifier, Instances trainingStructure,
                     String[] supportedClasses, long trainingTimeMs,
                     AlgorithmType algorithmType, String modelVersion, long timestamp) {
+            this(wekaClassifier, trainingStructure, supportedClasses, trainingTimeMs,
+                 algorithmType, modelVersion, timestamp, null, null, null);
+        }
+
+        // Constructor for new format (with filters)
+        ModelBundle(Classifier wekaClassifier, Instances trainingStructure,
+                    String[] supportedClasses, long trainingTimeMs,
+                    AlgorithmType algorithmType, String modelVersion, long timestamp,
+                    weka.filters.unsupervised.attribute.StringToWordVector stringToWordFilter,
+                    weka.filters.unsupervised.attribute.Normalize normalizeFilter,
+                    Instances filterTrainingStructure) {
             this.wekaClassifier = wekaClassifier;
             this.trainingStructure = trainingStructure;
             this.supportedClasses = supportedClasses.clone();
@@ -248,6 +291,9 @@ public class WekaModelPersistence<T extends ClassifierTrainingTemplate<?>> {
             this.algorithmType = algorithmType;
             this.modelVersion = modelVersion;
             this.timestamp = timestamp;
+            this.stringToWordFilter = stringToWordFilter;
+            this.normalizeFilter = normalizeFilter;
+            this.filterTrainingStructure = filterTrainingStructure;
         }
     }
 

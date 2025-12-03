@@ -505,4 +505,86 @@ public class WekaInstancesConverter extends sentiment.TrainingTemplate<Instances
         return diag.toString();
     }
 
+    /**
+     * Gets the filter training structure for model persistence.
+     * This is the RAW structure (before TF-IDF filters are applied) needed for inference.
+     *
+     * @return the filter training structure, or null if not trained
+     */
+    public Instances getFilterTrainingStructure() {
+        return filterTrainingStructure;
+    }
+
+    /**
+     * Sets the filter training structure for model loading.
+     * This is called when a model is loaded from disk to restore the structure
+     * needed for inference.
+     *
+     * IMPORTANT: Instead of using the deserialized structure directly (which may have
+     * corrupted string attributes), we recreate the structure from the class labels.
+     *
+     * @param structure the training structure from the loaded model (used only for class labels)
+     */
+    public void setFilterTrainingStructure(Instances structure) {
+        // Extract sentiment values from the deserialized structure
+        ArrayList<String> sentimentValues = new ArrayList<>();
+        weka.core.Attribute classAttr = structure.classAttribute();
+        for (int i = 0; i < classAttr.numValues(); i++) {
+            sentimentValues.add(classAttr.value(i));
+        }
+
+        // Recreate the structure with proper string attribute (Weka serialization may corrupt this)
+        ArrayList<weka.core.Attribute> attributes = new ArrayList<>();
+        attributes.add(new weka.core.Attribute("text", (ArrayList<String>) null));  // String attribute
+        attributes.add(new weka.core.Attribute("class_label", sentimentValues));     // Nominal attribute
+
+        this.filterTrainingStructure = new Instances("SentimentAnalysis", attributes, 0);
+        this.filterTrainingStructure.setClassIndex(1);
+
+        logger.info("Recreated filter training structure with {} sentiment classes: {}",
+                sentimentValues.size(), sentimentValues);
+
+        // Also set the text preprocessor to fitted state
+        // This is necessary because the preprocessor is a shared Spring bean
+        if (textPreprocessor != null) {
+            textPreprocessor.setFitted(true);
+        }
+    }
+
+    /**
+     * Gets the trained StringToWordVector filter for model persistence.
+     *
+     * @return the trained filter, or null if not trained
+     */
+    public StringToWordVector getTrainedStringToWordFilter() {
+        return trainedStringToWordFilter;
+    }
+
+    /**
+     * Sets the trained StringToWordVector filter for model loading.
+     *
+     * @param filter the trained filter
+     */
+    public void setTrainedStringToWordFilter(StringToWordVector filter) {
+        this.trainedStringToWordFilter = filter;
+    }
+
+    /**
+     * Gets the trained normalization filter for model persistence.
+     *
+     * @return the trained filter, or null if not trained
+     */
+    public Normalize getTrainedNormalizationFilter() {
+        return trainedNormalizationFilter;
+    }
+
+    /**
+     * Sets the trained normalization filter for model loading.
+     *
+     * @param filter the trained filter
+     */
+    public void setTrainedNormalizationFilter(Normalize filter) {
+        this.trainedNormalizationFilter = filter;
+    }
+
 }

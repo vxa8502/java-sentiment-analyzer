@@ -613,6 +613,23 @@ public abstract class ClassifierTrainingTemplate<T> extends TrainingTemplate<T> 
     void setTrainingMetadata(Instances structure, String[] classes) {
         this.trainingDataStructure = structure;
         this.supportedClasses = classes.clone();
+
+        // Also set converter to READY state if it exists
+        // This is critical for model loading - the converter needs to be ready for inference
+        if (converter != null) {
+            converter.setState(PipelineState.READY);
+            // Also set the filter training structure for inference
+            converter.setFilterTrainingStructure(structure);
+        }
+    }
+
+    /**
+     * Gets the WekaInstancesConverter for state management during model loading.
+     *
+     * @return the converter instance, or null if not set
+     */
+    WekaInstancesConverter getConverter() {
+        return converter;
     }
 
     // Lock access methods (acquireWriteLock, releaseWriteLock) inherited from TrainingTemplate base class

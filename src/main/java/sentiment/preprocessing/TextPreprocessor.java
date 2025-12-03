@@ -803,4 +803,19 @@ public class TextPreprocessor {
         }
     }
 
+    /**
+     * Sets the fitted state for model loading.
+     * This is called when a model is loaded from disk to mark the preprocessor as ready.
+     *
+     * @param fitted whether the preprocessor should be marked as fitted
+     */
+    public void setFitted(boolean fitted) {
+        stateLock.writeLock().lock();
+        try {
+            this.isFitted = fitted;
+        } finally {
+            stateLock.writeLock().unlock();
+        }
+    }
+
 }

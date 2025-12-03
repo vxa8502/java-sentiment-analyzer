@@ -1,196 +1,217 @@
 package sentiment.api;
 
-import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.DisplayName;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
-import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.http.ResponseEntity;
 
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Integration tests for SentimentController REST API endpoints.
- *
- * Tests the full Spring Boot stack with real HTTP requests.
- *
- * NOTE: Temporarily disabled due to JVM memory constraints during test execution.
- * Enable when running with increased heap size: mvn test -DargLine="-Xmx2g"
+ * End-to-end integration smoke tests with real Spring Boot context and ML model.
  */
-@Disabled("Temporarily disabled - requires increased JVM heap size to run with full test suite")
-@SpringBootTest
-@AutoConfigureMockMvc
+@SpringBootTest(
+    webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+    properties = {
+        "sentiment.models.svm-model-path=./models/svm-model.ser",
+        "sentiment.models.nb-model-path=./models/nb-model.ser",
+        "sentiment.models.rf-model-path=./models/rf-model.ser",
+        "sentiment.models.lr-model-path=./models/lr-model.ser"
+    }
+)
+@Tag("integration")
+@DisplayName("Sentiment Controller E2E Integration Tests")
+@SuppressWarnings("SpringJavaInjectionPointsAutowiringInspection")  // Fields injected by Spring Test
 public class SentimentControllerIntegrationTest {
 
+    @LocalServerPort
+    private int port;
+
     @Autowired
-    private MockMvc mockMvc;
+    private TestRestTemplate restTemplate;
+
+    // CRITICAL PATH SMOKE TESTS
 
     @Test
-    public void testHealthEndpoint() throws Exception {
-        mockMvc.perform(get("/api/health"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("UP"))
-                .andExpect(jsonPath("$.version").value("1.0.0"))
-                .andExpect(jsonPath("$.modelLoaded").exists())
-                .andExpect(jsonPath("$.uptimeMs").exists());
+    @DisplayName("E2E Smoke Test: Full stack processes positive sentiment with real model")
+    void smokeTest_EndToEnd_PositiveSentiment_RealModel() {
+        // Given: Request with clearly positive sentiment
+        String requestJson = """
+            {
+                "text": "This is absolutely fantastic, wonderful, and amazing! I love it!"
+            }
+            """;
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        HttpEntity<String> request = new HttpEntity<>(requestJson, headers);
+
+        // When: POST to real API with real trained model
+        String url = "http://localhost:" + port + "/api/v1/sentiment/analyze";
+        ResponseEntity<String> response = restTemplate.postForEntity(url, request, String.class);
+
+        // Then: Should successfully classify with reasonable confidence
+        assertThat(response.getStatusCode())
+            .as("API should return 200 OK")
+            .isEqualTo(HttpStatus.OK);
+
+        String body = response.getBody();
+        assertThat(body)
+            .as("Response should contain sentiment field")
+            .contains("\"sentiment\"");
+
+        assertThat(body)
+            .as("Response should contain confidence field")
+            .contains("\"confidence\"");
+
+        assertThat(body)
+            .as("Response should contain processingTimeMs field")
+            .contains("\"processingTimeMs\"");
+
+        // Verify confidence is a reasonable probability value
+        assertThat(body)
+            .as("Confidence should be a numeric value")
+            .containsPattern("\"confidence\"\\s*:\\s*0\\.\\d+");
     }
 
     @Test
-    public void testAnalyzeSentiment_Success() throws Exception {
+    @DisplayName("E2E Smoke Test: Full stack processes negative sentiment with real model")
+    void smokeTest_EndToEnd_NegativeSentiment_RealModel() {
+        // Given: Request with clearly negative sentiment
         String requestJson = """
-                {
-                    "text": "This is absolutely amazing and wonderful!"
-                }
-                """;
+            {
+                "text": "This is terrible, awful, and horrible! I hate it completely!"
+            }
+            """;
 
-        mockMvc.perform(post("/api/sentiment/analyze")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(requestJson))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.sentiment").exists())
-                .andExpect(jsonPath("$.confidence").exists())
-                .andExpect(jsonPath("$.processingTimeMs").exists());
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        HttpEntity<String> request = new HttpEntity<>(requestJson, headers);
+
+        // When: POST to real API with real trained model
+        String url = "http://localhost:" + port + "/api/v1/sentiment/analyze";
+        ResponseEntity<String> response = restTemplate.postForEntity(url, request, String.class);
+
+        // Then: Should successfully classify
+        assertThat(response.getStatusCode())
+            .as("API should return 200 OK")
+            .isEqualTo(HttpStatus.OK);
+
+        String body = response.getBody();
+        assertThat(body)
+            .as("Response should contain sentiment classification")
+            .contains("\"sentiment\"");
+
+        assertThat(body)
+            .as("Response should contain confidence score")
+            .contains("\"confidence\"");
     }
 
     @Test
-    public void testAnalyzeSentiment_WithConfidenceThreshold() throws Exception {
+    @DisplayName("E2E Smoke Test: Batch processing works with real model")
+    void smokeTest_EndToEnd_BatchProcessing_RealModel() {
+        // Given: Batch request with multiple texts
         String requestJson = """
-                {
-                    "text": "This product is okay",
-                    "confidenceThreshold": 0.9
-                }
-                """;
+            {
+                "texts": [
+                    "This is great!",
+                    "This is terrible.",
+                    "This is okay."
+                ]
+            }
+            """;
 
-        mockMvc.perform(post("/api/sentiment/analyze")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(requestJson))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.sentiment").exists());
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        HttpEntity<String> request = new HttpEntity<>(requestJson, headers);
+
+        // When: POST to batch endpoint
+        String url = "http://localhost:" + port + "/api/v1/sentiment/batch";
+        ResponseEntity<String> response = restTemplate.postForEntity(url, request, String.class);
+
+        // Then: Should process all texts successfully
+        assertThat(response.getStatusCode())
+            .as("Batch API should return 200 OK")
+            .isEqualTo(HttpStatus.OK);
+
+        String body = response.getBody();
+        assertThat(body)
+            .as("Response should indicate 3 texts processed")
+            .contains("\"totalProcessed\":3");
+
+        assertThat(body)
+            .as("Response should contain results array")
+            .contains("\"results\"");
+
+        assertThat(body)
+            .as("Response should contain success count")
+            .contains("\"successCount\"");
     }
 
     @Test
-    public void testAnalyzeSentiment_EmptyText() throws Exception {
-        String requestJson = """
-                {
-                    "text": ""
-                }
-                """;
+    @DisplayName("E2E Smoke Test: Health endpoint confirms model is loaded and operational")
+    void smokeTest_HealthCheck_ModelLoaded() {
+        // When: GET health endpoint
+        String url = "http://localhost:" + port + "/api/v1/health";
+        ResponseEntity<String> response = restTemplate.getForEntity(url, String.class);
 
-        mockMvc.perform(post("/api/sentiment/analyze")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(requestJson))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.error").value("Validation failed"));
+        // Then: Should confirm system is healthy and model is loaded
+        assertThat(response.getStatusCode())
+            .as("Health endpoint should return 200 OK")
+            .isEqualTo(HttpStatus.OK);
+
+        String body = response.getBody();
+        assertThat(body)
+            .as("Health status should be UP")
+            .contains("\"status\":\"UP\"");
+
+        assertThat(body)
+            .as("Should report model loaded status")
+            .contains("\"modelLoaded\"");
+
+        assertThat(body)
+            .as("Should report uptime")
+            .contains("\"uptimeMs\"");
+
+        assertThat(body)
+            .as("Should report version")
+            .contains("\"version\":\"1.0.0\"");
     }
 
     @Test
-    public void testAnalyzeSentiment_MissingText() throws Exception {
+    @DisplayName("E2E Smoke Test: Validation errors are handled correctly")
+    void smokeTest_Validation_EmptyText_Returns400() {
+        // Given: Invalid request with empty text
         String requestJson = """
-                {
-                    "confidenceThreshold": 0.7
-                }
-                """;
+            {
+                "text": ""
+            }
+            """;
 
-        mockMvc.perform(post("/api/sentiment/analyze")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(requestJson))
-                .andExpect(status().isBadRequest());
-    }
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        HttpEntity<String> request = new HttpEntity<>(requestJson, headers);
 
-    @Test
-    public void testBatchAnalysis_Success() throws Exception {
-        String requestJson = """
-                {
-                    "texts": [
-                        "Great product!",
-                        "Terrible experience.",
-                        "It's okay."
-                    ]
-                }
-                """;
+        // When: POST to API
+        String url = "http://localhost:" + port + "/api/v1/sentiment/analyze";
+        ResponseEntity<String> response = restTemplate.postForEntity(url, request, String.class);
 
-        mockMvc.perform(post("/api/sentiment/batch")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(requestJson))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.totalProcessed").value(3))
-                .andExpect(jsonPath("$.results").isArray())
-                .andExpect(jsonPath("$.results.length()").value(3))
-                .andExpect(jsonPath("$.successCount").exists())
-                .andExpect(jsonPath("$.errorCount").exists())
-                .andExpect(jsonPath("$.totalProcessingTimeMs").exists());
-    }
+        // Then: Should return 400 Bad Request with validation error
+        assertThat(response.getStatusCode())
+            .as("Empty text should return 400 Bad Request")
+            .isEqualTo(HttpStatus.BAD_REQUEST);
 
-    @Test
-    public void testBatchAnalysis_EmptyList() throws Exception {
-        String requestJson = """
-                {
-                    "texts": []
-                }
-                """;
-
-        mockMvc.perform(post("/api/sentiment/batch")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(requestJson))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.error").value("Validation failed"));
-    }
-
-    @Test
-    public void testBatchAnalysis_WithConfidenceThreshold() throws Exception {
-        String requestJson = """
-                {
-                    "texts": [
-                        "Amazing!",
-                        "Horrible!"
-                    ],
-                    "confidenceThreshold": 0.8
-                }
-                """;
-
-        mockMvc.perform(post("/api/sentiment/batch")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(requestJson))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.totalProcessed").value(2))
-                .andExpect(jsonPath("$.results[0].sentiment").exists())
-                .andExpect(jsonPath("$.results[1].sentiment").exists());
-    }
-
-    @Test
-    public void testAnalyzeSentiment_PositiveSentiment() throws Exception {
-        String requestJson = """
-                {
-                    "text": "I love this product, it's fantastic and amazing!"
-                }
-                """;
-
-        mockMvc.perform(post("/api/sentiment/analyze")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(requestJson))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.sentiment").exists())  // Just verify sentiment is returned
-                .andExpect(jsonPath("$.sentiment").isNotEmpty())  // And it's not empty
-                .andExpect(jsonPath("$.confidence").exists());
-    }
-
-    @Test
-    public void testAnalyzeSentiment_NegativeSentiment() throws Exception {
-        String requestJson = """
-                {
-                    "text": "This is terrible and awful, I hate it!"
-                }
-                """;
-
-        mockMvc.perform(post("/api/sentiment/analyze")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(requestJson))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.sentiment").exists())  // Just verify sentiment is returned
-                .andExpect(jsonPath("$.sentiment").isNotEmpty())  // And it's not empty
-                .andExpect(jsonPath("$.confidence").exists());
+        String body = response.getBody();
+        assertThat(body)
+            .as("Error response should contain error field")
+            .contains("error");
     }
 }
