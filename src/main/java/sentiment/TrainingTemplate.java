@@ -72,7 +72,7 @@ public abstract class TrainingTemplate<T> {
             transitionToState(PipelineState.TRAINING);
 
             try {
-                // ★ SUBCLASS HOOK: Implement specific training logic
+                //  SUBCLASS HOOK: Implement specific training logic
                 T result = doTrain(trainingData);
 
                 // ENFORCED transition: TRAINING -> READY (success)

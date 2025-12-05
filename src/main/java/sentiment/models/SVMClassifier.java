@@ -327,7 +327,7 @@ public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluati
 
         Evaluation evaluation = new Evaluation(trainingDataStructure);
 
-        // ✅ NEW: Collect probabilities during evaluation
+        //  NEW: Collect probabilities during evaluation
         int n = testData.numInstances();
         int numClasses = supportedClasses.length;
         double[][] probabilities = new double[n][numClasses];

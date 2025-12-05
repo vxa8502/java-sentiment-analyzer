@@ -127,7 +127,7 @@ public class WekaInstancesConverter extends sentiment.TrainingTemplate<Instances
 
         logger.info("Step 1/4: Fitting text preprocessor");
         textPreprocessor.fit(datasets);
-        logger.info("✓ Preprocessor trained. Vocabulary: {}",
+        logger.info(" Preprocessor trained. Vocabulary: {}",
                     textPreprocessor.getPipelineState().vocabularySize);
 
         // Step 2: Create preprocessed instances
@@ -154,7 +154,7 @@ public class WekaInstancesConverter extends sentiment.TrainingTemplate<Instances
         // Step 5: Extract vocabulary for diagnostics
         extractVocabulary(finalInstances);
 
-        logger.info("✓ Full vectorization pipeline trained. Features: {}, TF-IDF vocabulary: {}",
+        logger.info(" Full vectorization pipeline trained. Features: {}, TF-IDF vocabulary: {}",
                     finalInstances.numAttributes() - 1, vocabulary.size());
         return finalInstances;
     }

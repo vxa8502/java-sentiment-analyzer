@@ -6,7 +6,7 @@ import sentiment.models.AlgorithmType;
  * Base exception for all sentiment classifier-related errors.
  * Provides common functionality for error context, recovery hints, and debugging information.
  *
- * ✅ ENHANCED: Type-safe algorithm identification using AlgorithmType enum
+ *  ENHANCED: Type-safe algorithm identification using AlgorithmType enum
  */
 public abstract class SentimentClassifierException extends Exception {
 

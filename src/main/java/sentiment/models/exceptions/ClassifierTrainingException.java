@@ -6,7 +6,7 @@ import sentiment.models.AlgorithmType;
  * Exception thrown when classifier training fails.
  * Includes detailed information about training data, parameters, and failure reasons.
  *
- * ✅ ENHANCED: Type-safe algorithm identification
+ *  ENHANCED: Type-safe algorithm identification
  */
 public class ClassifierTrainingException extends SentimentClassifierException {
 

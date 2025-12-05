@@ -122,7 +122,7 @@ public class SentimentConfiguration {
 
             // Log model metadata
             WekaModelPersistence.ModelMetadata metadata = persistence.getModelMetadata(path);
-            logger.info("✅ Pre-trained {} model loaded successfully: {}", algorithm.getDisplayName(), metadata);
+            logger.info(" Pre-trained {} model loaded successfully: {}", algorithm.getDisplayName(), metadata);
             logger.info("Startup model loading completed - FAST PATH");
 
             return classifier;

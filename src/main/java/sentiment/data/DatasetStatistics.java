@@ -200,7 +200,7 @@ public class DatasetStatistics {
         sb.append("╚════════════════════════════════════════════════════════════╝\n\n");
 
         // Basic info
-        sb.append("📊 DATASET SIZE\n");
+        sb.append(" DATASET SIZE\n");
         sb.append(String.format("   Total Examples: %,d\n", totalExamples));
         sb.append(String.format("   Unique Texts: %,d\n", uniqueTexts));
         sb.append(String.format("   Duplicates: %,d (%.2f%%)\n",
@@ -208,7 +208,7 @@ public class DatasetStatistics {
         sb.append(String.format("   Vocabulary Size: %,.0f unique tokens\n\n", vocabularySize));
 
         // Label distribution
-        sb.append("🏷️  LABEL DISTRIBUTION\n");
+        sb.append("️  LABEL DISTRIBUTION\n");
         for (Map.Entry<Dataset.SentimentLabel, Long> entry : labelCounts.entrySet()) {
             double percentage = labelPercentages.get(entry.getKey());
             sb.append(String.format("   %s: %,d (%.1f%%)\n",
@@ -217,10 +217,10 @@ public class DatasetStatistics {
                 percentage));
         }
         sb.append(String.format("   Balance Ratio: %.3f ", labelBalanceRatio));
-        sb.append(isBalanced() ? "✓ BALANCED\n\n" : "⚠ IMBALANCED\n\n");
+        sb.append(isBalanced() ? " BALANCED\n\n" : " IMBALANCED\n\n");
 
         // Text length stats
-        sb.append("📏 TEXT LENGTH STATISTICS\n");
+        sb.append(" TEXT LENGTH STATISTICS\n");
         sb.append(String.format("   Average: %.0f characters\n", avgTextLength));
         sb.append(String.format("   Median: %.0f characters\n", medianTextLength));
         sb.append(String.format("   Min: %,d characters\n", minTextLength));
@@ -228,15 +228,15 @@ public class DatasetStatistics {
         sb.append(String.format("   Range: %,d characters\n\n", maxTextLength - minTextLength));
 
         // Quality assessment
-        sb.append("✅ QUALITY CHECKS\n");
+        sb.append(" QUALITY CHECKS\n");
         sb.append(String.format("   [%s] Label Balance (ratio > 0.8)\n",
-            isBalanced() ? "✓" : "✗"));
+            isBalanced() ? "" : ""));
         sb.append(String.format("   [%s] Minimal Duplicates (< 1%%)\n",
-            hasMinimalDuplicates() ? "✓" : "✗"));
+            hasMinimalDuplicates() ? "" : ""));
         sb.append(String.format("   [%s] Reasonable Text Lengths (> 10 chars)\n",
-            hasReasonableTextLengths() ? "✓" : "✗"));
+            hasReasonableTextLengths() ? "" : ""));
         sb.append(String.format("\n   Overall: %s\n",
-            passesQualityChecks() ? "✓ PASS" : "⚠ WARNINGS DETECTED"));
+            passesQualityChecks() ? " PASS" : " WARNINGS DETECTED"));
 
         sb.append("\n═══════════════════════════════════════════════════════════\n");
 

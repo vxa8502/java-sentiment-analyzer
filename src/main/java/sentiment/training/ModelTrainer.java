@@ -82,7 +82,7 @@ public class ModelTrainer {
         logger.info("Step 1/5: Loading data...");
         List<Dataset> allData = loadTrainingData(dataPath, maxSamples);
         long loadTime = System.currentTimeMillis() - startTime;
-        logger.info("✅ Loaded {} samples in {}ms", allData.size(), loadTime);
+        logger.info(" Loaded {} samples in {}ms", allData.size(), loadTime);
 
         // Step 2: Perform stratified train/validation/test split (60/20/20)
         logger.info("Step 2/5: Performing stratified 60/20/20 train/val/test split...");
@@ -93,7 +93,7 @@ public class ModelTrainer {
                 0.2,  // 20% test
                 42    // Fixed seed for reproducibility
         );
-        logger.info("✅ Split complete: train={}, val={}, test={}",
+        logger.info(" Split complete: train={}, val={}, test={}",
                 split.train.size(), split.validation.size(), split.test.size());
 
         // Step 3: Create and train classifier (ONLY on train set)
@@ -109,9 +109,9 @@ public class ModelTrainer {
             }
         }
 
-        classifier.train(split.train);  // ✅ Train ONLY on training set
+        classifier.train(split.train);  //  Train ONLY on training set
         long trainTime = System.currentTimeMillis() - trainStartTime;
-        logger.info("✅ Training completed in {}ms ({}s)",
+        logger.info(" Training completed in {}ms ({}s)",
                 trainTime, trainTime / 1000.0);
 
         // Log optimal config if hyperparameter tuning was used
@@ -125,7 +125,7 @@ public class ModelTrainer {
         // Step 4: Validate trained model (on train set for sanity check)
         logger.info("Step 4/5: Validating trained model...");
         validateModel(classifier, split.train);
-        logger.info("✅ Model validation passed");
+        logger.info(" Model validation passed");
 
         // Step 5: Analyze feature importance (if requested)
         if (showFeatureImportance) {
@@ -139,7 +139,7 @@ public class ModelTrainer {
         long saveStartTime = System.currentTimeMillis();
         saveModel(classifier, outputPath, algorithmType);
         long saveTime = System.currentTimeMillis() - saveStartTime;
-        logger.info("✅ Model saved in {}ms", saveTime);
+        logger.info(" Model saved in {}ms", saveTime);
 
         long totalTime = System.currentTimeMillis() - startTime;
 
@@ -337,8 +337,8 @@ public class ModelTrainer {
                 Path featureImportancePath = FeatureImportancePersistence.getFeatureImportancePath(
                         Paths.get(modelPath));
                 FeatureImportancePersistence.save(result, featureImportancePath);
-                logger.info("✅ Feature importance saved to: {}", featureImportancePath);
-                System.out.println("\n💾 Feature importance saved to: " + featureImportancePath);
+                logger.info(" Feature importance saved to: {}", featureImportancePath);
+                System.out.println("\n Feature importance saved to: " + featureImportancePath);
                 System.out.println("   Use this for runtime API exploration via /api/v1/model/feature-importance\n");
             } catch (IOException e) {
                 logger.warn("Failed to save feature importance to file: {}", e.getMessage());
@@ -346,7 +346,7 @@ public class ModelTrainer {
 
         } catch (Exception e) {
             logger.error("Failed to analyze feature importance: {}", e.getMessage(), e);
-            System.err.println("⚠️  Feature importance analysis failed: " + e.getMessage());
+            System.err.println("️  Feature importance analysis failed: " + e.getMessage());
         }
     }
 

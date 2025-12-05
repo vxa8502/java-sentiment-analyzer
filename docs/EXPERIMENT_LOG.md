@@ -499,7 +499,7 @@ Actual Negative       109                    891
 ### What Didn't Work
 
 1. **Stemming** (-0.3% accuracy)
-   - Reduced interpretability ("love" ’ "lov")
+   - Reduced interpretability ("love" Â’ "lov")
    - Minimal accuracy gain
    - Kept full words for production
 

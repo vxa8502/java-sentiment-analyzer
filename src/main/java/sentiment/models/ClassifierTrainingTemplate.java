@@ -421,7 +421,7 @@ public abstract class ClassifierTrainingTemplate<T> extends TrainingTemplate<T> 
         // WekaInstancesConverter now owns the complete text→features transformation
         getLogger().info("Step 1/2: Fitting vectorization pipeline (preprocessing + TF-IDF)");
         Instances trainingInstances = converter.fit(rawDatasets);
-        getLogger().info("✓ Vectorization complete. Features: {}, TF-IDF vocabulary: {}",
+        getLogger().info(" Vectorization complete. Features: {}, TF-IDF vocabulary: {}",
                 trainingInstances.numAttributes() - 1,
                 converter.getVocabulary().size());
 
@@ -431,7 +431,7 @@ public abstract class ClassifierTrainingTemplate<T> extends TrainingTemplate<T> 
         modelTrainer.train(trainingInstances);
         finalizeTraining(trainingInstances);
 
-        getLogger().info("✓ {} training complete. Pipeline ready for inference.", getAlgorithmName());
+        getLogger().info(" {} training complete. Pipeline ready for inference.", getAlgorithmName());
 
         return trainingInstances;
     }

@@ -168,9 +168,9 @@ public class IMDBDatasetLoader {
 
         // Warn if imbalanced (should be exactly 50/50 for IMDB)
         if (Math.abs(balanceRatio - 1.0) > 0.01) {
-            logger.warn("⚠ Label imbalance detected in IMDB {} set!", setName);
+            logger.warn(" Label imbalance detected in IMDB {} set!", setName);
         } else {
-            logger.info("✓ Labels are balanced");
+            logger.info(" Labels are balanced");
         }
 
         // Check for empty texts
@@ -186,7 +186,7 @@ public class IMDBDatasetLoader {
             );
         }
 
-        logger.info("✓ No empty texts found");
+        logger.info(" No empty texts found");
     }
 
     /**
@@ -313,9 +313,9 @@ public class IMDBDatasetLoader {
                 name, split.size(), posCount, negCount, String.format("%.3f", balanceRatio));
 
         if (balanceRatio < 0.95) {
-            logger.warn("⚠ {} split is imbalanced (ratio={})", name, String.format("%.3f", balanceRatio));
+            logger.warn(" {} split is imbalanced (ratio={})", name, String.format("%.3f", balanceRatio));
         } else {
-            logger.info("✓ {} split is balanced", name);
+            logger.info(" {} split is balanced", name);
         }
     }
 

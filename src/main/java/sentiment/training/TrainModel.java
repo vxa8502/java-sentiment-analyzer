@@ -69,7 +69,7 @@ public class TrainModel {
 
             if (result.isSuccess()) {
                 System.out.println("\n========================================");
-                System.out.println("  ✅ Training Complete!");
+                System.out.println("   Training Complete!");
                 System.out.println("========================================");
                 System.out.println("Model saved to: " + result.getOutputPath());
                 System.out.println("Training time: " + (result.getTrainingTimeMs() / 1000.0) + "s");
@@ -80,12 +80,12 @@ public class TrainModel {
                 System.out.println("========================================\n");
                 System.exit(0);
             } else {
-                System.err.println("\n❌ Training failed: " + result.getErrorMessage());
+                System.err.println("\n Training failed: " + result.getErrorMessage());
                 System.exit(1);
             }
 
         } catch (Exception e) {
-            System.err.println("\n❌ Training failed: " + e.getClass().getSimpleName() + ": " + e.getMessage());
+            System.err.println("\n Training failed: " + e.getClass().getSimpleName() + ": " + e.getMessage());
             if (e.getCause() != null) {
                 System.err.println("Caused by: " + e.getCause().getMessage());
             }

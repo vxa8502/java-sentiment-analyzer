@@ -56,7 +56,7 @@ class SVMClassifierTest {
         TextPreprocessor.PipelineState mockPipelineState = new TextPreprocessor.PipelineState();
         mockPipelineState.vocabularySize = 100;  // Set a reasonable default
 
-        // ✅ FIX: Populate vocabularyFrequencies to match the vocabulary set
+        // FIX: Populate vocabularyFrequencies to match the vocabulary set
         // This ensures the subset validation in validatePipelineConsistency() passes
         for (int i = 0; i < 100; i++) {
             mockPipelineState.vocabularyFrequencies.put("word" + i, 1);
@@ -1075,7 +1075,7 @@ class SVMClassifierTest {
                 String.format("Probabilities for instance %d should sum to 1.0", i));
         }
 
-        logger.info("✅ PROOF: One-pass approach produces identical metrics");
+        logger.info("PROOF: One-pass approach produces identical metrics");
         logger.info("  Two-pass accuracy: {}", twoPassAccuracy);
         logger.info("  One-pass accuracy: {}", onePassAccuracy);
         logger.info("  Difference: {}", Math.abs(twoPassAccuracy - onePassAccuracy));

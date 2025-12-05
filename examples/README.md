@@ -451,10 +451,10 @@ curl http://localhost:8080/api/v1/health
 
 **Solution:** Ensure your JSON is properly formatted:
 ```bash
-# ✅ Correct
+#  Correct
 curl -d '{"text":"Hello"}'
 
-# ❌ Incorrect (missing quotes)
+#  Incorrect (missing quotes)
 curl -d '{text:Hello}'
 ```
 
