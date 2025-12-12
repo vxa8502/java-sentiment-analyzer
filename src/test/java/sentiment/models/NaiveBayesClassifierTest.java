@@ -31,16 +31,6 @@ import static org.mockito.Mockito.*;
 
 /**
  * Comprehensive unit tests for NaiveBayesClassifier.
- * <br>
- * Tests cover:
- * - Bayes' Theorem implementation verification
- * - Probabilistic predictions and calibration
- * - Training validation and error handling
- * - Classification before/after training
- * - Thread safety for concurrent inference
- * - Model state management
- * - Edge cases (OOV, empty text, etc.)
- *
  */
 @DisplayName("NaiveBayesClassifier Unit Tests")
 class NaiveBayesClassifierTest {
@@ -154,7 +144,7 @@ class NaiveBayesClassifierTest {
     @DisplayName("Training should fit preprocessor and converter")
     void testTrain_FitsPipelineComponents() throws Exception {
         // Arrange
-        List<Dataset> trainingData = createMockTrainingData(50);
+        List<Dataset> trainingData = createMockTrainingData();
         Instances mockInstances = createMockWekaInstances();
 
         when(mockConverter.fit(any())).thenReturn(mockInstances);
@@ -174,7 +164,7 @@ class NaiveBayesClassifierTest {
     @DisplayName("Training should update model state to trained")
     void testTrain_UpdatesModelState() throws Exception {
         // Arrange
-        List<Dataset> trainingData = createMockTrainingData(50);
+        List<Dataset> trainingData = createMockTrainingData();
         Instances mockInstances = createMockWekaInstances();
 
         when(mockConverter.fit(any())).thenReturn(mockInstances);
@@ -193,7 +183,7 @@ class NaiveBayesClassifierTest {
     @DisplayName("Training should extract supported classes from data")
     void testTrain_ExtractsSupportedClasses() throws Exception {
         // Arrange
-        List<Dataset> trainingData = createMockTrainingData(50);
+        List<Dataset> trainingData = createMockTrainingData();
         Instances mockInstances = createMockWekaInstances();
 
         when(mockConverter.fit(any())).thenReturn(mockInstances);
@@ -214,7 +204,7 @@ class NaiveBayesClassifierTest {
     @DisplayName("Training should measure and record training time")
     void testTrain_RecordsTrainingTime() throws Exception {
         // Arrange
-        List<Dataset> trainingData = createMockTrainingData(50);
+        List<Dataset> trainingData = createMockTrainingData();
         Instances mockInstances = createMockWekaInstances();
 
         when(mockConverter.fit(any())).thenReturn(mockInstances);
@@ -674,9 +664,9 @@ class NaiveBayesClassifierTest {
     /**
      * Creates mock training data for testing
      */
-    private List<Dataset> createMockTrainingData(int size) {
+    private List<Dataset> createMockTrainingData() {
         List<Dataset> datasets = new ArrayList<>();
-        for (int i = 0; i < size; i++) {
+        for (int i = 0; i < 50; i++) {
             Dataset.SentimentLabel label = (i % 2 == 0)
                 ? Dataset.SentimentLabel.POSITIVE
                 : Dataset.SentimentLabel.NEGATIVE;
@@ -771,7 +761,7 @@ class NaiveBayesClassifierTest {
      * Helper method to train the classifier for tests
      */
     private void trainClassifier() throws Exception {
-        List<Dataset> trainingData = createMockTrainingData(50);
+        List<Dataset> trainingData = createMockTrainingData();
         Instances mockInstances = createMockWekaInstances();
 
         when(mockConverter.fit(any())).thenReturn(mockInstances);
