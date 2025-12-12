@@ -260,7 +260,7 @@ public class SentimentController {
             }
 
             long processingTime = System.currentTimeMillis() - startTime;
-            logger.info("Classification: '{}' (confidence: {}) in {}ms",
+            logger.debug("Classification: '{}' (confidence: {}) in {}ms",
                        sentiment, confidence, processingTime);
 
             return ResponseEntity.ok(
@@ -269,7 +269,7 @@ public class SentimentController {
 
         } catch (Exception e) {
             logger.error("Classification failed for text: {}",
-                        text.substring(0, Math.min(50, text.length())), e);
+                        sanitizeForLogging(text), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(SentimentResponse.error(e.getMessage(), text));
         }
@@ -290,5 +290,25 @@ public class SentimentController {
             ip = ip.split(",")[0].trim();
         }
         return ip != null ? ip : "unknown";
+    }
+
+    /**
+     * Sanitizes text for logging to prevent log injection attacks.
+     * Removes newlines, carriage returns, and non-printable characters.
+     *
+     * @param text the text to sanitize
+     * @return sanitized text truncated to 50 characters
+     */
+    private String sanitizeForLogging(String text) {
+        if (text == null) {
+            return "null";
+        }
+
+        String truncated = text.substring(0, Math.min(50, text.length()));
+        // Remove newlines and carriage returns to prevent log injection
+        // Replace non-printable characters with '?'
+        return truncated
+                .replaceAll("[\n\r]", " ")
+                .replaceAll("[^\\x20-\\x7E]", "?");
     }
 }

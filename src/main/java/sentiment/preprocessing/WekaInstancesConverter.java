@@ -3,6 +3,7 @@ package sentiment.preprocessing;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
+import org.springframework.context.annotation.Scope;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.annotation.Autowired;
 import sentiment.data.Dataset;
@@ -23,8 +24,12 @@ import java.util.stream.Collectors;
  * <p> During {@link #fit(List)}, the preprocessor is automatically trained first, then TF-IDF filters
  * are trained on the preprocessed text. This ensures the dependency order is always correct and
  * prevents invalid state errors.
+ * <p>
+ * <b>Bean Scope:</b> Prototype - each training run gets a fresh instance to avoid
+ * state conflicts when training multiple models.
  */
 @Component
+@Scope("prototype")
 public class WekaInstancesConverter extends sentiment.TrainingTemplate<Instances> {
 
     private static final String VERSION = "1.0.0";

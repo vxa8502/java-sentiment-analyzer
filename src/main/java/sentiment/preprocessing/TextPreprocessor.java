@@ -3,6 +3,7 @@ package sentiment.preprocessing;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
+import org.springframework.context.annotation.Scope;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.annotation.Autowired;
 import sentiment.data.Dataset;
@@ -28,8 +29,12 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
  * For fine-grained control over individual preprocessing steps, use
  * {@link #cleanText(String)}, {@link #tokenize(String)}, and
  * {@link #removeStopwords(List)} independently.
+ * <p>
+ * <b>Bean Scope:</b> Prototype - each training run gets a fresh instance to avoid
+ * state conflicts when training multiple models.
  */
 @Component
+@Scope("prototype")
 public class TextPreprocessor {
 
     private static final String VERSION = "1.0.0";

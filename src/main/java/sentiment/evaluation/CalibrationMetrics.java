@@ -331,7 +331,9 @@ public class CalibrationMetrics {
      * the calibration gap. Well-calibrated models show small gaps (points near diagonal).
      * Also prints overall Brier score, ECE, and MCE.
      * </p>
+     * @deprecated Use {@link #logReliabilityDiagram()} instead
      */
+    @Deprecated
     @SuppressWarnings("unused")
     public void printReliabilityDiagram() {
         System.out.println("\n Reliability Diagram ");
@@ -360,6 +362,48 @@ public class CalibrationMetrics {
         System.out.printf("ECE:         %.4f%n", expectedCalibrationError);
         System.out.printf("MCE:         %.4f%n", maximumCalibrationError);
         System.out.println("=".repeat(60) + "\n");
+    }
+
+    /**
+     * Logs a text-based reliability diagram using the logger.
+     * <p>
+     * Displays predicted confidence vs. actual accuracy for each bin, along with
+     * the calibration gap. Well-calibrated models show small gaps (points near diagonal).
+     * Also logs overall Brier score, ECE, and MCE.
+     * </p>
+     */
+    @SuppressWarnings("unused")
+    public void logReliabilityDiagram() {
+        logger.info("");
+        logger.info("Reliability Diagram");
+        logger.info("Bin          Confidence  Accuracy  Gap      Samples");
+        logger.info("-".repeat(60));
+
+        for (CalibrationBin bin : bins) {
+            if (bin.count == 0) {
+                logger.info("[{}-{}]   (no samples)",
+                        String.format("%.1f", bin.lowerBound),
+                        String.format("%.1f", bin.upperBound));
+            } else {
+                double gap = bin.getAccuracy() - bin.getAverageConfidence();
+                String gapSign = gap >= 0 ? "+" : "";
+
+                logger.info("[{}-{}]   {}      {}    {}{}   {}",
+                        String.format("%.1f", bin.lowerBound),
+                        String.format("%.1f", bin.upperBound),
+                        String.format("%.4f", bin.getAverageConfidence()),
+                        String.format("%.4f", bin.getAccuracy()),
+                        gapSign,
+                        String.format("%.4f", gap),
+                        bin.count);
+            }
+        }
+
+        logger.info("-".repeat(60));
+        logger.info("Brier Score: {}", String.format("%.4f", brierScore));
+        logger.info("ECE:         {}", String.format("%.4f", expectedCalibrationError));
+        logger.info("MCE:         {}", String.format("%.4f", maximumCalibrationError));
+        logger.info("=".repeat(60));
     }
 
     @Override

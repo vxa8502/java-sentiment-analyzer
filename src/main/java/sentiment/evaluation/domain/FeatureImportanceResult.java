@@ -1,6 +1,7 @@
 package sentiment.evaluation.domain;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import org.slf4j.Logger;
 
 import java.util.List;
 
@@ -20,9 +21,11 @@ public record FeatureImportanceResult(
 ) {
     /**
      * Prints the top N features to console.
+     * @deprecated Use {@link #logTopFeatures(int, Logger)} instead
      *
      * @param limit Maximum number of features to print
      */
+    @Deprecated
     public void printTopFeatures(int limit) {
         System.out.println("\n=== TOP DISCRIMINATIVE FEATURES ===");
         topFeatures.stream()
@@ -30,6 +33,24 @@ public record FeatureImportanceResult(
                 .forEach(fw -> System.out.printf("%40s: weight=%+.6f, significance=%.4f\n",
                         fw.featureName(), fw.weight(), fw.significance()));
         System.out.println("===================================\n");
+    }
+
+    /**
+     * Logs the top N features using the provided logger.
+     *
+     * @param limit Maximum number of features to log
+     * @param logger Logger instance to use for output
+     */
+    public void logTopFeatures(int limit, Logger logger) {
+        logger.info("");
+        logger.info("=== TOP DISCRIMINATIVE FEATURES ===");
+        topFeatures.stream()
+                .limit(limit)
+                .forEach(fw -> logger.info("{}: weight={}, significance={}",
+                        String.format("%40s", fw.featureName()),
+                        String.format("%+.6f", fw.weight()),
+                        String.format("%.4f", fw.significance())));
+        logger.info("===================================");
     }
 
     @Override

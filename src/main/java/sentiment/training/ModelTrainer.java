@@ -2,6 +2,8 @@ package sentiment.training;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import sentiment.data.Dataset;
@@ -33,18 +35,18 @@ public class ModelTrainer {
     private static final Logger logger = LoggerFactory.getLogger(ModelTrainer.class);
 
     private final SimpleDatasetLoader datasetLoader;
-    private final TextPreprocessor textPreprocessor;
-    private final WekaInstancesConverter wekaInstancesConverter;
+    private final ObjectProvider<TextPreprocessor> textPreprocessorProvider;
+    private final ObjectProvider<WekaInstancesConverter> wekaInstancesConverterProvider;
 
     @Autowired
     public ModelTrainer(SimpleDatasetLoader datasetLoader,
-                        TextPreprocessor textPreprocessor,
-                        WekaInstancesConverter wekaInstancesConverter) {
+                        ObjectProvider<TextPreprocessor> textPreprocessorProvider,
+                        ObjectProvider<WekaInstancesConverter> wekaInstancesConverterProvider) {
         this.datasetLoader = datasetLoader;
-        this.textPreprocessor = textPreprocessor;
-        this.wekaInstancesConverter = wekaInstancesConverter;
+        this.textPreprocessorProvider = textPreprocessorProvider;
+        this.wekaInstancesConverterProvider = wekaInstancesConverterProvider;
 
-        logger.info("ModelTrainer initialized with Spring-managed components");
+        logger.info("ModelTrainer initialized with Spring-managed components (prototype scope)");
     }
 
     /**
@@ -58,6 +60,8 @@ public class ModelTrainer {
      * @param topFeaturesCount number of top features to display
      * @param enableHyperparameterTuning enable grid search for SVM (increases training time 5-10x)
      * @return training statistics
+     * @throws IllegalArgumentException if inputs are invalid
+     * @throws Exception if training fails (data loading, model training, or persistence errors)
      */
     public TrainingResult trainAndSave(String dataPath, String outputPath,
                                         AlgorithmType algorithmType, int maxSamples,
@@ -65,99 +69,122 @@ public class ModelTrainer {
                                         boolean enableHyperparameterTuning)
             throws Exception {
 
-        // CRITICAL: Reset preprocessing components before each training
-        // This is necessary because they're Spring singletons that retain state
-        logger.info("Resetting preprocessing components before training {}", algorithmType);
-        resetPreprocessingComponents();
+        // Input validation
+        if (dataPath == null || dataPath.trim().isEmpty()) {
+            throw new IllegalArgumentException("Data path cannot be null or empty");
+        }
+        if (outputPath == null || outputPath.trim().isEmpty()) {
+            throw new IllegalArgumentException("Output path cannot be null or empty");
+        }
+        if (algorithmType == null) {
+            throw new IllegalArgumentException("Algorithm type cannot be null");
+        }
+        if (maxSamples < 0) {
+            throw new IllegalArgumentException("Max samples cannot be negative");
+        }
+        if (topFeaturesCount <= 0) {
+            throw new IllegalArgumentException("Top features count must be positive");
+        }
 
-        logger.info("=== Starting Model Training ===");
-        logger.info("Algorithm: {}", algorithmType.getDisplayName());
-        logger.info("Data path: {}", dataPath);
-        logger.info("Output path: {}", outputPath);
-        logger.info("Max samples: {}", maxSamples > 0 ? maxSamples : "all");
+        // Set up MDC context for this training session to enable tracing through logs
+        String sessionId = UUID.randomUUID().toString().substring(0, 8);
+        MDC.put("algorithmType", algorithmType.name());
+        MDC.put("sessionId", sessionId);
 
-        long startTime = System.currentTimeMillis();
+        try {
+            logger.info("=== Starting Model Training ===");
+            logger.info("Algorithm: {}", algorithmType.getDisplayName());
+            logger.info("Data path: {}", dataPath);
+            logger.info("Output path: {}", outputPath);
+            logger.info("Max samples: {}", maxSamples > 0 ? maxSamples : "all");
 
-        // Step 1: Load all data
-        logger.info("Step 1/5: Loading data...");
-        List<Dataset> allData = loadTrainingData(dataPath, maxSamples);
-        long loadTime = System.currentTimeMillis() - startTime;
-        logger.info(" Loaded {} samples in {}ms", allData.size(), loadTime);
+            long startTime = System.currentTimeMillis();
 
-        // Step 2: Perform stratified train/validation/test split (60/20/20)
-        logger.info("Step 2/5: Performing stratified 60/20/20 train/val/test split...");
-        StratifiedDataSplitter.DataSplit split = StratifiedDataSplitter.stratifiedSplit(
-                allData,
-                0.6,  // 60% train
-                0.2,  // 20% validation
-                0.2,  // 20% test
-                42    // Fixed seed for reproducibility
-        );
-        logger.info(" Split complete: train={}, val={}, test={}",
-                split.train.size(), split.validation.size(), split.test.size());
+            // Step 1: Load all data
+            logger.info("Step 1/5: Loading data...");
+            List<Dataset> allData = loadTrainingData(dataPath, maxSamples);
+            long loadTime = System.currentTimeMillis() - startTime;
+            logger.info(" Loaded {} samples in {}ms", allData.size(), loadTime);
 
-        // Step 3: Create and train classifier (ONLY on train set)
-        logger.info("Step 3/5: Training {} classifier on TRAIN SET ONLY...", algorithmType.getDisplayName());
-        long trainStartTime = System.currentTimeMillis();
-        SentimentClassifier classifier = createClassifier(algorithmType);
+            // Step 2: Perform stratified train/validation/test split (60/20/20)
+            logger.info("Step 2/5: Performing stratified 60/20/20 train/val/test split...");
+            StratifiedDataSplitter.DataSplit split = StratifiedDataSplitter.stratifiedSplit(
+                    allData,
+                    0.6,  // 60% train
+                    0.2,  // 20% validation
+                    0.2,  // 20% test
+                    42    // Fixed seed for reproducibility
+            );
+            logger.info(" Split complete: train={}, val={}, test={}",
+                    split.train.size(), split.validation.size(), split.test.size());
 
-        // Configure SVM-specific settings before training
-        if (classifier instanceof SVMClassifier svm) {
-            if (enableHyperparameterTuning) {
-                logger.info("Hyperparameter tuning ENABLED for SVM (training will take longer)");
-                svm.setHyperparameterTuning(true, 5);
+            // Step 3: Create and train classifier (ONLY on train set)
+            logger.info("Step 3/5: Training {} classifier on TRAIN SET ONLY...", algorithmType.getDisplayName());
+            long trainStartTime = System.currentTimeMillis();
+            SentimentClassifier classifier = createClassifier(algorithmType);
+
+            // Configure SVM-specific settings before training
+            if (classifier instanceof SVMClassifier svm) {
+                if (enableHyperparameterTuning) {
+                    logger.info("Hyperparameter tuning ENABLED for SVM (training will take longer)");
+                    svm.setHyperparameterTuning(true, 5);
+                }
             }
+
+            classifier.train(split.train);  //  Train ONLY on training set
+            long trainTime = System.currentTimeMillis() - trainStartTime;
+            logger.info(" Training completed in {}ms ({}s)",
+                    trainTime, trainTime / 1000.0);
+
+            // Log optimal config if hyperparameter tuning was used
+            if (classifier instanceof SVMClassifier svm && svm.getOptimalConfig() != null) {
+                SVMConfig optimal = svm.getOptimalConfig();
+                logger.info("Grid search results: kernel={}, C={}, CV accuracy={}",
+                    optimal.getKernelType().getDisplayName(), optimal.getC(),
+                    String.format("%.3f", optimal.getCvAccuracy()));
+            }
+
+            // Step 4: Validate trained model (on train set for sanity check)
+            logger.info("Step 4/5: Validating trained model...");
+            validateModel(classifier, split.train);
+            logger.info(" Model validation passed");
+
+            // Step 5: Analyze feature importance (if requested)
+            if (showFeatureImportance) {
+                logger.info("Step 5/6: Analyzing feature importance...");
+                analyzeAndPrintFeatureImportance(classifier, split, topFeaturesCount, outputPath, algorithmType);
+            }
+
+            // Step 6: Save model to disk
+            int finalStep = showFeatureImportance ? 6 : 5;
+            logger.info("Step {}/{}: Saving model to {}...", finalStep, finalStep, outputPath);
+            long saveStartTime = System.currentTimeMillis();
+            saveModel(classifier, outputPath, algorithmType);
+            long saveTime = System.currentTimeMillis() - saveStartTime;
+            logger.info(" Model saved in {}ms", saveTime);
+
+            long totalTime = System.currentTimeMillis() - startTime;
+
+            TrainingResult result = new TrainingResult(
+                    algorithmType,
+                    split.train.size(),
+                    split.validation.size(),
+                    split.test.size(),
+                    outputPath,
+                    trainTime,
+                    totalTime,
+                    classifier.isTrained()
+            );
+
+            logger.info("=== Training Complete ===");
+            logger.info("{}", result);
+
+            return result;
+        } finally {
+            // Clean up MDC context after training completes
+            MDC.remove("algorithmType");
+            MDC.remove("sessionId");
         }
-
-        classifier.train(split.train);  //  Train ONLY on training set
-        long trainTime = System.currentTimeMillis() - trainStartTime;
-        logger.info(" Training completed in {}ms ({}s)",
-                trainTime, trainTime / 1000.0);
-
-        // Log optimal config if hyperparameter tuning was used
-        if (classifier instanceof SVMClassifier svm && svm.getOptimalConfig() != null) {
-            SVMConfig optimal = svm.getOptimalConfig();
-            logger.info("Grid search results: kernel={}, C={}, CV accuracy={}",
-                optimal.getKernelType().getDisplayName(), optimal.getC(),
-                String.format("%.3f", optimal.getCvAccuracy()));
-        }
-
-        // Step 4: Validate trained model (on train set for sanity check)
-        logger.info("Step 4/5: Validating trained model...");
-        validateModel(classifier, split.train);
-        logger.info(" Model validation passed");
-
-        // Step 5: Analyze feature importance (if requested)
-        if (showFeatureImportance) {
-            logger.info("Step 5/6: Analyzing feature importance...");
-            analyzeAndPrintFeatureImportance(classifier, split, topFeaturesCount, outputPath, algorithmType);
-        }
-
-        // Step 6: Save model to disk
-        int finalStep = showFeatureImportance ? 6 : 5;
-        logger.info("Step {}/{}: Saving model to {}...", finalStep, finalStep, outputPath);
-        long saveStartTime = System.currentTimeMillis();
-        saveModel(classifier, outputPath, algorithmType);
-        long saveTime = System.currentTimeMillis() - saveStartTime;
-        logger.info(" Model saved in {}ms", saveTime);
-
-        long totalTime = System.currentTimeMillis() - startTime;
-
-        TrainingResult result = new TrainingResult(
-                algorithmType,
-                split.train.size(),
-                split.validation.size(),
-                split.test.size(),
-                outputPath,
-                trainTime,
-                totalTime,
-                classifier.isTrained()
-        );
-
-        logger.info("=== Training Complete ===");
-        logger.info("{}", result);
-
-        return result;
     }
 
     /**
@@ -196,16 +223,6 @@ public class ModelTrainer {
 
     // ==================== PRIVATE HELPERS ====================
 
-    private void resetPreprocessingComponents() {
-        try {
-            wekaInstancesConverter.reset();  // This now resets the preprocessor too
-            textPreprocessor.reset();        // Defensive: ensure preprocessor is also reset
-            logger.debug("Successfully reset preprocessing components");
-        } catch (Exception e) {
-            logger.warn("Failed to reset preprocessing components: {}", e.getMessage());
-        }
-    }
-
     private List<Dataset> loadTrainingData(String dataPath, int maxSamples) throws Exception {
         DatasetLoadResult loadResult = datasetLoader.loadWithMetadata(dataPath);
         List<Dataset> allData = loadResult.datasets();
@@ -240,7 +257,16 @@ public class ModelTrainer {
         return shuffled;
     }
 
+    /**
+     * Creates a new classifier instance with fresh preprocessing components.
+     * Each classifier gets its own TextPreprocessor and WekaInstancesConverter
+     * to avoid state conflicts when training multiple models.
+     */
     private SentimentClassifier createClassifier(AlgorithmType algorithmType) {
+        // Get fresh instances from prototype-scoped beans
+        TextPreprocessor textPreprocessor = textPreprocessorProvider.getObject();
+        WekaInstancesConverter wekaInstancesConverter = wekaInstancesConverterProvider.getObject();
+
         return switch (algorithmType) {
             case SVM -> new SVMClassifier(textPreprocessor, wekaInstancesConverter);
             case NAIVE_BAYES -> new NaiveBayesClassifier(textPreprocessor, wekaInstancesConverter);
@@ -290,13 +316,18 @@ public class ModelTrainer {
         if (classifier instanceof ClassifierTrainingTemplate) {
             WekaModelPersistence<ClassifierTrainingTemplate<?>> persistence = new WekaModelPersistence<>();
             persistence.saveModel((ClassifierTrainingTemplate<?>) classifier, modelPath);
+
+            // Log metadata for easy reference and verification
+            try {
+                WekaModelPersistence.ModelMetadata metadata = persistence.getModelMetadata(modelPath);
+                logger.info("Model metadata: {}", metadata);
+            } catch (Exception e) {
+                logger.warn("Failed to read metadata after save: {}", e.getMessage());
+            }
         } else {
             throw new UnsupportedOperationException(
                     "Classifier type " + algorithmType + " does not support persistence");
         }
-
-        long fileSize = Files.size(modelPath);
-        logger.info("Model file size: {} bytes ({} KB)", fileSize, fileSize / 1024);
     }
 
     private void analyzeAndPrintFeatureImportance(SentimentClassifier classifier,
@@ -306,8 +337,12 @@ public class ModelTrainer {
                                                    AlgorithmType algorithmType) {
         try {
             logger.info("Converting training data to Weka Instances for feature analysis...");
+
+            // Extract the trained converter from the classifier
+            WekaInstancesConverter trainedConverter = ((ClassifierTrainingTemplate<?>) classifier).getConverter();
+
             // Convert the training data to Weka Instances using the already-trained converter
-            Instances trainedInstances = wekaInstancesConverter.transformDatasets(split.train);
+            Instances trainedInstances = trainedConverter.transformDatasets(split.train);
 
             logger.info("Analyzing feature importance on {} training instances with {} features...",
                     trainedInstances.numInstances(), trainedInstances.numAttributes() - 1);
@@ -337,42 +372,41 @@ public class ModelTrainer {
                 Path featureImportancePath = FeatureImportancePersistence.getFeatureImportancePath(
                         Paths.get(modelPath));
                 FeatureImportancePersistence.save(result, featureImportancePath);
-                logger.info(" Feature importance saved to: {}", featureImportancePath);
-                System.out.println("\n Feature importance saved to: " + featureImportancePath);
-                System.out.println("   Use this for runtime API exploration via /api/v1/model/feature-importance\n");
+                logger.info("Feature importance saved to: {}", featureImportancePath);
+                logger.info("Use this for runtime API exploration via /api/v1/model/feature-importance");
             } catch (IOException e) {
                 logger.warn("Failed to save feature importance to file: {}", e.getMessage());
             }
 
         } catch (Exception e) {
             logger.error("Failed to analyze feature importance: {}", e.getMessage(), e);
-            System.err.println("️  Feature importance analysis failed: " + e.getMessage());
         }
     }
 
     private void printFeatureImportanceReport(FeatureImportanceResult result,
                                                int topFeaturesCount,
                                                AlgorithmType algorithmType) {
-        System.out.println("\n" + "=".repeat(80));
-        System.out.println("FEATURE IMPORTANCE ANALYSIS - " + algorithmType.getDisplayName());
-        System.out.println("=".repeat(80));
-        System.out.println("Analysis completed in " + result.analysisTimeMs() + "ms");
-        System.out.println("\nStatistics:");
-        System.out.println("  Total features: " + result.allFeatures().size());
-        System.out.println("  Mean absolute weight: " + String.format("%.6f", result.statistics().mean()));
-        System.out.println("  Std deviation: " + String.format("%.6f", result.statistics().stdDev()));
-        System.out.println("  Median: " + String.format("%.6f", result.statistics().median()));
-        System.out.println("  95th percentile: " + String.format("%.6f", result.statistics().percentile95()));
-        System.out.println("=".repeat(80));
+        logger.info("=".repeat(80));
+        logger.info("FEATURE IMPORTANCE ANALYSIS - {}", algorithmType.getDisplayName());
+        logger.info("=".repeat(80));
+        logger.info("Analysis completed in {}ms", result.analysisTimeMs());
+        logger.info("");
+        logger.info("Statistics:");
+        logger.info("  Total features: {}", result.allFeatures().size());
+        logger.info("  Mean absolute weight: {}", String.format("%.6f", result.statistics().mean()));
+        logger.info("  Std deviation: {}", String.format("%.6f", result.statistics().stdDev()));
+        logger.info("  Median: {}", String.format("%.6f", result.statistics().median()));
+        logger.info("  95th percentile: {}", String.format("%.6f", result.statistics().percentile95()));
+        logger.info("=".repeat(80));
 
-        result.printTopFeatures(topFeaturesCount);
+        result.logTopFeatures(topFeaturesCount, logger);
 
-        System.out.println("INTERPRETATION:");
-        System.out.println("  • Features with high |weight| strongly influence predictions");
-        System.out.println("  • Positive weights → positive sentiment, negative → negative sentiment");
-        System.out.println("  • Features near zero are non-discriminative");
-        System.out.println("  • This analysis helps understand what the model learned");
-        System.out.println("=".repeat(80) + "\n");
+        logger.info("INTERPRETATION:");
+        logger.info("  • Features with high |weight| strongly influence predictions");
+        logger.info("  • Positive weights → positive sentiment, negative → negative sentiment");
+        logger.info("  • Features near zero are non-discriminative");
+        logger.info("  • This analysis helps understand what the model learned");
+        logger.info("=".repeat(80));
     }
 
     /**

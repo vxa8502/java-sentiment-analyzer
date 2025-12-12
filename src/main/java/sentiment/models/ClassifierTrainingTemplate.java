@@ -624,11 +624,11 @@ public abstract class ClassifierTrainingTemplate<T> extends TrainingTemplate<T> 
     }
 
     /**
-     * Gets the WekaInstancesConverter for state management during model loading.
+     * Gets the WekaInstancesConverter for state management during model loading and feature analysis.
      *
      * @return the converter instance, or null if not set
      */
-    WekaInstancesConverter getConverter() {
+    public WekaInstancesConverter getConverter() {
         return converter;
     }
 

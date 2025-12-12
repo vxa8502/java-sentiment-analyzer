@@ -2,6 +2,7 @@ package sentiment.config;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -25,10 +26,10 @@ public class SentimentConfiguration {
     private static final Logger logger = LoggerFactory.getLogger(SentimentConfiguration.class);
 
     @Autowired
-    private TextPreprocessor textPreprocessor;
+    private ObjectProvider<TextPreprocessor> textPreprocessorProvider;
 
     @Autowired
-    private WekaInstancesConverter wekaInstancesConverter;
+    private ObjectProvider<WekaInstancesConverter> wekaInstancesConverterProvider;
 
     @Value("${sentiment.model-type}")
     private String modelType;
@@ -141,8 +142,13 @@ public class SentimentConfiguration {
 
     /**
      * Factory method to create classifier instance based on algorithm type.
+     * Gets fresh instances of preprocessing components from prototype-scoped beans.
      */
     private SentimentClassifier createClassifier(AlgorithmType algorithm) {
+        // Get fresh instances for this classifier
+        TextPreprocessor textPreprocessor = textPreprocessorProvider.getObject();
+        WekaInstancesConverter wekaInstancesConverter = wekaInstancesConverterProvider.getObject();
+
         return switch (algorithm) {
             case SVM -> new SVMClassifier(textPreprocessor, wekaInstancesConverter);
             case NAIVE_BAYES -> new NaiveBayesClassifier(textPreprocessor, wekaInstancesConverter);

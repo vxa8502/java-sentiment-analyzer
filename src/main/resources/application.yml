@@ -6,7 +6,9 @@ logging:
     sentiment: DEBUG
     root: INFO
   pattern:
-    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+    # Structured logging with MDC context for tracing training runs and operations
+    # Format: timestamp [thread] level logger [algorithm=X] [sessionId=Y] - message
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} %X{algorithmType:+[algorithm=%X{algorithmType}]}%X{sessionId:+[session=%X{sessionId}]} - %msg%n"
   file:
     name: logs/sentiment-analyzer.log
 
