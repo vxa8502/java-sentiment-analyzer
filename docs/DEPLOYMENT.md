@@ -82,27 +82,6 @@ docker run -d \
 
 ---
 
-## Cloud Deployment (Optional)
-
-### Google Cloud Run
-
-```bash
-# Build and push
-gcloud builds submit --tag gcr.io/<project-id>/sentiment-analyzer
-
-# Deploy
-gcloud run deploy sentiment-analyzer \
-  --image gcr.io/<project-id>/sentiment-analyzer \
-  --platform managed \
-  --region us-central1 \
-  --memory 1Gi \
-  --port 8080
-```
-
-**Note:** You don't need cloud deployment until you have actual traffic that justifies it. Start with Docker locally.
-
----
-
 ## Health Check & Monitoring
 
 ### Health Endpoint
