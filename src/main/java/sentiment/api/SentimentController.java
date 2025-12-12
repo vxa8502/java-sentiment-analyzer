@@ -1,5 +1,6 @@
 package sentiment.api;
 
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -9,12 +10,14 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.beans.factory.annotation.Value;
+import sentiment.api.metrics.PredictionMetrics;
 import sentiment.evaluation.FeatureImportancePersistence;
 import sentiment.models.SentimentClassifier;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.Duration;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -28,6 +31,7 @@ public class SentimentController {
 
     private static final Logger logger = LoggerFactory.getLogger(SentimentController.class);
     private final SentimentClassifier classifier;
+    private final PredictionMetrics metrics;
     private final String svmModelPath;
     private final long startTime;
 
@@ -35,11 +39,13 @@ public class SentimentController {
     private final Object featureImportanceLock = new Object();
 
     public SentimentController(SentimentClassifier classifier,
+                               PredictionMetrics metrics,
                                @Value("${sentiment.models.svm-model-path:./models/svm-model.ser}") String svmModelPath) {
         this.classifier = classifier;
+        this.metrics = metrics;
         this.svmModelPath = svmModelPath;
         this.startTime = System.currentTimeMillis();
-        logger.info("SentimentController initialized with {} classifier",
+        logger.info("SentimentController initialized with {} classifier and production metrics",
                    classifier.getAlgorithmName());
     }
 
@@ -207,28 +213,50 @@ public class SentimentController {
     }
 
     /**
-     * Health check endpoint returning service status and model information.
+     * Health check endpoint returning service status, model information, and production metrics.
      */
     @GetMapping("/health")
     public ResponseEntity<HealthResponse> health() {
         long uptime = System.currentTimeMillis() - startTime;
 
-        HealthResponse response = HealthResponse.healthy(
+        // Get production metrics snapshot
+        PredictionMetrics.MetricsSnapshot snapshot = metrics.getSnapshot();
+
+        HealthResponse.ProductionMetrics productionMetrics = new HealthResponse.ProductionMetrics(
+                snapshot.totalPredictions(),
+                new HealthResponse.LabelDistribution(
+                        snapshot.positivePredictions(),
+                        snapshot.negativePredictions(),
+                        snapshot.neutralPredictions()
+                ),
+                snapshot.averageConfidence(),
+                snapshot.lowConfidenceRatePercent(),
+                new HealthResponse.LatencyStats(
+                        snapshot.meanLatencyMs(),
+                        snapshot.p95LatencyMs(),
+                        snapshot.p99LatencyMs()
+                )
+        );
+
+        HealthResponse response = HealthResponse.withMetrics(
             "1.0.0",
             classifier.isTrained(),
             classifier.isTrained() ? classifier.getAlgorithmName() : "Not loaded",
-            uptime
+            uptime,
+            productionMetrics
         );
 
-        logger.debug("Health check: model loaded={}, uptime={}ms",
-                    classifier.isTrained(), uptime);
+        logger.debug("Health check: model loaded={}, uptime={}ms, predictions={}",
+                    classifier.isTrained(), uptime, snapshot.totalPredictions());
 
         return ResponseEntity.ok(response);
     }
 
     /**
      * Classifies text and applies optional confidence thresholding.
+     * Protected by circuit breaker to prevent cascading failures when model fails.
      */
+    @CircuitBreaker(name = "modelInference", fallbackMethod = "classifyTextFallback")
     private ResponseEntity<SentimentResponse> classifyText(String text, Double confidenceThreshold) {
         long startTime = System.currentTimeMillis();
 
@@ -263,6 +291,9 @@ public class SentimentController {
             logger.debug("Classification: '{}' (confidence: {}) in {}ms",
                        sentiment, confidence, processingTime);
 
+            // Record production metrics
+            metrics.recordPrediction(sentiment, confidence, Duration.ofMillis(processingTime));
+
             return ResponseEntity.ok(
                 SentimentResponse.success(sentiment, confidence, text, processingTime)
             );
@@ -273,6 +304,20 @@ public class SentimentController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(SentimentResponse.error(e.getMessage(), text));
         }
+    }
+
+    /**
+     * Fallback method for classifyText when circuit breaker is OPEN.
+     * Returns a graceful error response instead of cascading failures.
+     */
+    private ResponseEntity<SentimentResponse> classifyTextFallback(String text, Double confidenceThreshold, Exception e) {
+        logger.warn("Circuit breaker OPEN - model inference unavailable. Cause: {}", e.getMessage());
+
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(SentimentResponse.error(
+                    "Sentiment analysis temporarily unavailable. The model is experiencing issues " +
+                    "and is recovering. Please retry in 30 seconds. Check /actuator/health for " +
+                    "circuit breaker status.", text));
     }
 
     /**

@@ -58,76 +58,23 @@ mvn spring-boot:run
 
 The application will start on port `8080`.
 
-## API Endpoints
+## API Usage
 
-### Health Check
-
-- **GET** `/api/v1/health`
-
-  Returns the health of the service, including model status and uptime.
-
-### Analyze Sentiment
-
-- **POST** `/api/v1/sentiment/analyze`
-
-  Analyzes the sentiment of a single text.
-
-  **Request Body:**
-
-  ```json
-  {
-    "text": "This is a wonderful product!",
-    "confidenceThreshold": 0.8
-  }
-  ```
-
-### Batch Analyze Sentiment
-
-- **POST** `/api/v1/sentiment/batch`
-
-  Analyzes the sentiment of multiple texts in a batch.
-
-  **Request Body:**
-
-  ```json
-  {
-    "texts": [
-      "This is a great movie.",
-      "I am not happy with the service.",
-      "The weather is neutral."
-    ],
-    "confidenceThreshold": 0.75
-  }
-  ```
-
-### Get Feature Importance
-
-- **GET** `/api/v1/model/feature-importance`
-
-  Returns the most important features (words) for the sentiment model.
-
-  **Query Parameters:**
-
-  - `topFeatures` (optional, default: 30): The number of top features to return.
-
-## Usage
-
-Here are some examples of how to use the API with `curl`.
-
-### Positive Sentiment
+### Single Text Analysis
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/sentiment/analyze \
   -H "Content-Type: application/json" \
-  -d '{"text":"This product is absolutely amazing! Best purchase ever!"}'
+  -d '{"text":"This product is amazing!"}'
 ```
 
-### Negative Sentiment
-
-```bash
-curl -X POST http://localhost:8080/api/v1/sentiment/analyze \
-  -H "Content-Type: application/json" \
-  -d '{"text":"Terrible quality. Complete waste of money. Very disappointed."}'
+**Response:**
+```json
+{
+  "sentiment": "positive",
+  "confidence": 0.94,
+  "processingTimeMs": 42
+}
 ```
 
 ### Batch Analysis
@@ -135,34 +82,38 @@ curl -X POST http://localhost:8080/api/v1/sentiment/analyze \
 ```bash
 curl -X POST http://localhost:8080/api/v1/sentiment/batch \
   -H "Content-Type: application/json" \
-  -d 
-    "texts": [
-      "Amazing product, highly recommend!",
-      "Terrible experience, very disappointed.",
-      "It works as expected, nothing special."
-    ]
-  }
+  -d '{"texts":["Great product!", "Terrible quality.", "It works."]}'
 ```
 
-## Training a New Model
+### Health Check (with Production Metrics)
 
-You can train a new sentiment analysis model using the provided training module.
+```bash
+curl http://localhost:8080/api/v1/health
+```
 
-### Command
+**Response includes:**
+- Model status and algorithm
+- Production metrics: confidence, latency, label distribution
+- See [DEPLOYMENT.md](docs/DEPLOYMENT.md) for monitoring details
+
+## Training Models
 
 ```bash
 mvn exec:java -Dexec.mainClass="sentiment.training.TrainModel" \
-  -Dexec.args="<dataPath> <outputPath> [maxSamples] [showFeatureImportance] [topFeaturesCount] [enableHyperparameterTuning]"
+  -Dexec.args="./data/Reviews.csv ./models/svm-model.ser 10000 true 30 false"
 ```
 
-### Example
+This trains an SVM model and generates:
+- `svm-model.ser` - Trained model
+- `svm-model.metadata.json` - Training metrics and reproducibility info
+- `svm-model.feature-importance.json` - Feature analysis
 
-```bash
-mvn exec:java -Dexec.mainClass="sentiment.training.TrainModel" \
-  -Dexec.args="./src/main/resources/datasets/v1_raw/Reviews.csv ./models/svm-model-v2.ser 10000 true 30 false"
-```
+**For detailed training documentation, see [TRAINING.md](docs/TRAINING.md)**
 
-This command will train a new SVM model on the `Reviews.csv` dataset and save it to `./models/svm-model-v2.ser`.
+## Documentation
+
+- **[TRAINING.md](docs/TRAINING.md)** - Model training, comparison, and reproducibility
+- **[DEPLOYMENT.md](docs/DEPLOYMENT.md)** - Docker deployment and production monitoring
 
 ## License
 

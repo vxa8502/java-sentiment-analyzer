@@ -3,8 +3,8 @@ server:
 
 logging:
   level:
-    sentiment: DEBUG
-    root: INFO
+    sentiment: INFO
+    root: WARN
   pattern:
     # Structured logging with MDC context for tracing training runs and operations
     # Format: timestamp [thread] level logger [algorithm=X] [sessionId=Y] - message
@@ -20,8 +20,12 @@ management:
       base-path: /actuator
   endpoint:
     health:
-      show-details: when_authorized
+      show-details: always
+      show-components: always
     prometheus:
+      enabled: true
+  health:
+    defaults:
       enabled: true
   metrics:
     export:
@@ -29,6 +33,8 @@ management:
         enabled: true
     tags:
       application: sentiment-analyzer
+      environment: ${SPRING_PROFILES_ACTIVE:unknown}
+      version: ${APP_VERSION:dev}
 
 # Main sentiment analyzer configuration
 sentiment:
@@ -58,6 +64,10 @@ sentiment:
     require-pretrained: false
 
   # Text preprocessing configuration
+  # NOTE: The following settings (preprocessing, features, weka) intentionally share
+  # the same feature extraction parameters to ensure consistency across the pipeline:
+  # tokenization → feature extraction → Weka conversion
+  # This prevents vocabulary mismatches and ensures reproducible model behavior
   preprocessing:
     # Minimum word length to include in tokenization
     min-word-length: 2
@@ -211,9 +221,6 @@ sentiment:
       - json
       - txt
 
-    # Maximum file size in MB
-    max-file-size-mb: 2000
-
     # Default encoding for text files
     default-encoding: UTF-8
 
@@ -252,10 +259,9 @@ sentiment:
       estimated-features: 5000
 
 # Spring profiles configuration
+# NOTE: No default profile set - must be explicitly specified via SPRING_PROFILES_ACTIVE
+# environment variable to prevent accidental dev configuration in production
 spring:
-  profiles:
-    active: development
-
   # JSON serialization settings
   jackson:
     default-property-inclusion: non_null
@@ -294,6 +300,27 @@ resilience4j:
         register-health-indicator: true
         allow-health-indicator-to-fail: true
         event-consumer-buffer-size: 50
+
+  # Circuit breaker for model inference
+  # Prevents cascading failures when model loading/prediction fails
+  circuitbreaker:
+    instances:
+      modelInference:
+        # Open circuit if 50% of requests fail
+        failure-rate-threshold: 50
+        # Slow requests (>2s) also count as failures
+        slow-call-rate-threshold: 50
+        slow-call-duration-threshold: 2s
+        # Wait 30s before trying again (gives model time to recover)
+        wait-duration-in-open-state: 30s
+        # Try 3 test requests when half-open
+        permitted-number-of-calls-in-half-open-state: 3
+        # Evaluate based on last 10 requests
+        sliding-window-size: 10
+        sliding-window-type: COUNT_BASED
+        # Minimum requests before circuit can open (prevents premature tripping)
+        minimum-number-of-calls: 5
+        register-health-indicator: true
 
 # Development profile specific settings
 ---
@@ -339,6 +366,15 @@ logging:
   level:
     sentiment: INFO
     root: WARN
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus  # Restrict endpoints in production
+  endpoint:
+    health:
+      show-details: never  # Don't expose internal details publicly
 
 sentiment:
   preprocessing:

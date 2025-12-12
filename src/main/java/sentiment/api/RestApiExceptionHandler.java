@@ -17,17 +17,6 @@ import java.util.Map;
  * Global exception handler for REST API endpoints.
  * Catches exceptions thrown by controllers and converts them to
  * appropriate HTTP responses with proper status codes and error messages.
- *
- * <p><b>Error Handling Standards:</b></p>
- * <ul>
- *   <li>{@link IllegalArgumentException} → 400 Bad Request (invalid client input)</li>
- *   <li>{@link IllegalStateException} → 503 Service Unavailable (model not ready)</li>
- *   <li>{@link MethodArgumentNotValidException} → 400 Bad Request (bean validation failures)</li>
- *   <li>{@link Exception} → 500 Internal Server Error (unexpected errors)</li>
- * </ul>
- *
- * <p>All error responses follow a consistent structure via {@link ErrorResponse},
- * ensuring predictable error handling for API clients.</p>
  */
 @ControllerAdvice
 public class RestApiExceptionHandler {

@@ -9,6 +9,7 @@ import org.springframework.stereotype.Component;
 import sentiment.data.Dataset;
 import sentiment.data.SimpleDatasetLoader;
 import sentiment.data.DatasetLoadResult;
+import sentiment.evaluation.ClassifierEvaluationResult;
 import sentiment.evaluation.FeatureImportanceAnalyzer;
 import sentiment.evaluation.FeatureImportancePersistence;
 import sentiment.evaluation.StratifiedDataSplitter;
@@ -149,19 +150,28 @@ public class ModelTrainer {
             validateModel(classifier, split.train);
             logger.info(" Model validation passed");
 
-            // Step 5: Analyze feature importance (if requested)
+            // Step 5: Evaluate on test set
+            logger.info("Step 5/7: Evaluating model on test set...");
+            ClassifierEvaluationResult testEvaluation = evaluateOnTestSet(classifier, split.test);
+            logger.info(" Test Accuracy: {}", String.format("%.3f", testEvaluation.getAccuracy()));
+            logger.info(" Test Precision: {}", String.format("%.3f", testEvaluation.getPrecision()));
+            logger.info(" Test Recall: {}", String.format("%.3f", testEvaluation.getRecall()));
+            logger.info(" Test F1: {}", String.format("%.3f", testEvaluation.getF1Score()));
+
+            // Step 6: Analyze feature importance (if requested)
             if (showFeatureImportance) {
-                logger.info("Step 5/6: Analyzing feature importance...");
+                logger.info("Step 6/7: Analyzing feature importance...");
                 analyzeAndPrintFeatureImportance(classifier, split, topFeaturesCount, outputPath, algorithmType);
             }
 
-            // Step 6: Save model to disk
-            int finalStep = showFeatureImportance ? 6 : 5;
-            logger.info("Step {}/{}: Saving model to {}...", finalStep, finalStep, outputPath);
+            // Step 7: Save model and metadata to disk
+            int finalStep = showFeatureImportance ? 7 : 6;
+            logger.info("Step {}/{}: Saving model and metadata to {}...", finalStep, finalStep, outputPath);
             long saveStartTime = System.currentTimeMillis();
             saveModel(classifier, outputPath, algorithmType);
+            saveTrainingMetadata(dataPath, outputPath, algorithmType, split, testEvaluation, trainTime);
             long saveTime = System.currentTimeMillis() - saveStartTime;
-            logger.info(" Model saved in {}ms", saveTime);
+            logger.info(" Model and metadata saved in {}ms", saveTime);
 
             long totalTime = System.currentTimeMillis() - startTime;
 
@@ -306,6 +316,21 @@ public class ModelTrainer {
         return max;
     }
 
+    private ClassifierEvaluationResult evaluateOnTestSet(SentimentClassifier classifier,
+                                                           List<Dataset> testData) throws Exception {
+        if (!(classifier instanceof ClassifierTrainingTemplate)) {
+            throw new UnsupportedOperationException("Classifier does not support evaluation");
+        }
+
+        ClassifierTrainingTemplate<?> template = (ClassifierTrainingTemplate<?>) classifier;
+
+        // Convert test data to Weka Instances using the trained converter
+        Instances testInstances = template.getConverter().transformDatasets(testData);
+
+        // Evaluate using the classifier's evaluate method
+        return template.evaluate(testInstances);
+    }
+
     private void saveModel(SentimentClassifier classifier, String outputPath,
                            AlgorithmType algorithmType) throws IOException {
 
@@ -327,6 +352,48 @@ public class ModelTrainer {
         } else {
             throw new UnsupportedOperationException(
                     "Classifier type " + algorithmType + " does not support persistence");
+        }
+    }
+
+    private void saveTrainingMetadata(String dataPath, String modelPath,
+                                       AlgorithmType algorithmType,
+                                       StratifiedDataSplitter.DataSplit split,
+                                       ClassifierEvaluationResult evaluation,
+                                       long trainingTimeMs) {
+        try {
+            Path modelFilePath = Paths.get(modelPath);
+            Path metadataPath = TrainingMetadata.getMetadataPath(modelFilePath);
+
+            // Extract hyperparameters from model file name or use defaults
+            Map<String, Object> hyperparameters = new LinkedHashMap<>();
+            hyperparameters.put("algorithm", algorithmType.name());
+            // TODO: Extract actual hyperparameters from trained model
+
+            // Generate model ID from timestamp and algorithm
+            String modelId = algorithmType.name().toLowerCase() + "-" +
+                            java.time.Instant.now().toString().substring(0, 19).replace(":", "-");
+
+            // Build metadata
+            TrainingMetadata metadata = TrainingMetadata.builder()
+                    .modelId(modelId)
+                    .algorithm(algorithmType)
+                    .hyperparameters(hyperparameters)
+                    .datasetPath(dataPath)
+                    .sampleCounts(split.train.size(), split.validation.size(), split.test.size())
+                    .preprocessing(5000) // Default max features - TODO: extract from actual config
+                    .evaluationResults(evaluation)
+                    .trainedAt(java.time.Instant.now())
+                    .trainingDuration(trainingTimeMs)
+                    .modelFile(modelFilePath.getFileName().toString(), Files.size(modelFilePath))
+                    .build();
+
+            // Save metadata JSON
+            metadata.save(metadataPath);
+            logger.info("Training metadata saved to: {}", metadataPath);
+
+        } catch (Exception e) {
+            logger.warn("Failed to save training metadata: {}", e.getMessage());
+            // Don't fail the entire training process if metadata save fails
         }
     }
 
