@@ -63,17 +63,17 @@ sentiment:
     # Fail startup if no model is available (false = train minimal model as fallback)
     require-pretrained: false
 
-  # Text preprocessing configuration
-  # NOTE: The following settings (preprocessing, features, weka) intentionally share
-  # the same feature extraction parameters to ensure consistency across the pipeline:
-  # tokenization → feature extraction → Weka conversion
-  # This prevents vocabulary mismatches and ensures reproducible model behavior
-  preprocessing:
-    # Minimum word length to include in tokenization
-    min-word-length: 2
-
+  # Feature extraction configuration (shared across entire pipeline)
+  # Single source of truth for all preprocessing, feature extraction, and Weka conversion
+  # This ensures consistency across: tokenization → feature extraction → Weka conversion
+  # and prevents vocabulary mismatches
+  features:
     # Maximum number of features to extract for TF-IDF
     max-features: 5000
+
+    # Minimum term frequency for a word to be included
+    # 1 = Allow single-occurrence terms to prevent vocabulary=0
+    min-term-freq: 1
 
     # Enable TF-IDF transformation for feature extraction
     use-tfidf: true
@@ -81,28 +81,8 @@ sentiment:
     # Enable bigram features (unigrams + bigrams)
     use-bigrams: true
 
-    # Minimum term frequency for a word to be included
-    min-term-frequency: 2
-
-  # Feature extraction configuration (for TFIDFFeatureExtractor)
-  features:
-    max-features: 5000
-    min-term-freq: 1  # Allow single-occurrence terms to prevent vocabulary=0
-    use-tfidf: true
-    use-bigrams: true
-
-  # Weka conversion configuration (for WekaInstancesConverter)
-  weka:
-    max-features: 5000
-    min-term-freq: 1  # Allow single-occurrence terms to prevent vocabulary=0
-    use-tfidf: true
-    use-bigrams: true
-
-    # Enable advanced text cleaning (URLs, mentions, hashtags)
-    enable-advanced-cleaning: true
-
-    # Cache preprocessed features for performance
-    cache-features: true
+    # Minimum word length to include in tokenization
+    min-word-length: 2
 
     # Batch size for processing large datasets
     batch-size: 1000

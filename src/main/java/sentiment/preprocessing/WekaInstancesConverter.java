@@ -4,8 +4,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.context.annotation.Scope;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.annotation.Autowired;
+import sentiment.config.FeatureExtractionProperties;
 import sentiment.data.Dataset;
 import sentiment.util.ValidationUtils;
 import weka.core.*;
@@ -55,22 +55,20 @@ public class WekaInstancesConverter extends sentiment.TrainingTemplate<Instances
     @Autowired
     public WekaInstancesConverter(
             TextPreprocessor textPreprocessor,
-            @Value("${sentiment.weka.max-features:5000}") int maxFeatures,
-            @Value("${sentiment.weka.min-term-freq:2}") int minTermFreq,
-            @Value("${sentiment.weka.use-tfidf:true}") boolean useTfIdf,
-            @Value("${sentiment.weka.use-bigrams:true}") boolean useBigrams,
-            @Value("${sentiment.weka.normalize-features:true}") boolean normalizeFeatures,
-            @Value("${sentiment.weka.output-word-counts:false}") boolean outputWordCounts) {
+            FeatureExtractionProperties featureConfig) {
+
+        int maxFeatures = featureConfig.getMaxFeatures();
+        int minTermFreq = featureConfig.getMinTermFreq();
 
         validateConfiguration(maxFeatures, minTermFreq);
 
         this.textPreprocessor = textPreprocessor;
         this.maxFeatures = maxFeatures;
         this.minTermFreq = minTermFreq;
-        this.useTfIdf = useTfIdf;
-        this.useBigrams = useBigrams;
-        this.normalizeFeatures = normalizeFeatures;
-        this.outputWordCounts = outputWordCounts;
+        this.useTfIdf = featureConfig.isUseTfidf();
+        this.useBigrams = featureConfig.isUseBigrams();
+        this.normalizeFeatures = true;  // Default normalization for better model performance
+        this.outputWordCounts = false;  // Default to TF-IDF, not raw counts
 
         logger.info("WekaInstancesConverter initialized. Configuration: maxFeatures={}, " +
                         "minTermFreq={}, useTfIdf={}, useBigrams={}",

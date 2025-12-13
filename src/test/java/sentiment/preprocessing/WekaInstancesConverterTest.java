@@ -3,6 +3,7 @@ package sentiment.preprocessing;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import sentiment.config.TestFeatureConfig;
 import sentiment.data.Dataset;
 import weka.core.Instance;
 import weka.core.Instances;
@@ -40,18 +41,12 @@ class WekaInstancesConverterTest {
                 contractionExpander,
                 tokenizer,
                 stopwordRemover,
-                2,
-                true
+                TestFeatureConfig.create(1000, 2, true, false, 2, 100)
         );
 
         converter = new WekaInstancesConverter(
                 preprocessor,
-                1000,  // maxFeatures
-                2,     // minTermFreq
-                true,  // useTfIdf
-                false, // useBigrams
-                true,  // normalizeFeatures
-                false  // outputWordCounts
+                TestFeatureConfig.create(1000, 2, true, false, 2, 100)
         );
     }
 

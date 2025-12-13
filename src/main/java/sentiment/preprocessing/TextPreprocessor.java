@@ -4,8 +4,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.context.annotation.Scope;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.annotation.Autowired;
+import sentiment.config.FeatureExtractionProperties;
 import sentiment.data.Dataset;
 import sentiment.util.ValidationUtils;
 
@@ -85,19 +85,18 @@ public class TextPreprocessor {
      * @param contractionExpander expands contractions before tokenization
      * @param advancedTokenizer tokenizes cleaned text
      * @param stopwordRemover filters stopwords from tokens
-     * @param minWordLength minimum word length to keep (must be >= 1)
-     * @param preserveEmoticons whether to preserve sentiment-bearing emoticons
-     * @throws IllegalArgumentException if minWordLength < 1
+     * @param featureConfig shared feature extraction configuration
+     * @throws IllegalArgumentException if configuration is invalid
      */
     @Autowired
     public TextPreprocessor(
             ContractionExpander contractionExpander,
             AdvancedTokenizer advancedTokenizer,
             IntelligentStopwordRemover stopwordRemover,
-            @Value("${sentiment.preprocessing.min-word-length:2}") int minWordLength,
-            @Value("${sentiment.preprocessing.preserve-emoticons:true}") boolean preserveEmoticons) {
+            FeatureExtractionProperties featureConfig) {
 
         // Validate configuration at construction time
+        int minWordLength = featureConfig.getMinWordLength();
         if (minWordLength < 1) {
             throw new IllegalArgumentException(
                     "Invalid minWordLength: " + minWordLength + ". Must be >= 1");
@@ -107,12 +106,13 @@ public class TextPreprocessor {
         this.advancedTokenizer = advancedTokenizer;
         this.stopwordRemover = stopwordRemover;
         this.minWordLength = minWordLength;
-        this.preserveEmoticons = preserveEmoticons;
+        this.preserveEmoticons = true; // Default behavior for sentiment analysis
         this.pipelineState = new PipelineState();
 
         logger.info("TextPreprocessor initialized. Thread safety: ReadWriteLock. " +
-                        "Configuration: minWordLength={}, preserveEmoticons={}",
-                minWordLength, preserveEmoticons);
+                        "Configuration: minWordLength={}, maxFeatures={}, useTfidf={}, useBigrams={}",
+                minWordLength, featureConfig.getMaxFeatures(),
+                featureConfig.isUseTfidf(), featureConfig.isUseBigrams());
     }
 
     /**

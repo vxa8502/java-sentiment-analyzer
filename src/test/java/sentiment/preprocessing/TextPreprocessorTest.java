@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
+import sentiment.config.TestFeatureConfig;
 import sentiment.data.Dataset;
 
 import java.util.ArrayList;
@@ -70,8 +71,7 @@ class TextPreprocessorTest {
             mockContractionExpander,
             mockTokenizer,
             mockStopwordRemover,
-            2,  // minWordLength
-            true  // preserveEmoticons
+            TestFeatureConfig.createDefault()
         );
     }
 
@@ -85,8 +85,7 @@ class TextPreprocessorTest {
                 mockContractionExpander,
                 mockTokenizer,
                 mockStopwordRemover,
-                0,  // Invalid: must be >= 1
-                true
+                TestFeatureConfig.create(5000, 1, true, true, 0, 1000)  // Invalid: minWordLength must be >= 1
             ),
             "Should throw IllegalArgumentException for invalid minWordLength");
     }
@@ -360,16 +359,14 @@ class TextPreprocessorTest {
             mockContractionExpander,
             mockTokenizer,
             mockStopwordRemover,
-            2,
-            true
+            TestFeatureConfig.createDefault()
         );
 
         TextPreprocessor preprocessor2 = new TextPreprocessor(
             mockContractionExpander,
             mockTokenizer,
             mockStopwordRemover,
-            2,
-            true
+            TestFeatureConfig.createDefault()
         );
 
         List<Dataset> trainingData = createMockTrainingData(20);

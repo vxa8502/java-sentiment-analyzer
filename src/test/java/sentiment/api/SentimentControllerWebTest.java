@@ -32,6 +32,9 @@ public class SentimentControllerWebTest {
     @MockitoBean
     private SentimentClassifier classifier;
 
+    @MockitoBean
+    private sentiment.api.metrics.PredictionMetrics metrics;
+
     @BeforeEach
     void setup() throws Exception {
         // Configure default mock behavior for classifier
@@ -43,6 +46,13 @@ public class SentimentControllerWebTest {
         when(classifier.classify(anyString())).thenReturn("positive");
         when(classifier.getClassificationProbabilities(anyString()))
             .thenReturn(new double[]{0.85, 0.15});
+
+        // Mock metrics snapshot for health endpoint
+        sentiment.api.metrics.PredictionMetrics.MetricsSnapshot mockSnapshot =
+            new sentiment.api.metrics.PredictionMetrics.MetricsSnapshot(
+                100L, 60.0, 30.0, 10.0, 0.85, 5.0, 100L, 50.0, 100.0, 150.0
+            );
+        when(metrics.getSnapshot()).thenReturn(mockSnapshot);
     }
 
     // ==================== HEALTH ENDPOINT TESTS ====================
