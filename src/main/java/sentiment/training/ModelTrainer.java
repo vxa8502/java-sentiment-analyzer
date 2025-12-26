@@ -19,6 +19,7 @@ import sentiment.preprocessing.TextPreprocessor;
 import sentiment.preprocessing.WekaInstancesConverter;
 import weka.core.Instances;
 
+import java.io.FileWriter;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -51,9 +52,12 @@ public class ModelTrainer {
     }
 
     /**
-     * Trains a model and saves it to disk with stratified 60/20/20 train/val/test split.
+     * Trains a model and saves it to disk with stratified split.
+     * If testDataPath is provided: 80/20 train/val split + separate test set (for pre-split datasets like Amazon)
+     * If testDataPath is null: 60/20/20 train/val/test split from single file
      *
-     * @param dataPath training data path
+     * @param dataPath training data path (or full dataset path if testDataPath is null)
+     * @param testDataPath optional separate test data path (null for single-file datasets)
      * @param outputPath where to save trained model
      * @param algorithmType classifier algorithm
      * @param maxSamples max training samples (0 = all)
@@ -64,7 +68,7 @@ public class ModelTrainer {
      * @throws IllegalArgumentException if inputs are invalid
      * @throws Exception if training fails (data loading, model training, or persistence errors)
      */
-    public TrainingResult trainAndSave(String dataPath, String outputPath,
+    public TrainingResult trainAndSave(String dataPath, String testDataPath, String outputPath,
                                         AlgorithmType algorithmType, int maxSamples,
                                         boolean showFeatureImportance, int topFeaturesCount,
                                         boolean enableHyperparameterTuning)
@@ -101,23 +105,74 @@ public class ModelTrainer {
 
             long startTime = System.currentTimeMillis();
 
-            // Step 1: Load all data
+            // Step 1: Load data (handling both single-file and pre-split datasets)
             logger.info("Step 1/5: Loading data...");
-            List<Dataset> allData = loadTrainingData(dataPath, maxSamples);
-            long loadTime = System.currentTimeMillis() - startTime;
-            logger.info(" Loaded {} samples in {}ms", allData.size(), loadTime);
+            StratifiedDataSplitter.DataSplit split;
 
-            // Step 2: Perform stratified train/validation/test split (60/20/20)
-            logger.info("Step 2/5: Performing stratified 60/20/20 train/val/test split...");
-            StratifiedDataSplitter.DataSplit split = StratifiedDataSplitter.stratifiedSplit(
-                    allData,
-                    0.6,  // 60% train
-                    0.2,  // 20% validation
-                    0.2,  // 20% test
-                    42    // Fixed seed for reproducibility
-            );
-            logger.info(" Split complete: train={}, val={}, test={}",
-                    split.train.size(), split.validation.size(), split.test.size());
+            if (testDataPath != null && !testDataPath.trim().isEmpty()) {
+                // Pre-split dataset (e.g., Amazon with separate train.csv and test.csv)
+                logger.info("Using pre-split dataset mode (separate train/test files)");
+                logger.info("Target split: 60/20/20 for {} total samples", maxSamples);
+
+                // Calculate proportional sample sizes for 60/20/20 split
+                int targetTestSamples = (int) (maxSamples * 0.2);     // 20% for test
+                int targetTrainValSamples = maxSamples - targetTestSamples;  // 80% for train+val
+
+                // Load and subsample training data to 80% of maxSamples
+                List<Dataset> trainData = loadTrainingData(dataPath, targetTrainValSamples);
+                logger.info(" Loaded {} training samples ({}% of {})",
+                        trainData.size(), 80, maxSamples);
+
+                // Split training data into train (75%) and validation (25%) to achieve 60/20 overall
+                logger.info("Step 2/5: Performing stratified 75/25 train/val split (60/20 of total)...");
+                StratifiedDataSplitter.DataSplit trainValSplit = StratifiedDataSplitter.stratifiedSplit(
+                        trainData,
+                        0.75,  // 75% of 80% = 60% train overall
+                        0.25,  // 25% of 80% = 20% val overall
+                        0.0,   // 0% test (loaded separately)
+                        42     // Fixed seed for reproducibility
+                );
+
+                // Load and subsample official test set to 20% of maxSamples
+                List<Dataset> testData = loadTrainingData(testDataPath, targetTestSamples);
+                logger.info(" Loaded {} test samples from official test set ({}% of {})",
+                        testData.size(), 20, maxSamples);
+
+                // Combine into final split
+                split = new StratifiedDataSplitter.DataSplit(
+                        trainValSplit.train,
+                        trainValSplit.validation,
+                        testData
+                );
+                logger.info(" Split complete: train={}, val={}, test={} (60/20/20 normalized)",
+                        split.train.size(), split.validation.size(), split.test.size());
+
+                // Save test split for reproducible cross-domain evaluation
+                saveTestSplit(split.test, dataPath);
+
+            } else {
+                // Single-file dataset (e.g., IMDB, Yelp)
+                logger.info("Using single-file dataset mode (60/20/20 split)");
+
+                List<Dataset> allData = loadTrainingData(dataPath, maxSamples);
+                long loadTime = System.currentTimeMillis() - startTime;
+                logger.info(" Loaded {} samples in {}ms", allData.size(), loadTime);
+
+                // Step 2: Perform stratified train/validation/test split (60/20/20)
+                logger.info("Step 2/5: Performing stratified 60/20/20 train/val/test split...");
+                split = StratifiedDataSplitter.stratifiedSplit(
+                        allData,
+                        0.6,  // 60% train
+                        0.2,  // 20% validation
+                        0.2,  // 20% test
+                        42    // Fixed seed for reproducibility
+                );
+                logger.info(" Split complete: train={}, val={}, test={}",
+                        split.train.size(), split.validation.size(), split.test.size());
+
+                // Save test split for reproducible cross-domain evaluation
+                saveTestSplit(split.test, dataPath);
+            }
 
             // Step 3: Create and train classifier (ONLY on train set)
             logger.info("Step 3/5: Training {} classifier on TRAIN SET ONLY...", algorithmType.getDisplayName());
@@ -154,9 +209,9 @@ public class ModelTrainer {
             logger.info("Step 5/7: Evaluating model on test set...");
             ClassifierEvaluationResult testEvaluation = evaluateOnTestSet(classifier, split.test);
             logger.info(" Test Accuracy: {}", String.format("%.3f", testEvaluation.getAccuracy()));
-            logger.info(" Test Precision: {}", String.format("%.3f", testEvaluation.getPrecision()));
-            logger.info(" Test Recall: {}", String.format("%.3f", testEvaluation.getRecall()));
-            logger.info(" Test F1: {}", String.format("%.3f", testEvaluation.getF1Score()));
+            logger.info(" Test Precision (macro): {}", String.format("%.3f", testEvaluation.getMacroAvgPrecision()));
+            logger.info(" Test Recall (macro): {}", String.format("%.3f", testEvaluation.getMacroAvgRecall()));
+            logger.info(" Test F1 (macro): {}", String.format("%.3f", testEvaluation.getMacroAvgF1()));
 
             // Step 6: Analyze feature importance (if requested)
             if (showFeatureImportance) {
@@ -198,6 +253,18 @@ public class ModelTrainer {
     }
 
     /**
+     * Backward-compatible wrapper: trains model with 60/20/20 split from single file.
+     */
+    public TrainingResult trainAndSave(String dataPath, String outputPath,
+                                        AlgorithmType algorithmType, int maxSamples,
+                                        boolean showFeatureImportance, int topFeaturesCount,
+                                        boolean enableHyperparameterTuning)
+            throws Exception {
+        return trainAndSave(dataPath, null, outputPath, algorithmType, maxSamples,
+                showFeatureImportance, topFeaturesCount, enableHyperparameterTuning);
+    }
+
+    /**
      * Trains multiple models sequentially and saves them.
      */
     public List<TrainingResult> trainMultipleModels(String dataPath, String outputDir,
@@ -219,7 +286,7 @@ public class ModelTrainer {
                     algorithm.name().toLowerCase() + "-model.ser").toString();
 
             try {
-                TrainingResult result = trainAndSave(dataPath, outputPath, algorithm, maxSamples,
+                TrainingResult result = trainAndSave(dataPath, null, outputPath, algorithm, maxSamples,
                         showFeatureImportance, topFeaturesCount, enableHyperparameterTuning);
                 results.add(result);
             } catch (Exception e) {
@@ -234,11 +301,16 @@ public class ModelTrainer {
     // ==================== PRIVATE HELPERS ====================
 
     private List<Dataset> loadTrainingData(String dataPath, int maxSamples) throws Exception {
-        DatasetLoadResult loadResult = datasetLoader.loadWithMetadata(dataPath);
+        // MEMORY OPTIMIZATION: Use streaming loader with early stopping for large datasets
+        // This prevents loading millions of rows when we only need maxSamples
+        DatasetLoadResult loadResult = datasetLoader.loadWithMetadata(dataPath, maxSamples);
         List<Dataset> allData = loadResult.datasets();
 
         logger.info("Loaded {} total samples from {} ({}ms)",
                 allData.size(), loadResult.datasetType(), loadResult.loadTimeMs());
+
+        // NOTE: Streaming loader stopped at maxSamples rows (early stopping for memory efficiency)
+        // This means we got the FIRST maxSamples valid rows, not a random sample
 
         // Log class distribution
         long positive = allData.stream().filter(d -> d.getSentiment() == Dataset.SentimentLabel.POSITIVE).count();
@@ -246,24 +318,12 @@ public class ModelTrainer {
         long neutral = allData.stream().filter(d -> d.getSentiment() == Dataset.SentimentLabel.NEUTRAL).count();
         logger.info("Distribution: positive={}, negative={}, neutral={}", positive, negative, neutral);
 
-        // Shuffle and limit samples if requested
-        if (maxSamples > 0 && allData.size() > maxSamples) {
-            // Efficiently sample without shuffling entire dataset
-            Random random = new Random();
-            Set<Integer> selectedIndices = new HashSet<>();
-            while (selectedIndices.size() < maxSamples) {
-                selectedIndices.add(random.nextInt(allData.size()));
-            }
-            List<Dataset> sampled = selectedIndices.stream()
-                    .map(allData::get)
-                    .collect(Collectors.toList());
-            logger.info("Limiting to {} samples (from {})", maxSamples, allData.size());
-            return sampled;
-        }
-
-        // Shuffle all data for better training
+        // Shuffle to remove any ordering bias from sequential file loading
+        // This is critical when using early-stopping loader (we got first N rows, not random sample)
         List<Dataset> shuffled = new ArrayList<>(allData);
-        Collections.shuffle(shuffled);
+        Collections.shuffle(shuffled, new Random(42)); // Fixed seed for reproducibility
+        logger.info("Shuffled {} samples for training", shuffled.size());
+
         return shuffled;
     }
 
@@ -395,6 +455,74 @@ public class ModelTrainer {
             logger.warn("Failed to save training metadata: {}", e.getMessage());
             // Don't fail the entire training process if metadata save fails
         }
+    }
+
+    /**
+     * Save test split to data/processed/{dataset}/test.csv for reproducible cross-domain evaluation.
+     * Sofia's requirement: Test splits must be saved for data integrity and reproducibility.
+     *
+     * @param testData Test portion from stratified split
+     * @param dataPath Original data path (used to infer dataset name)
+     */
+    private void saveTestSplit(List<Dataset> testData, String dataPath) {
+        try {
+            // Infer dataset name from dataPath
+            String datasetName = inferDatasetName(dataPath);
+            Path testCsvPath = Paths.get("data/processed", datasetName, "test.csv");
+
+            // Create directory if needed
+            Files.createDirectories(testCsvPath.getParent());
+
+            // Save test data to CSV
+            try (FileWriter writer = new FileWriter(testCsvPath.toFile())) {
+                // Write header
+                writer.write("review,sentiment\n");
+
+                // Write test samples
+                for (Dataset sample : testData) {
+                    String sentiment = sample.getSentiment().name().toLowerCase();
+                    String text = escapeCsv(sample.getText());
+                    writer.write("\"" + text + "\"," + sentiment + "\n");
+                }
+            }
+
+            logger.info("✓ Saved test split ({} samples) to: {}", testData.size(), testCsvPath);
+
+        } catch (Exception e) {
+            logger.warn("Failed to save test split: {}", e.getMessage());
+            // Don't fail training if test split save fails
+        }
+    }
+
+    /**
+     * Infer dataset name from data path.
+     * Examples:
+     *   data/raw/imdb_50k/IMDB Dataset.csv -> imdb_50k
+     *   data/raw/amazon_polarity/train.csv -> amazon_polarity
+     *   data/raw/yelp/yelp_reviews.csv -> yelp
+     */
+    private String inferDatasetName(String dataPath) {
+        Path path = Paths.get(dataPath);
+        Path parent = path.getParent();
+
+        if (parent != null && parent.getParent() != null) {
+            // Get the directory name (e.g., "imdb_50k" from "data/raw/imdb_50k/...")
+            return parent.getFileName().toString();
+        }
+
+        // Fallback: use filename without extension
+        String filename = path.getFileName().toString();
+        int dotIndex = filename.lastIndexOf('.');
+        return dotIndex > 0 ? filename.substring(0, dotIndex) : filename;
+    }
+
+    /**
+     * Escape CSV special characters in text.
+     */
+    private String escapeCsv(String text) {
+        if (text == null) return "";
+        // Escape quotes by doubling them
+        return text.replace("\"", "\"\"");
     }
 
     private void analyzeAndPrintFeatureImportance(SentimentClassifier classifier,

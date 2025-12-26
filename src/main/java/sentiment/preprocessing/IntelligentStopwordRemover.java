@@ -31,7 +31,11 @@ public class IntelligentStopwordRemover {
      * Default constructor for Spring injection
      */
     public IntelligentStopwordRemover() {
-        // Fields will be injected by Spring
+        // Set defaults for non-Spring usage (e.g., model loading)
+        // Spring will override these via @Value if in Spring context
+        this.stopwordStrategy = "SENTIMENT_AWARE";
+        this.preserveNegations = true;
+        this.preserveIntensifiers = true;
     }
 
     /**

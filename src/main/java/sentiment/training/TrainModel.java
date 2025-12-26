@@ -1,8 +1,10 @@
 package sentiment.training;
 
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Configuration;
+import sentiment.config.FeatureExtractionProperties;
 import sentiment.models.AlgorithmType;
 
 /**
@@ -18,26 +20,43 @@ public class TrainModel {
         "sentiment.models",
         "sentiment.evaluation"
     })
+    @EnableConfigurationProperties(FeatureExtractionProperties.class)
     static class TrainingConfig {}
 
     public static void main(String[] args) {
-        if (args.length < 2) {
+        if (args.length < 3) {
             printUsage();
             System.exit(1);
         }
 
         String dataPath = args[0];
         String outputPath = args[1];
-        int maxSamples = args.length > 2 ? Integer.parseInt(args[2]) : 10000;
-        boolean showFeatureImportance = args.length > 3 && Boolean.parseBoolean(args[3]);
-        int topFeaturesCount = args.length > 4 ? Integer.parseInt(args[4]) : 30;
-        boolean enableHyperparameterTuning = args.length > 5 && Boolean.parseBoolean(args[5]);
+        String algorithmName = args[2];
+        int maxSamples = args.length > 3 ? Integer.parseInt(args[3]) : 100000;
+        boolean showFeatureImportance = args.length > 4 && Boolean.parseBoolean(args[4]);
+        int topFeaturesCount = args.length > 5 ? Integer.parseInt(args[5]) : 30;
+        boolean enableHyperparameterTuning = args.length > 6 && Boolean.parseBoolean(args[6]);
+        String testDataPath = args.length > 7 ? args[7] : null;
+
+        AlgorithmType algorithmType;
+        try {
+            algorithmType = AlgorithmType.valueOf(algorithmName.toUpperCase().replace("-", "_"));
+        } catch (IllegalArgumentException e) {
+            System.err.println("Invalid algorithm: " + algorithmName);
+            System.err.println("Valid options: svm, naive_bayes, random_forest, logistic_regression");
+            System.exit(1);
+            return;
+        }
 
         System.out.println("========================================");
         System.out.println("  Sentiment Model Training Tool");
         System.out.println("========================================");
         System.out.println("Data: " + dataPath);
+        if (testDataPath != null) {
+            System.out.println("Test data: " + testDataPath + " (using official test set)");
+        }
         System.out.println("Output: " + outputPath);
+        System.out.println("Algorithm: " + algorithmType.getDisplayName());
         System.out.println("Max samples: " + maxSamples);
         System.out.println("Feature importance: " + showFeatureImportance);
         System.out.println("Hyperparameter tuning: " + enableHyperparameterTuning);
@@ -53,11 +72,12 @@ public class TrainModel {
 
             System.out.println("Starting training...\n");
 
-            // Train and save
+            // Train and save (with optional test data path for pre-split datasets)
             ModelTrainer.TrainingResult result = trainer.trainAndSave(
                     dataPath,
+                    testDataPath,
                     outputPath,
-                    AlgorithmType.SVM,
+                    algorithmType,
                     maxSamples,
                     showFeatureImportance,
                     topFeaturesCount,
@@ -94,12 +114,14 @@ public class TrainModel {
     }
 
     private static void printUsage() {
-        System.out.println("\nUsage: TrainModel <dataPath> <outputPath> [maxSamples] [showFeatureImportance] [topFeaturesCount] [enableHyperparameterTuning]");
-        System.out.println("\nExample:");
-        System.out.println("  mvn exec:java -Dexec.mainClass=\"sentiment.training.TrainModel\" \\");
-        System.out.println("    -Dexec.args=\"./data/datasets/Reviews.csv ./models/svm-model.ser 10000 true 30 false\"");
-        System.out.println("\nWith hyperparameter tuning (slower but more accurate):");
-        System.out.println("  mvn exec:java -Dexec.mainClass=\"sentiment.training.TrainModel\" \\");
-        System.out.println("    -Dexec.args=\"./data/datasets/Reviews.csv ./models/svm-model.ser 10000 true 30 true\"");
+        System.out.println("\nUsage: TrainModel <dataPath> <outputPath> <algorithm> [maxSamples] [showFeatureImportance] [topFeaturesCount] [enableHyperparameterTuning] [testDataPath]");
+        System.out.println("\nAlgorithms: svm, naive_bayes, random_forest, logistic_regression");
+        System.out.println("\nExamples:");
+        System.out.println("  Single-file dataset (60/20/20 split):");
+        System.out.println("    java TrainModel data.csv models/svm.ser svm 100000 false 30 false");
+        System.out.println("\n  Pre-split dataset (80/20 train/val + official test):");
+        System.out.println("    java TrainModel train.csv models/svm.ser svm 100000 false 30 false test.csv");
+        System.out.println("\n  With hyperparameter tuning:");
+        System.out.println("    java TrainModel data.csv models/svm.ser svm 100000 false 30 true");
     }
 }

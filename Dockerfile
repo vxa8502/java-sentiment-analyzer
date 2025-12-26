@@ -30,12 +30,15 @@ RUN groupadd -g 1001 appuser && \
 # Copy the JAR from build stage
 COPY --from=build /app/target/sentiment-analyzer-1.0.0.jar app.jar
 
-# Create data and models directories for Docker-friendly paths
-RUN mkdir -p /app/data /app/models && \
-    chown -R appuser:appuser /app
+# Copy production model (always included in image)
+COPY models/production /app/models/production
 
-# Document expected volumes for external data and model persistence
-VOLUME ["/app/models", "/app/data"]
+# Copy dataset documentation
+COPY datasets /app/datasets
+
+# Create data directory and set permissions
+RUN mkdir -p /app/data && \
+    chown -R appuser:appuser /app
 
 # Switch to non-root user
 USER appuser

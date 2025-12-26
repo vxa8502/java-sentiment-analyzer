@@ -1,14 +1,3 @@
-  # Large dataset files at ROOT only (not src code!)
-  /data/
-  *.csv
-  *.parquet
-
-  # Build artifacts
-  target/
-  *.class
-  *.jar
-  EOF
-
 # Build artifacts
 target/
 *.jar
@@ -21,6 +10,9 @@ target/
 .vscode/
 *.swp
 *.swo
+.classpath
+.project
+.settings/
 
 # OS files
 .DS_Store
@@ -29,14 +21,36 @@ Thumbs.db
 # Logs
 *.log
 logs/
+training_log*.txt
 
-# Large data files (use Git LFS instead)
+# Data directories (local only - not version controlled)
+data/
 *.csv
+!datasets/edge_cases/*.csv
 *.tsv
-data/raw/
-src/main/resources/datasets/
-*.model
-*.bin
+*.parquet
+
+# Model files - ONLY production model is in git (via Git LFS)
+# All other models can be downloaded via scripts/download_pretrained_models.sh
+models/svm/
+models/naive_bayes/
+models/random_forest/
+models/logistic_regression/
+# Production model is tracked via Git LFS (.gitattributes)
+# models/production/ is NOT ignored
+
+# Model metadata - only keep production
+models/svm/*.json
+models/naive_bayes/*.json
+models/random_forest/*.json
+models/logistic_regression/*.json
+
+# Compressed model archives
+*.tar.gz
+*.zip
+
+# Experiments (can be large)
+experiments/*/model_artifacts/
 
 # Environment files
 .env
@@ -44,3 +58,21 @@ application-local.properties
 
 # Personal notes
 syllabus.md
+
+# Temporary files
+*.tmp
+*.temp
+
+# Test scripts in root (move to scripts/ if needed)
+test_*.sh
+
+# Regeneratable results (run scripts to regenerate)
+results/error_analysis/
+datasets/*/quality_report.json
+
+# Old/superseded reports
+results/REPORT.md
+results/CROSS_DOMAIN_FINAL_REPORT.md
+DATA_QUALITY_FINDINGS.md
+personal_notes/
+datasets/edge_cases/

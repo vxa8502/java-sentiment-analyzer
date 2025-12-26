@@ -240,6 +240,14 @@ public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluati
 
     private void configureSMOForTraining(Instances trainingData) throws Exception {
         if (enableHyperparameterTuning) {
+            logger.warn("********************************************************************************");
+            logger.warn("*                             ATTENTION: SLOW TRAINING                           *");
+            logger.warn("* Hyperparameter tuning is ENABLED. This will significantly increase training    *");
+            logger.warn("* time (potentially 8-10 hours on large datasets). If this is not intended,      *");
+            logger.warn("* disable it by setting the 'enableHyperparameterTuning' argument to 'false'     *");
+            logger.warn("* when running TrainModel, or by ensuring the SENTIMENT_SVM_TUNE_ENABLED env     *");
+            logger.warn("* variable is not set to 'true'.                                                 *");
+            logger.warn("********************************************************************************");
             logger.info("=== HYPERPARAMETER TUNING ENABLED ===");
             logger.info("Performing grid search with {}-fold stratified cross-validation", cvFolds);
 
@@ -260,15 +268,15 @@ public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluati
                     String.format("%.4f", optimalConfig.getCvAccuracy()));
 
         } else {
-            logger.info("Hyperparameter tuning DISABLED - using default linear kernel");
+            logger.info("Hyperparameter tuning DISABLED - using faster PolyKernel");
             logger.warn("RECOMMENDATION: Enable hyperparameter tuning for production models");
 
-            // Default: Linear kernel with C=1.0
+            // Default: Poly kernel with C=0.1, Degree=2
             // This is a reasonable starting point for text classification
-            optimalConfig = new SVMConfig(1.0, SVMConfig.KernelType.LINEAR, 0.01, 1, null, 1.0E-12);
+            optimalConfig = new SVMConfig(0.1, SVMConfig.KernelType.POLYNOMIAL, 0.01, 2, null, 1.0E-12);
             applySVMConfig(optimalConfig);
 
-            logger.info("Using default config: C=1.0, Linear Kernel");
+            logger.info("Using default config: C=0.1, Polynomial Kernel (degree=2)");
         }
     }
 

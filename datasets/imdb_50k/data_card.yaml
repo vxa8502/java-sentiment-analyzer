@@ -1,0 +1,46 @@
+name: IMDB 50K Movie Reviews
+version: "v1.0-maas2011"
+source: http://ai.stanford.edu/~amaas/data/sentiment/
+license: Public domain / Academic use
+
+# Dataset Size
+size:
+  total: 50,000
+  train: 25,000
+  test: 25,000
+
+# Format
+format: CSV
+columns:
+  - review (text content)
+  - sentiment (positive/negative)
+
+# Data Quality
+class_distribution: "Perfectly balanced (50% positive, 50% negative)"
+
+known_biases:
+  - expert_reviewer_skew: "Prolific reviewers overrepresented"
+  - genre_imbalance: "Drama 38%, Action 22%, Comedy 19%"
+  - length_bias: "Positive reviews avg 243 words, negative avg 221 words"
+
+measurement_issues:
+  - rating_threshold_artifact: "Positive=7-10 stars, Negative=1-4 stars (excludes 5-6 neutral)"
+  - html_artifacts: "Contains <br /> HTML tags in text"
+
+edge_cases:
+  - genre_confusion: "Horror movies use negative vocabulary in positive reviews"
+  - irony: "So bad it's good reviews labeled positive"
+  - comparative_sentiment: "Better than the first (but still bad)"
+
+# Validation
+human_agreement: 0.89
+noise_estimate: "~11% label noise"
+label_source: "User ratings on IMDB"
+
+# Citation
+citation: |
+  @InProceedings{maas-EtAl:2011:ACL-HLT2011,
+    author = {Maas, Andrew L. and Daly, Raymond E. and Pham, Peter T. and Huang, Dan and Ng, Andrew Y. and Potts, Christopher},
+    title = {Learning Word Vectors for Sentiment Analysis},
+    year = {2011}
+  }

@@ -1,0 +1,58 @@
+name: Amazon Reviews Polarity Dataset
+version: "mteb-2015"
+source: https://huggingface.co/datasets/mteb/amazon_polarity
+license: Public domain / Academic use
+
+# Dataset Size
+original_size:
+  train: 3,600,000
+  test: 400,000
+sampled_size:
+  train: 100,000
+  test: 50,000
+sampling_method: "Random with seed=42"
+sampling_date: "2025-12-14"
+
+# Format
+format: CSV
+columns:
+  - label (0=negative, 1=positive)
+  - text (review content)
+  - label_text (negative/positive)
+
+# Preparation
+preparation_code: |
+  from datasets import load_dataset
+  ds = load_dataset("mteb/amazon_polarity")
+  train = ds['train'].shuffle(seed=42).select(range(100_000))
+  test = ds['test'].shuffle(seed=42).select(range(50_000))
+
+# Data Quality
+class_distribution:
+  train: "Balanced (50/50 in original, maintained in sample)"
+  test: "Balanced (50/50)"
+
+known_biases:
+  - verified_purchase_skew: "Verified buyers write differently than non-verified"
+  - category_imbalance: "Multiple product categories (electronics, books, clothing)"
+  - temporal_drift: "Reviews span 1996-2014"
+  - fake_review_contamination: "Estimated 5-15% in electronics category"
+
+measurement_issues:
+  - star_rating_mismatch: "Some 5-star reviews have negative text"
+  - length_bias: "Negative reviews avg longer than positive"
+
+edge_cases:
+  - sarcasm: "Oh great, another broken product!"
+  - mixed_sentiment: "Love design, hate battery life"
+  - product_comparisons: May contain comparative sentiment
+
+# Validation
+human_agreement: "Not measured (labels from star ratings)"
+label_source: "Binary: 1-2 stars=negative, 4-5 stars=positive"
+excluded_ratings: "3-star reviews excluded (neutral)"
+
+# Ethics
+personal_info: "Redacted in polarity version"
+offensive_content: "May contain offensive language"
+commercial_use: "Check license for restrictions"

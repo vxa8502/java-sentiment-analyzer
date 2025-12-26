@@ -428,8 +428,9 @@ public class WekaInstancesConverter extends sentiment.TrainingTemplate<Instances
                 .map(d -> d.getSentiment().getDisplayName())
                 .collect(Collectors.toSet());
 
-        Set<String> standardSentiments = Set.of("positive", "negative", "neutral");
-        uniqueSentiments.addAll(standardSentiments);
+        // BUG FIX: Only use sentiments actually present in the dataset
+        // Previously added all 3 standard sentiments unconditionally, creating unused classes
+        // This caused models to have 3 classes even when datasets only had 2
 
         ArrayList<String> sentimentValues = new ArrayList<>(uniqueSentiments);
         Collections.sort(sentimentValues);

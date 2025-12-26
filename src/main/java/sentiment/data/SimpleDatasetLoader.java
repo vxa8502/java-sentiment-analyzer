@@ -39,31 +39,63 @@ public class SimpleDatasetLoader {
      * @throws DataLoadingException if file cannot be loaded or parsed
      */
     public List<Dataset> load(String filePath) throws DataLoadingException {
-        DatasetLoadResult result = loadWithMetadata(filePath);
+        DatasetLoadResult result = loadWithMetadata(filePath, 0);  // 0 = unlimited
+        return result.datasets();
+    }
+
+    /**
+     * Load dataset with early stopping at maxRows.
+     * Useful for large datasets on memory-constrained systems.
+     *
+     * @param filePath path to dataset file
+     * @param maxRows maximum rows to load (0 = unlimited)
+     * @return list of parsed Dataset objects
+     * @throws DataLoadingException if file cannot be loaded or parsed
+     */
+    public List<Dataset> load(String filePath, int maxRows) throws DataLoadingException {
+        DatasetLoadResult result = loadWithMetadata(filePath, maxRows);
         return result.datasets();
     }
 
     /**
      * Load dataset with metadata (load time, format type, etc.).
+     * Loads unlimited rows - for backwards compatibility.
      *
      * @param filePath path to dataset file
      * @return DatasetLoadResult containing datasets and metadata
      * @throws DataLoadingException if file cannot be loaded or parsed
      */
     public DatasetLoadResult loadWithMetadata(String filePath) throws DataLoadingException {
+        return loadWithMetadata(filePath, 0);  // 0 = unlimited
+    }
+
+    /**
+     * Load dataset with metadata and early stopping at maxRows.
+     * Use this for large datasets on memory-constrained systems.
+     *
+     * @param filePath path to dataset file
+     * @param maxRows maximum number of rows to load (0 = unlimited, for memory-constrained environments)
+     * @return DatasetLoadResult containing datasets and metadata
+     * @throws DataLoadingException if file cannot be loaded or parsed
+     */
+    public DatasetLoadResult loadWithMetadata(String filePath, int maxRows) throws DataLoadingException {
         validateFile(filePath);
 
         String extension = getExtension(filePath).toLowerCase();
         String formatType = extension.substring(1).toUpperCase(); // .csv -> CSV
 
-        logger.info("Loading dataset from: {} (format: {})", filePath, extension);
+        if (maxRows > 0) {
+            logger.info("Loading dataset from: {} (format: {}, maxRows: {})", filePath, extension, maxRows);
+        } else {
+            logger.info("Loading dataset from: {} (format: {})", filePath, extension);
+        }
 
         long startTime = System.currentTimeMillis();
 
         List<Dataset> datasets = switch (extension) {
-            case ".csv", ".tsv" -> loadCsv(filePath, extension.equals(".tsv") ? '\t' : ',');
-            case ".jsonl" -> loadJsonl(filePath);
-            case ".txt" -> loadPlaintext(filePath);
+            case ".csv", ".tsv" -> loadCsv(filePath, extension.equals(".tsv") ? '\t' : ',', maxRows);
+            case ".jsonl" -> loadJsonl(filePath);  // TODO: add maxRows support for jsonl
+            case ".txt" -> loadPlaintext(filePath);  // TODO: add maxRows support for txt
             default -> throw new DataLoadingException(
                 "Unsupported file format: " + extension + ". Supported: .csv, .tsv, .jsonl, .txt",
                 filePath,
@@ -86,12 +118,20 @@ public class SimpleDatasetLoader {
     /**
      * Load CSV/TSV format with flexible column detection.
      * Handles various column naming conventions automatically.
+     *
+     * @param filePath path to CSV file
+     * @param delimiter delimiter character (comma or tab)
+     * @param maxRows maximum number of rows to load (0 = unlimited)
+     * @return list of parsed datasets
      */
-    private List<Dataset> loadCsv(String filePath, char delimiter) throws DataLoadingException {
+    private List<Dataset> loadCsv(String filePath, char delimiter, int maxRows) throws DataLoadingException {
         List<Dataset> datasets = new ArrayList<>();
         int totalRows = 0;
         int successfulRows = 0;
         int skippedRows = 0;
+
+        // Early stopping flag
+        boolean shouldStop = maxRows > 0;
 
         try (BufferedReader reader = new BufferedReader(new FileReader(filePath, StandardCharsets.UTF_8))) {
 
@@ -127,6 +167,13 @@ public class SimpleDatasetLoader {
                 logger.info("Using columns: text='{}', sentiment='{}'", textColumn, sentimentColumn);
 
                 for (CSVRecord record : parser) {
+                    // Early stopping: check if we've loaded enough successful rows
+                    if (shouldStop && successfulRows >= maxRows) {
+                        logger.info("Early stopping: reached maxRows limit of {} successfully loaded records", maxRows);
+                        logger.info("Total rows processed: {}, skipped: {}", totalRows, skippedRows);
+                        break;
+                    }
+
                     totalRows++;
 
                     try {

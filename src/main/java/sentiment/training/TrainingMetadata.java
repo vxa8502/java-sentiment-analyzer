@@ -19,23 +19,29 @@ import java.util.Map;
  */
 public class TrainingMetadata {
 
-    @JsonProperty("model_id")
-    private String modelId;
+    @JsonProperty("model_info")
+    private ModelInfo modelInfo;
 
-    @JsonProperty("algorithm")
-    private String algorithm;
-
-    @JsonProperty("hyperparameters")
-    private Map<String, Object> hyperparameters;
-
-    @JsonProperty("dataset")
+    @JsonProperty("training_data")
     private DatasetInfo dataset;
 
     @JsonProperty("preprocessing")
     private PreprocessingInfo preprocessing;
 
-    @JsonProperty("metrics")
+    @JsonProperty("hyperparameters")
+    private Map<String, Object> hyperparameters;
+
+    @JsonProperty("performance")
     private MetricsInfo metrics;
+
+    @JsonProperty("cross_domain_performance")
+    private Map<String, DomainPerformance> crossDomainPerformance;
+
+    @JsonProperty("artifacts")
+    private ArtifactsInfo artifacts;
+
+    @JsonProperty("reproducibility")
+    private ReproducibilityInfo reproducibility;
 
     @JsonProperty("trained_at")
     private String trainedAt;
@@ -43,13 +49,48 @@ public class TrainingMetadata {
     @JsonProperty("training_duration_seconds")
     private long trainingDurationSeconds;
 
+    @JsonProperty("model_id")
+    private String modelId;
+
+    @JsonProperty("algorithm")
+    private String algorithm;
+
     @JsonProperty("model_file")
     private String modelFile;
 
     @JsonProperty("model_size_bytes")
     private long modelSizeBytes;
 
+    public static class ModelInfo {
+        @JsonProperty("algorithm")
+        public String algorithm;
+
+        @JsonProperty("kernel")
+        public String kernel;
+
+        @JsonProperty("framework")
+        public String framework; // e.g., "Weka 3.9.6"
+
+        @JsonProperty("version")
+        public String version = "1.0.0";
+    }
+
     public static class DatasetInfo {
+        @JsonProperty("dataset")
+        public String datasetName; // e.g., "imdb_50k"
+
+        @JsonProperty("dataset_version")
+        public String datasetVersion; // e.g., "1.0"
+
+        @JsonProperty("split")
+        public String split = "train"; // train/val/test
+
+        @JsonProperty("num_samples")
+        public int numSamples;
+
+        @JsonProperty("class_balance")
+        public Map<String, Integer> classBalance; // e.g., {"positive": 12500, "negative": 12500}
+
         @JsonProperty("source")
         public String source;
 
@@ -72,6 +113,48 @@ public class TrainingMetadata {
 
         @JsonProperty("test")
         public int test;
+    }
+
+    public static class DomainPerformance {
+        @JsonProperty("accuracy")
+        public double accuracy;
+
+        @JsonProperty("f1")
+        public double f1;
+
+        @JsonProperty("precision")
+        public double precision;
+
+        @JsonProperty("recall")
+        public double recall;
+    }
+
+    public static class ArtifactsInfo {
+        @JsonProperty("model_file")
+        public String modelFile;
+
+        @JsonProperty("preprocessor_state")
+        public String preprocessorState;
+
+        @JsonProperty("vocabulary_file")
+        public String vocabularyFile;
+
+        @JsonProperty("feature_importance")
+        public String featureImportance;
+    }
+
+    public static class ReproducibilityInfo {
+        @JsonProperty("random_seed")
+        public long randomSeed = 42L;
+
+        @JsonProperty("java_version")
+        public String javaVersion;
+
+        @JsonProperty("weka_version")
+        public String wekaVersion;
+
+        @JsonProperty("commit_hash")
+        public String commitHash;
     }
 
     public static class PreprocessingInfo {

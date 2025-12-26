@@ -39,7 +39,7 @@ management:
 # Main sentiment analyzer configuration
 sentiment:
   # Model configuration
-  model-type: svm
+  model-type: logistic_regression  # Best model: Logistic Regression (Amazon)
   confidence-threshold: 0.7
 
   # Data paths - Docker-friendly defaults (use environment variables to override)
@@ -49,6 +49,10 @@ sentiment:
   # Pre-trained model paths (set to load specific models at startup)
   # Models can be generated using sentiment.training.ModelTrainingMain
   models:
+    # Production model (Logistic Regression trained on Amazon - best cross-domain + edge case performance)
+    # Cross-domain avg: 83.0%, Edge case accuracy: 62.5%
+    production-model-path: "${SENTIMENT_PRODUCTION_MODEL:/app/models/production/sentiment_model.ser}"
+
     # Path to pre-trained SVM model (default model used by the application)
     svm-model-path: "${SENTIMENT_SVM_MODEL:/app/models/svm-model.ser}"
 
