@@ -10,9 +10,6 @@ target/
 .vscode/
 *.swp
 *.swo
-.classpath
-.project
-.settings/
 
 # OS files
 .DS_Store
@@ -24,26 +21,19 @@ logs/
 training_log*.txt
 
 # Data directories (local only - not version controlled)
-data/
+/data/
 *.csv
-!datasets/edge_cases/*.csv
 *.tsv
 *.parquet
 
 # Model files - ONLY production model is in git (via Git LFS)
-# All other models can be downloaded via scripts/download_pretrained_models.sh
-models/svm/
-models/naive_bayes/
-models/random_forest/
-models/logistic_regression/
+# Training models are generated locally via scripts/train_all_models.sh
+# Only .ser files ignored - metadata (.json) is tracked as proof of work
+models/svm/*.ser
+models/naive_bayes/*.ser
+models/random_forest/*.ser
+models/logistic_regression/*.ser
 # Production model is tracked via Git LFS (.gitattributes)
-# models/production/ is NOT ignored
-
-# Model metadata - only keep production
-models/svm/*.json
-models/naive_bayes/*.json
-models/random_forest/*.json
-models/logistic_regression/*.json
 
 # Compressed model archives
 *.tar.gz
@@ -57,7 +47,7 @@ experiments/*/model_artifacts/
 application-local.properties
 
 # Personal notes
-syllabus.md
+personal/
 
 # Temporary files
 *.tmp
@@ -68,11 +58,10 @@ test_*.sh
 
 # Regeneratable results (run scripts to regenerate)
 results/error_analysis/
-datasets/*/quality_report.json
+docs/data_cards/*_quality_report.json
 
 # Old/superseded reports
 results/REPORT.md
 results/CROSS_DOMAIN_FINAL_REPORT.md
 DATA_QUALITY_FINDINGS.md
 personal_notes/
-datasets/edge_cases/

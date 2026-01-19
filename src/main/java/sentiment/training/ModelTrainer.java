@@ -17,6 +17,7 @@ import sentiment.evaluation.domain.FeatureImportanceResult;
 import sentiment.models.*;
 import sentiment.preprocessing.TextPreprocessor;
 import sentiment.preprocessing.WekaInstancesConverter;
+import sentiment.config.FeatureExtractionProperties;
 import weka.core.Instances;
 
 import java.io.FileWriter;
@@ -39,14 +40,17 @@ public class ModelTrainer {
     private final SimpleDatasetLoader datasetLoader;
     private final ObjectProvider<TextPreprocessor> textPreprocessorProvider;
     private final ObjectProvider<WekaInstancesConverter> wekaInstancesConverterProvider;
+    private final FeatureExtractionProperties featureConfig;
 
     @Autowired
     public ModelTrainer(SimpleDatasetLoader datasetLoader,
                         ObjectProvider<TextPreprocessor> textPreprocessorProvider,
-                        ObjectProvider<WekaInstancesConverter> wekaInstancesConverterProvider) {
+                        ObjectProvider<WekaInstancesConverter> wekaInstancesConverterProvider,
+                        FeatureExtractionProperties featureConfig) {
         this.datasetLoader = datasetLoader;
         this.textPreprocessorProvider = textPreprocessorProvider;
         this.wekaInstancesConverterProvider = wekaInstancesConverterProvider;
+        this.featureConfig = featureConfig;
 
         logger.info("ModelTrainer initialized with Spring-managed components (prototype scope)");
     }
@@ -105,74 +109,33 @@ public class ModelTrainer {
 
             long startTime = System.currentTimeMillis();
 
-            // Step 1: Load data (handling both single-file and pre-split datasets)
-            logger.info("Step 1/5: Loading data...");
-            StratifiedDataSplitter.DataSplit split;
-
+            // Step 1: Load data with stratified sampling (preserves class distribution)
+            // All datasets use the same flow: load with cap -> 80/20 stratified split
+            // Note: testDataPath parameter is ignored - we always create our own splits for consistency
+            logger.info("Step 1/5: Loading data with stratified sampling...");
             if (testDataPath != null && !testDataPath.trim().isEmpty()) {
-                // Pre-split dataset (e.g., Amazon with separate train.csv and test.csv)
-                logger.info("Using pre-split dataset mode (separate train/test files)");
-                logger.info("Target split: 60/20/20 for {} total samples", maxSamples);
-
-                // Calculate proportional sample sizes for 60/20/20 split
-                int targetTestSamples = (int) (maxSamples * 0.2);     // 20% for test
-                int targetTrainValSamples = maxSamples - targetTestSamples;  // 80% for train+val
-
-                // Load and subsample training data to 80% of maxSamples
-                List<Dataset> trainData = loadTrainingData(dataPath, targetTrainValSamples);
-                logger.info(" Loaded {} training samples ({}% of {})",
-                        trainData.size(), 80, maxSamples);
-
-                // Split training data into train (75%) and validation (25%) to achieve 60/20 overall
-                logger.info("Step 2/5: Performing stratified 75/25 train/val split (60/20 of total)...");
-                StratifiedDataSplitter.DataSplit trainValSplit = StratifiedDataSplitter.stratifiedSplit(
-                        trainData,
-                        0.75,  // 75% of 80% = 60% train overall
-                        0.25,  // 25% of 80% = 20% val overall
-                        0.0,   // 0% test (loaded separately)
-                        42     // Fixed seed for reproducibility
-                );
-
-                // Load and subsample official test set to 20% of maxSamples
-                List<Dataset> testData = loadTrainingData(testDataPath, targetTestSamples);
-                logger.info(" Loaded {} test samples from official test set ({}% of {})",
-                        testData.size(), 20, maxSamples);
-
-                // Combine into final split
-                split = new StratifiedDataSplitter.DataSplit(
-                        trainValSplit.train,
-                        trainValSplit.validation,
-                        testData
-                );
-                logger.info(" Split complete: train={}, val={}, test={} (60/20/20 normalized)",
-                        split.train.size(), split.validation.size(), split.test.size());
-
-                // Save test split for reproducible cross-domain evaluation
-                saveTestSplit(split.test, dataPath);
-
-            } else {
-                // Single-file dataset (e.g., IMDB, Yelp)
-                logger.info("Using single-file dataset mode (60/20/20 split)");
-
-                List<Dataset> allData = loadTrainingData(dataPath, maxSamples);
-                long loadTime = System.currentTimeMillis() - startTime;
-                logger.info(" Loaded {} samples in {}ms", allData.size(), loadTime);
-
-                // Step 2: Perform stratified train/validation/test split (60/20/20)
-                logger.info("Step 2/5: Performing stratified 60/20/20 train/val/test split...");
-                split = StratifiedDataSplitter.stratifiedSplit(
-                        allData,
-                        0.6,  // 60% train
-                        0.2,  // 20% validation
-                        0.2,  // 20% test
-                        42    // Fixed seed for reproducibility
-                );
-                logger.info(" Split complete: train={}, val={}, test={}",
-                        split.train.size(), split.validation.size(), split.test.size());
-
-                // Save test split for reproducible cross-domain evaluation
-                saveTestSplit(split.test, dataPath);
+                logger.info("Note: Ignoring separate test file - using unified 80/20 split for consistency");
             }
+
+            List<Dataset> allData = loadTrainingData(dataPath, maxSamples);
+            long loadTime = System.currentTimeMillis() - startTime;
+            logger.info(" Loaded {} samples in {}ms", allData.size(), loadTime);
+
+            // Step 2: Perform stratified train/test split (80/20)
+            // Note: No separate validation set - SVM hyperparameter tuning uses internal k-fold CV
+            logger.info("Step 2/5: Performing stratified 80/20 train/test split...");
+            StratifiedDataSplitter.DataSplit split = StratifiedDataSplitter.stratifiedSplit(
+                    allData,
+                    0.8,  // 80% train
+                    0.0,  // 0% validation (SVM uses internal CV for tuning)
+                    0.2,  // 20% test
+                    42    // Fixed seed for reproducibility
+            );
+            logger.info(" Split complete: train={}, test={}",
+                    split.train.size(), split.test.size());
+
+            // Save test split for reproducible cross-domain evaluation
+            saveTestSplit(split.test, dataPath);
 
             // Step 3: Create and train classifier (ONLY on train set)
             logger.info("Step 3/5: Training {} classifier on TRAIN SET ONLY...", algorithmType.getDisplayName());
@@ -224,7 +187,7 @@ public class ModelTrainer {
             logger.info("Step {}/{}: Saving model and metadata to {}...", finalStep, finalStep, outputPath);
             long saveStartTime = System.currentTimeMillis();
             saveModel(classifier, outputPath, algorithmType);
-            saveTrainingMetadata(dataPath, outputPath, algorithmType, split, testEvaluation, trainTime);
+            saveTrainingMetadata(dataPath, outputPath, algorithmType, split, testEvaluation, trainTime, classifier);
             long saveTime = System.currentTimeMillis() - saveStartTime;
             logger.info(" Model and metadata saved in {}ms", saveTime);
 
@@ -301,30 +264,81 @@ public class ModelTrainer {
     // ==================== PRIVATE HELPERS ====================
 
     private List<Dataset> loadTrainingData(String dataPath, int maxSamples) throws Exception {
-        // MEMORY OPTIMIZATION: Use streaming loader with early stopping for large datasets
-        // This prevents loading millions of rows when we only need maxSamples
+        // Load with STRATIFIED SAMPLING: preserves original class distribution when capping
+        // SimpleDatasetLoader does a two-pass approach:
+        //   1. Scan file to get class distribution
+        //   2. Load proportionally to preserve ratio (e.g., 75/25 Yelp stays 75/25)
         DatasetLoadResult loadResult = datasetLoader.loadWithMetadata(dataPath, maxSamples);
         List<Dataset> allData = loadResult.datasets();
 
         logger.info("Loaded {} total samples from {} ({}ms)",
                 allData.size(), loadResult.datasetType(), loadResult.loadTimeMs());
 
-        // NOTE: Streaming loader stopped at maxSamples rows (early stopping for memory efficiency)
-        // This means we got the FIRST maxSamples valid rows, not a random sample
-
-        // Log class distribution
+        // Log class distribution (neutrals filtered at load time for binary classification)
         long positive = allData.stream().filter(d -> d.getSentiment() == Dataset.SentimentLabel.POSITIVE).count();
         long negative = allData.stream().filter(d -> d.getSentiment() == Dataset.SentimentLabel.NEGATIVE).count();
-        long neutral = allData.stream().filter(d -> d.getSentiment() == Dataset.SentimentLabel.NEUTRAL).count();
-        logger.info("Distribution: positive={}, negative={}, neutral={}", positive, negative, neutral);
+        logger.info("Distribution after stratified load: positive={}, negative={}", positive, negative);
 
-        // Shuffle to remove any ordering bias from sequential file loading
-        // This is critical when using early-stopping loader (we got first N rows, not random sample)
+        // Shuffle to mix classes before splitting
         List<Dataset> shuffled = new ArrayList<>(allData);
         Collections.shuffle(shuffled, new Random(42)); // Fixed seed for reproducibility
         logger.info("Shuffled {} samples for training", shuffled.size());
 
-        return shuffled;
+        // Balance classes by undersampling majority class to match minority class
+        // This ensures fair comparison across datasets (IMDB 50/50, Amazon 50/50, Yelp 75/25 -> 50/50)
+        List<Dataset> balanced = balanceClasses(shuffled);
+
+        return balanced;
+    }
+
+    /**
+     * Balances classes by undersampling the majority class to match the minority class.
+     * This ensures fair model comparison across datasets with different class distributions.
+     *
+     * @param data shuffled dataset (may be imbalanced)
+     * @return balanced dataset with equal positive/negative samples
+     */
+    private List<Dataset> balanceClasses(List<Dataset> data) {
+        // Separate by class
+        List<Dataset> positive = data.stream()
+                .filter(d -> d.getSentiment() == Dataset.SentimentLabel.POSITIVE)
+                .collect(Collectors.toList());
+        List<Dataset> negative = data.stream()
+                .filter(d -> d.getSentiment() == Dataset.SentimentLabel.NEGATIVE)
+                .collect(Collectors.toList());
+
+        // Find minority class size
+        int minoritySize = Math.min(positive.size(), negative.size());
+
+        if (minoritySize == 0) {
+            logger.warn("One class has zero samples - cannot balance. Returning original data.");
+            return data;
+        }
+
+        // Check if already balanced (within 5% tolerance)
+        double ratio = (double) Math.min(positive.size(), negative.size()) /
+                       Math.max(positive.size(), negative.size());
+        if (ratio >= 0.95) {
+            logger.info("Classes already balanced (ratio: {}) - no undersampling needed",
+                    String.format("%.2f", ratio));
+            return data;
+        }
+
+        // Undersample majority class
+        List<Dataset> balancedPositive = positive.subList(0, minoritySize);
+        List<Dataset> balancedNegative = negative.subList(0, minoritySize);
+
+        // Combine and shuffle again to mix classes
+        List<Dataset> balanced = new ArrayList<>(minoritySize * 2);
+        balanced.addAll(balancedPositive);
+        balanced.addAll(balancedNegative);
+        Collections.shuffle(balanced, new Random(42));
+
+        logger.info("Balanced classes: {} -> {} samples (undersampled {} from majority class)",
+                data.size(), balanced.size(), data.size() - balanced.size());
+        logger.info("Final distribution: positive={}, negative={}", minoritySize, minoritySize);
+
+        return balanced;
     }
 
     /**
@@ -419,32 +433,65 @@ public class ModelTrainer {
                                        AlgorithmType algorithmType,
                                        StratifiedDataSplitter.DataSplit split,
                                        ClassifierEvaluationResult evaluation,
-                                       long trainingTimeMs) {
+                                       long trainingTimeMs,
+                                       SentimentClassifier classifier) {
         try {
             Path modelFilePath = Paths.get(modelPath);
             Path metadataPath = TrainingMetadata.getMetadataPath(modelFilePath);
+            String modelFileName = modelFilePath.getFileName().toString();
+            String baseName = modelFileName.replaceAll("\\.[^.]+$", "");
 
-            // Extract hyperparameters from model file name or use defaults
-            Map<String, Object> hyperparameters = new LinkedHashMap<>();
-            hyperparameters.put("algorithm", algorithmType.name());
-            // TODO: Extract actual hyperparameters from trained model
+            // Extract hyperparameters from trained model
+            Map<String, Object> hyperparameters = extractHyperparameters(classifier, algorithmType);
 
             // Generate model ID from timestamp and algorithm
             String modelId = algorithmType.name().toLowerCase() + "-" +
                             java.time.Instant.now().toString().substring(0, 19).replace(":", "-");
 
-            // Build metadata
+            // Infer dataset info
+            String datasetName = inferDatasetName(dataPath);
+            String datasetVersion = inferDatasetVersion(datasetName);
+            String datasetSource = inferDatasetSourceUrl(datasetName);
+
+            // Calculate class balance from training data
+            Map<String, Integer> classBalance = calculateClassBalance(split.train);
+
+            // Get kernel info for SVM
+            String kernel = null;
+            String notes = null;
+            if (classifier instanceof SVMClassifier svm && svm.getOptimalConfig() != null) {
+                kernel = svm.getOptimalConfig().getKernelType().name().toLowerCase();
+                notes = String.format("Tuned SVM with C=%.4f, 5-fold CV accuracy=%.4f",
+                        svm.getOptimalConfig().getC(),
+                        svm.getOptimalConfig().getCvAccuracy());
+            } else if (algorithmType == AlgorithmType.SVM) {
+                kernel = "linear";
+                notes = "SVM with default parameters";
+            }
+
+            // Get git commit hash
+            String commitHash = getGitCommitHash();
+
+            // Build feature importance file path
+            String featureImportanceFile = baseName + "-feature-importance.json";
+
+            // Build metadata with ALL fields populated
             TrainingMetadata metadata = TrainingMetadata.builder()
                     .modelId(modelId)
                     .algorithm(algorithmType)
                     .hyperparameters(hyperparameters)
                     .datasetPath(dataPath)
+                    .datasetInfo(datasetName, datasetVersion, datasetSource, classBalance)
+                    .trainingSamples(split.train.size())
                     .sampleCounts(split.train.size(), split.validation.size(), split.test.size())
-                    .preprocessing(5000) // Default max features - TODO: extract from actual config
+                    .preprocessing(featureConfig.getMaxFeatures(), featureConfig.isUseTfidf(), featureConfig.isUseBigrams())
                     .evaluationResults(evaluation)
                     .trainedAt(java.time.Instant.now())
                     .trainingDuration(trainingTimeMs)
-                    .modelFile(modelFilePath.getFileName().toString(), Files.size(modelFilePath))
+                    .modelFile(modelFileName, Files.size(modelFilePath))
+                    .modelInfo(algorithmType.name(), kernel, "Weka 3.9.6", "2.0.0", notes)
+                    .artifacts(modelFileName, featureImportanceFile, null, null)
+                    .reproducibility(42L, System.getProperty("java.version"), "3.9.6", commitHash)
                     .build();
 
             // Save metadata JSON
@@ -452,8 +499,89 @@ public class ModelTrainer {
             logger.info("Training metadata saved to: {}", metadataPath);
 
         } catch (Exception e) {
-            logger.warn("Failed to save training metadata: {}", e.getMessage());
-            // Don't fail the entire training process if metadata save fails
+            logger.error("ARTIFACT_SAVE_FAILED: metadata - {}", e.getMessage());
+            logger.error("Training succeeded but metadata.json was NOT saved. Check permissions and disk space.");
+        }
+    }
+
+    /**
+     * Extract hyperparameters from trained classifier.
+     */
+    private Map<String, Object> extractHyperparameters(SentimentClassifier classifier, AlgorithmType algorithmType) {
+        Map<String, Object> hyperparameters = new LinkedHashMap<>();
+        hyperparameters.put("algorithm", algorithmType.name());
+
+        if (classifier instanceof SVMClassifier svm && svm.getOptimalConfig() != null) {
+            SVMConfig config = svm.getOptimalConfig();
+            hyperparameters.put("kernel", config.getKernelType().name().toLowerCase());
+            hyperparameters.put("c_parameter", config.getC());
+            hyperparameters.put("tuning_method", "grid_search");
+            hyperparameters.put("cv_folds", 5);  // Standard 5-fold CV
+            hyperparameters.put("cv_accuracy", config.getCvAccuracy());
+        } else if (algorithmType == AlgorithmType.SVM) {
+            hyperparameters.put("kernel", "linear");
+            hyperparameters.put("c_parameter", 1.0);
+        } else if (algorithmType == AlgorithmType.LOGISTIC_REGRESSION) {
+            hyperparameters.put("ridge", 1.0E-8); // Weka default
+        } else if (algorithmType == AlgorithmType.RANDOM_FOREST) {
+            hyperparameters.put("num_trees", 100); // Default
+            hyperparameters.put("max_depth", 0); // Unlimited
+        } else if (algorithmType == AlgorithmType.NAIVE_BAYES) {
+            hyperparameters.put("use_kernel_estimator", false);
+        }
+
+        return hyperparameters;
+    }
+
+    /**
+     * Calculate class balance from training data.
+     */
+    private Map<String, Integer> calculateClassBalance(List<Dataset> data) {
+        Map<String, Integer> balance = new LinkedHashMap<>();
+        long positive = data.stream().filter(d -> d.getSentiment() == Dataset.SentimentLabel.POSITIVE).count();
+        long negative = data.stream().filter(d -> d.getSentiment() == Dataset.SentimentLabel.NEGATIVE).count();
+        balance.put("positive", (int) positive);
+        balance.put("negative", (int) negative);
+        return balance;
+    }
+
+    /**
+     * Infer dataset version from name.
+     */
+    private String inferDatasetVersion(String datasetName) {
+        return switch (datasetName.toLowerCase()) {
+            case "amazon_polarity" -> "2015-mcauley";
+            case "imdb_50k" -> "2011-maas";
+            case "yelp" -> "2015-yelp-challenge";
+            default -> "1.0";
+        };
+    }
+
+    /**
+     * Infer dataset source URL from name.
+     */
+    private String inferDatasetSourceUrl(String datasetName) {
+        return switch (datasetName.toLowerCase()) {
+            case "amazon_polarity" -> "https://huggingface.co/datasets/amazon_polarity";
+            case "imdb_50k" -> "https://ai.stanford.edu/~amaas/data/sentiment/";
+            case "yelp" -> "https://www.yelp.com/dataset";
+            default -> "custom_dataset";
+        };
+    }
+
+    /**
+     * Get current git commit hash.
+     */
+    private String getGitCommitHash() {
+        try {
+            ProcessBuilder pb = new ProcessBuilder("git", "rev-parse", "--short", "HEAD");
+            pb.redirectErrorStream(true);
+            Process process = pb.start();
+            String output = new String(process.getInputStream().readAllBytes()).trim();
+            process.waitFor();
+            return process.exitValue() == 0 ? output : null;
+        } catch (Exception e) {
+            return null;
         }
     }
 
@@ -468,7 +596,8 @@ public class ModelTrainer {
         try {
             // Infer dataset name from dataPath
             String datasetName = inferDatasetName(dataPath);
-            Path testCsvPath = Paths.get("data/processed", datasetName, "test.csv");
+            Path testCsvPath = Paths.get("data/processed", datasetName, "test.csv").toAbsolutePath();
+            logger.debug("Saving test split to: {}", testCsvPath);
 
             // Create directory if needed
             Files.createDirectories(testCsvPath.getParent());
@@ -489,8 +618,8 @@ public class ModelTrainer {
             logger.info("✓ Saved test split ({} samples) to: {}", testData.size(), testCsvPath);
 
         } catch (Exception e) {
-            logger.warn("Failed to save test split: {}", e.getMessage());
-            // Don't fail training if test split save fails
+            logger.error("ARTIFACT_SAVE_FAILED: test_split - {}", e.getMessage());
+            logger.error("Training succeeded but test.csv was NOT saved. Cross-domain evaluation may fail.");
         }
     }
 

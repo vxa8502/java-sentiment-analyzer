@@ -1,8 +1,0 @@
-# Ignore all trained models except production
-*
-
-# Keep production model (deployed in Docker)
-!production/
-
-# Keep this .gitignore file
-!.gitignore

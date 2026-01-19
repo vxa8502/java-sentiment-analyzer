@@ -3,7 +3,7 @@ package sentiment;
 import org.slf4j.Logger;
 import sentiment.data.Dataset;
 
-import javax.annotation.PreDestroy;
+import jakarta.annotation.PreDestroy;
 import java.util.List;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;

@@ -3,21 +3,41 @@ version: "v1.0-maas2011"
 source: http://ai.stanford.edu/~amaas/data/sentiment/
 license: Public domain / Academic use
 
-# Dataset Size
-size:
-  total: 50,000
-  train: 25,000
-  test: 25,000
+# Raw Dataset
+raw:
+  file: data/raw/imdb_50k/IMDB Dataset.csv
+  total_samples: 50000
+  columns: [review, sentiment]
+  class_distribution:
+    positive: 25000
+    negative: 25000
 
-# Format
-format: CSV
-columns:
-  - review (text content)
-  - sentiment (positive/negative)
+# Training Split (80/20, seed=42)
+training:
+  method: "Stratified 80/20 split (no separate validation set)"
+  train_samples: 40000
+  test_samples: 10000
+  cross_validation: "5-fold CV used internally for hyperparameter tuning"
+
+# Processed Test Set (saved for cross-domain evaluation)
+processed:
+  file: data/processed/imdb_50k/test.csv
+  samples: 10000
+
+# Preparation
+preparation:
+  prerequisites:
+    - Kaggle account (free)
+  steps:
+    - Visit https://www.kaggle.com/datasets/lakshmi25npathi/imdb-dataset-of-50k-movie-reviews
+    - Click "Download" (requires Kaggle login)
+    - Extract the ZIP file
+    - Move "IMDB Dataset.csv" to data/raw/imdb_50k/
+  verification: |
+    python3 -c "import csv; r=list(csv.reader(open('data/raw/imdb_50k/IMDB Dataset.csv'))); print('Rows:', len(r)-1)"
+    # Expected: 50000
 
 # Data Quality
-class_distribution: "Perfectly balanced (50% positive, 50% negative)"
-
 known_biases:
   - expert_reviewer_skew: "Prolific reviewers overrepresented"
   - genre_imbalance: "Drama 38%, Action 22%, Comedy 19%"

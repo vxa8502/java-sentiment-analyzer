@@ -73,6 +73,9 @@ public class TrainingMetadata {
 
         @JsonProperty("version")
         public String version = "1.0.0";
+
+        @JsonProperty("notes")
+        public String notes;
     }
 
     public static class DatasetInfo {
@@ -170,6 +173,12 @@ public class TrainingMetadata {
         @JsonProperty("min_word_frequency")
         public int minWordFrequency = 2;
 
+        @JsonProperty("use_tfidf")
+        public boolean useTfidf = true;
+
+        @JsonProperty("use_bigrams")
+        public boolean useBigrams = true;
+
         @JsonProperty("tokenizer")
         public String tokenizer = "AdvancedTokenizer";
     }
@@ -233,9 +242,11 @@ public class TrainingMetadata {
             return this;
         }
 
-        public Builder preprocessing(int maxFeatures) {
+        public Builder preprocessing(int maxFeatures, boolean useTfidf, boolean useBigrams) {
             metadata.preprocessing = new PreprocessingInfo();
             metadata.preprocessing.maxFeatures = maxFeatures;
+            metadata.preprocessing.useTfidf = useTfidf;
+            metadata.preprocessing.useBigrams = useBigrams;
             return this;
         }
 
@@ -276,6 +287,49 @@ public class TrainingMetadata {
         public Builder modelFile(String file, long sizeBytes) {
             metadata.modelFile = file;
             metadata.modelSizeBytes = sizeBytes;
+            return this;
+        }
+
+        public Builder modelInfo(String algorithm, String kernel, String framework, String version, String notes) {
+            metadata.modelInfo = new ModelInfo();
+            metadata.modelInfo.algorithm = algorithm;
+            metadata.modelInfo.kernel = kernel;
+            metadata.modelInfo.framework = framework;
+            metadata.modelInfo.version = version;
+            metadata.modelInfo.notes = notes;
+            return this;
+        }
+
+        public Builder artifacts(String modelFile, String featureImportance, String preprocessorState, String vocabularyFile) {
+            metadata.artifacts = new ArtifactsInfo();
+            metadata.artifacts.modelFile = modelFile;
+            metadata.artifacts.featureImportance = featureImportance;
+            metadata.artifacts.preprocessorState = preprocessorState;
+            metadata.artifacts.vocabularyFile = vocabularyFile;
+            return this;
+        }
+
+        public Builder reproducibility(long randomSeed, String javaVersion, String wekaVersion, String commitHash) {
+            metadata.reproducibility = new ReproducibilityInfo();
+            metadata.reproducibility.randomSeed = randomSeed;
+            metadata.reproducibility.javaVersion = javaVersion;
+            metadata.reproducibility.wekaVersion = wekaVersion;
+            metadata.reproducibility.commitHash = commitHash;
+            return this;
+        }
+
+        public Builder datasetInfo(String datasetName, String datasetVersion, String source, Map<String, Integer> classBalance) {
+            if (metadata.dataset == null) metadata.dataset = new DatasetInfo();
+            metadata.dataset.datasetName = datasetName;
+            metadata.dataset.datasetVersion = datasetVersion;
+            metadata.dataset.source = source;
+            metadata.dataset.classBalance = classBalance;
+            return this;
+        }
+
+        public Builder trainingSamples(int numSamples) {
+            if (metadata.dataset == null) metadata.dataset = new DatasetInfo();
+            metadata.dataset.numSamples = numSamples;
             return this;
         }
 

@@ -1,5 +1,5 @@
 # Git LFS configuration for production model ONLY
-# Other models are gitignored and downloadable via scripts/download_pretrained_models.sh
+# Other models are gitignored and regenerated via scripts/train_all_models.sh
 models/production/*.ser filter=lfs diff=lfs merge=lfs -text
 models/production/*.model filter=lfs diff=lfs merge=lfs -text
 

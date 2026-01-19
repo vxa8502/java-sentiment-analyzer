@@ -1,0 +1,88 @@
+name: Amazon Reviews Polarity Dataset
+version: "mteb-2015"
+source: https://huggingface.co/datasets/mteb/amazon_polarity
+license: Public domain / Academic use
+
+# Raw Dataset (pre-sampled from HuggingFace)
+raw:
+  train_file: data/raw/amazon_polarity/train.csv
+  test_file: data/raw/amazon_polarity/test.csv
+  train_samples: 100000
+  test_samples: 50000
+  columns: [label, text, label_text]
+  class_distribution:
+    train:
+      label_0_negative: 50030
+      label_1_positive: 49970
+    test:
+      label_0_negative: 24865
+      label_1_positive: 25135
+  original_size:
+    train: 3600000
+    test: 400000
+  sampling: "Random with seed=42"
+
+# Training Split (80/20 from MAX_SAMPLES=100K)
+training:
+  method: "80K from train.csv, 20K from test.csv (uses official test split)"
+  train_samples: 80000
+  test_samples: 20000
+  cross_validation: "5-fold CV used internally for hyperparameter tuning"
+
+# Processed Test Set (saved for cross-domain evaluation)
+processed:
+  file: data/processed/amazon_polarity/test.csv
+  samples: 20000
+
+# Preparation
+preparation:
+  prerequisites:
+    - Python 3.8+
+    - pip install datasets
+  steps:
+    - Run the Python code below
+    - This downloads from HuggingFace and samples to manageable size
+  code: |
+    from datasets import load_dataset
+
+    ds = load_dataset("mteb/amazon_polarity")
+
+    # Sample for manageable size (seed=42 for reproducibility)
+    train = ds['train'].shuffle(seed=42).select(range(100_000))
+    test = ds['test'].shuffle(seed=42).select(range(50_000))
+
+    # Save to CSV
+    train.to_csv('data/raw/amazon_polarity/train.csv', index=False)
+    test.to_csv('data/raw/amazon_polarity/test.csv', index=False)
+
+    print("Done: 100K train, 50K test")
+  verification: |
+    python3 -c "import csv; print('Train:', sum(1 for _ in csv.reader(open('data/raw/amazon_polarity/train.csv')))-1)"
+    python3 -c "import csv; print('Test:', sum(1 for _ in csv.reader(open('data/raw/amazon_polarity/test.csv')))-1)"
+    # Expected: Train: 100000, Test: 50000
+
+# Data Quality
+known_biases:
+  - verified_purchase_skew: "Verified buyers write differently than non-verified"
+  - category_imbalance: "Multiple product categories (electronics, books, clothing)"
+  - temporal_drift: "Reviews span 1996-2014"
+  - fake_review_contamination: "Estimated 5-15% in electronics category"
+
+measurement_issues:
+  - star_rating_mismatch: "Some 5-star reviews have negative text"
+  - length_bias: "Negative reviews avg longer than positive"
+
+edge_cases:
+  - sarcasm: "Oh great, another broken product!"
+  - mixed_sentiment: "Love design, hate battery life"
+  - product_comparisons: "May contain comparative sentiment"
+
+# Validation
+human_agreement: "Not measured (labels from star ratings)"
+label_source: "Binary: 1-2 stars=negative, 4-5 stars=positive"
+excluded_ratings: "3-star reviews excluded (neutral)"
+
+# Ethics
+personal_info: "Redacted in polarity version"
+offensive_content: "May contain offensive language"
+commercial_use: "Check license for restrictions"

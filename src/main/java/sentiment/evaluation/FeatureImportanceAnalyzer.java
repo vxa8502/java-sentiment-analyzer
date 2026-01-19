@@ -6,6 +6,9 @@ import sentiment.evaluation.domain.FeatureImportanceResult;
 import sentiment.evaluation.domain.FeatureStatistics;
 import sentiment.evaluation.domain.FeatureWeight;
 import weka.classifiers.Classifier;
+import weka.classifiers.functions.SMO;
+import weka.classifiers.functions.supportVector.PolyKernel;
+import weka.classifiers.functions.supportVector.RBFKernel;
 import weka.core.Attribute;
 import weka.core.Instance;
 import weka.core.Instances;
@@ -14,7 +17,8 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * Analyzes feature importance for any trained Weka classifier using permutation importance.
+ * Analyzes feature importance for trained Weka classifiers.
+ * Uses direct weight extraction for linear SVMs and perturbation analysis for other classifiers.
  * @see weka.classifiers.Classifier#distributionForInstance(weka.core.Instance)
  * @see sentiment.evaluation.domain.FeatureImportanceResult
  */
@@ -24,7 +28,8 @@ public class FeatureImportanceAnalyzer {
     private static final int DEFAULT_SAMPLE_SIZE = 200;
 
     /**
-     * Analyzes feature importance for any trained classifier using perturbation analysis.
+     * Analyzes feature importance for any trained classifier.
+     * Uses direct weight extraction for linear SVMs, perturbation analysis for others.
      *
      * @param trainedData the training instances used for feature names and perturbation
      * @param classifier the trained classifier to analyze
@@ -46,14 +51,20 @@ public class FeatureImportanceAnalyzer {
             throw new IllegalArgumentException("topK must be positive");
         }
 
-        logger.info("Analyzing feature importance for {} features using perturbation method, extracting top-{}",
-                trainedData.numAttributes() - 1, topK);
+        // Detect if this is a linear SVM
+        boolean isLinearSVM = isLinearSVM(classifier);
+        String method = isLinearSVM ? "direct coefficient extraction" : "perturbation method";
+
+        logger.info("Analyzing feature importance for {} features using {}, extracting top-{}",
+                trainedData.numAttributes() - 1, method, topK);
 
         long startTime = System.currentTimeMillis();
 
         try {
-            // Step 1: Extract feature weights via perturbation
-            Map<String, Double> featureWeights = extractFeatureImportance(trainedData, classifier);
+            // Step 1: Extract feature weights (method depends on classifier type)
+            Map<String, Double> featureWeights = isLinearSVM
+                ? extractLinearSVMWeights(trainedData, (SMO) classifier)
+                : extractFeatureImportance(trainedData, classifier);
 
             // Step 2: Compute statistical significance
             Map<String, Double> featureSignificance = computeFeatureSignificance(featureWeights);
@@ -79,6 +90,171 @@ public class FeatureImportanceAnalyzer {
         } catch (Exception e) {
             logger.error("Feature importance analysis failed: {}", e.getMessage(), e);
             throw new RuntimeException("Failed to analyze feature importance", e);
+        }
+    }
+
+    /**
+     * Detects if the classifier is a linear SVM (SMO with linear kernel or normalized poly kernel).
+     *
+     * @param classifier the classifier to check
+     * @return true if it's a linear SVM, false otherwise
+     */
+    private boolean isLinearSVM(Classifier classifier) {
+        if (!(classifier instanceof SMO)) {
+            return false;
+        }
+
+        SMO smo = (SMO) classifier;
+
+        // Check if using normalized poly kernel (default) with exponent 1.0 (linear)
+        if (smo.getKernel() instanceof PolyKernel) {
+            PolyKernel polyKernel = (PolyKernel) smo.getKernel();
+            // Linear kernel is poly with exponent = 1.0
+            // Use epsilon comparison to handle floating point precision
+            double exponent = polyKernel.getExponent();
+            boolean isLinear = Math.abs(exponent - 1.0) < 1e-9;
+            logger.debug("PolyKernel exponent: {}, isLinear: {}", exponent, isLinear);
+            return isLinear;
+        }
+
+        // RBF kernel is definitely non-linear
+        if (smo.getKernel() instanceof RBFKernel) {
+            return false;
+        }
+
+        // Other polynomial kernels with degree > 1 are non-linear
+        return false;
+    }
+
+    /**
+     * Extracts feature weights directly from a linear SVM's coefficient vector.
+     * This is much more accurate and efficient than perturbation for linear models.
+     *
+     * <p>For linear SVM with Weka's SMO, the weight vector is stored directly in sparse format:
+     * <ul>
+     *   <li>sparseIndices[classifier][class] = array of non-zero feature indices</li>
+     *   <li>sparseWeights[classifier][class] = array of corresponding weight values</li>
+     * </ul>
+     *
+     * <p>For binary classification, we use class index 0 which gives us the weights
+     * for the decision boundary. Positive weights favor the positive class.
+     *
+     * @param trainedData the training instances (for feature names)
+     * @param smo the trained linear SVM classifier
+     * @return a map of feature names to their coefficient weights
+     * @throws RuntimeException if weight extraction fails
+     */
+    private Map<String, Double> extractLinearSVMWeights(Instances trainedData, SMO smo) {
+        Map<String, Double> weights = new HashMap<>();
+        int classIndex = trainedData.classIndex();
+        int numAttributes = trainedData.numAttributes();
+
+        logger.info("Extracting linear SVM coefficients for {} features", numAttributes - 1);
+        logger.info("SMO kernel type: {}", smo.getKernel().getClass().getSimpleName());
+
+        try {
+            // Get sparse representation from SMO
+            // Structure: sparseIndices[classifier][class] = array of feature indices
+            //            sparseWeights[classifier][class] = array of weight values
+            int[][][] sparseIndices = smo.sparseIndices();
+            double[][][] sparseWeights = smo.sparseWeights();
+
+            if (sparseIndices == null || sparseWeights == null) {
+                logger.warn("sparseIndices() or sparseWeights() returned null");
+                logger.warn("Falling back to perturbation method");
+                return extractFeatureImportance(trainedData, smo);
+            }
+
+            if (sparseIndices.length == 0 || sparseWeights.length == 0) {
+                logger.warn("Empty sparse arrays - no classifiers found");
+                logger.warn("Falling back to perturbation method");
+                return extractFeatureImportance(trainedData, smo);
+            }
+
+            logger.info("Found {} classifier(s) in SMO", sparseIndices.length);
+
+            // Initialize all features to 0 (excluding class attribute)
+            for (int i = 0; i < numAttributes; i++) {
+                if (i != classIndex) {
+                    weights.put(trainedData.attribute(i).name(), 0.0);
+                }
+            }
+
+            // For binary classification, use the first classifier (index 0)
+            // and iterate over available class weight vectors
+            int[][] indicesForClassifier = sparseIndices[0];
+            double[][] weightsForClassifier = sparseWeights[0];
+
+            if (indicesForClassifier == null || weightsForClassifier == null) {
+                logger.warn("No sparse data for classifier 0");
+                logger.warn("Falling back to perturbation method");
+                return extractFeatureImportance(trainedData, smo);
+            }
+
+            logger.info("Classifier 0 has {} class weight vectors", indicesForClassifier.length);
+
+            int totalWeightsExtracted = 0;
+
+            // Process weight vectors - find the first non-null class weight vector
+            // In Weka's binary SVM, one class may have null weights while the other has the data
+            int[] featureIndices = null;
+            double[] featureWeights = null;
+            int usedClassIdx = -1;
+
+            for (int classIdx = 0; classIdx < indicesForClassifier.length; classIdx++) {
+                if (indicesForClassifier[classIdx] != null && weightsForClassifier[classIdx] != null) {
+                    featureIndices = indicesForClassifier[classIdx];
+                    featureWeights = weightsForClassifier[classIdx];
+                    usedClassIdx = classIdx;
+                    logger.info("Using class {} weights ({} non-zero entries)", classIdx, featureIndices.length);
+                    break;
+                } else {
+                    logger.debug("Class {} has null sparse data, skipping", classIdx);
+                }
+            }
+
+            if (featureIndices == null || featureWeights == null) {
+                logger.warn("No valid weight vectors found in any class");
+                logger.warn("Falling back to perturbation method");
+                return extractFeatureImportance(trainedData, smo);
+            }
+
+            // Extract weights from the sparse representation
+            for (int i = 0; i < featureIndices.length && i < featureWeights.length; i++) {
+                int featureIdx = featureIndices[i];
+
+                // Skip class attribute and validate index
+                if (featureIdx == classIndex) continue;
+                if (featureIdx < 0 || featureIdx >= numAttributes) {
+                    logger.debug("Skipping invalid feature index: {}", featureIdx);
+                    continue;
+                }
+
+                String featureName = trainedData.attribute(featureIdx).name();
+                double weight = featureWeights[i];
+
+                weights.put(featureName, weight);
+                totalWeightsExtracted++;
+            }
+
+            logger.info("Extracted {} feature weights from sparse representation", totalWeightsExtracted);
+
+            // Verify we got non-zero weights
+            long nonZeroCount = weights.values().stream().filter(w -> Math.abs(w) > 1e-10).count();
+            logger.info("Non-zero feature weights: {} out of {}", nonZeroCount, numAttributes - 1);
+
+            if (nonZeroCount == 0) {
+                logger.warn("All extracted weights are zero! This indicates a problem with coefficient extraction.");
+                logger.warn("Falling back to perturbation method");
+                return extractFeatureImportance(trainedData, smo);
+            }
+
+            return weights;
+
+        } catch (Exception e) {
+            logger.error("Failed to extract linear SVM weights: {}", e.getMessage(), e);
+            logger.warn("Falling back to perturbation method");
+            return extractFeatureImportance(trainedData, smo);
         }
     }
 

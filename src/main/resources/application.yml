@@ -5,12 +5,7 @@ logging:
   level:
     sentiment: INFO
     root: WARN
-  pattern:
-    # Structured logging with MDC context for tracing training runs and operations
-    # Format: timestamp [thread] level logger [algorithm=X] [sessionId=Y] - message
-    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} %X{algorithmType:+[algorithm=%X{algorithmType}]}%X{sessionId:+[session=%X{sessionId}]} - %msg%n"
-  file:
-    name: logs/sentiment-analyzer.log
+  # File logging configured in logback-spring.xml (logs/sentiment-analyzer.log)
 
 management:
   endpoints:
@@ -320,7 +315,7 @@ logging:
     weka: WARN
 
 sentiment:
-  preprocessing:
+  features:
     max-features: 1000  # Smaller for faster development
     batch-size: 100
   api:
@@ -361,10 +356,9 @@ management:
       show-details: never  # Don't expose internal details publicly
 
 sentiment:
-  preprocessing:
+  features:
     max-features: 10000  # More features for better accuracy
     batch-size: 5000     # Larger batches for efficiency
-    cache-features: true
   api:
     rate-limit: 100      # Conservative limit for production
     enable-logging: false # Disable verbose logging
@@ -396,9 +390,8 @@ logging:
     weka: ERROR
 
 sentiment:
-  preprocessing:
+  features:
     max-features: 100    # Minimal features for fast tests
     batch-size: 10
-    cache-features: false
   data:
     max-file-size-mb: 1  # Small files for tests

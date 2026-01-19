@@ -5,6 +5,11 @@
 
 set -e
 
+# Resolve project root (works regardless of where script is called from)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+cd "$PROJECT_ROOT"
+
 if [ $# -lt 1 ]; then
     echo "Usage: $0 <algorithm> <domain>"
     echo "   Or: $0 all  # Evaluate all trained models"
@@ -28,12 +33,12 @@ if [ "$1" = "all" ]; then
 
     for algo in "${ALGORITHMS[@]}"; do
         for domain in "${DOMAINS[@]}"; do
-            MODEL_FILE="models/${algo}/${domain}_${algo}_model.ser"
+            MODEL_FILE="$PROJECT_ROOT/models/${algo}/${domain}_${algo}_model.ser"
 
             if [ -f "$MODEL_FILE" ]; then
-                echo "•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••"
+                echo "---------------------------------------------------------------"
                 echo "Testing: ${algo} trained on ${domain}"
-                echo "•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••"
+                echo "---------------------------------------------------------------"
                 java -cp "$CLASSPATH" sentiment.evaluation.EdgeCaseEvaluator "$algo" "$domain"
                 echo ""
             fi

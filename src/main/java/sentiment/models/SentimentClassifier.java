@@ -44,6 +44,36 @@ public interface SentimentClassifier {
     double[] getClassificationProbabilities(String text) throws Exception;
 
     /**
+     * Classifies text and returns both the predicted label and probability distribution
+     * in a single atomic operation. This is thread-safe and more efficient than calling
+     * classify() and getClassificationProbabilities() separately.
+     *
+     * @param text Raw text to classify (will be preprocessed automatically)
+     * @return ClassificationResult containing label, probabilities, and class names
+     * @throws Exception if classification fails or preprocessing errors occur
+     * @throws IllegalStateException if classifier hasn't been trained
+     * @throws IllegalArgumentException if text is null or empty
+     */
+    ClassificationResult classifyWithProbabilities(String text) throws Exception;
+
+    /**
+     * Result of a classification containing label and probabilities.
+     */
+    record ClassificationResult(String label, double[] probabilities, String[] classes) {
+        /**
+         * Gets the confidence score for the predicted label.
+         */
+        public double confidence() {
+            for (int i = 0; i < classes.length; i++) {
+                if (classes[i].equalsIgnoreCase(label)) {
+                    return probabilities[i];
+                }
+            }
+            return 0.0;
+        }
+    }
+
+    /**
      * Checks if the classifier has been trained and is ready for predictions.
      *
      * @return true if classifier is trained and ready, false otherwise

@@ -1,27 +1,31 @@
 #!/bin/bash
 
 # Cross-Domain Evaluation Script
-# Tests all models (SVM, Naive Bayes, Random Forest) across all datasets
-# Following David's recommendations for measuring generalization capability
+# Tests all models (SVM, Naive Bayes, Random Forest, Logistic Regression) across all datasets
 
 set -e
 
+# Resolve project root (works regardless of where script is called from)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+cd "$PROJECT_ROOT"
+
 echo "---------------------------------------------------------------"
-echo "  Cross-Domain Evaluation (27 evaluations)"
+echo "  Cross-Domain Evaluation"
 echo "---------------------------------------------------------------"
 echo ""
 
 # Configuration
-MODELS_DIR="models"
-TEST_DATA_DIR="data/raw"
-OUTPUT_FILE="results/cross_domain_matrix.json"
-RESULTS_DIR="results"
+MODELS_DIR="$PROJECT_ROOT/models"
+TEST_DATA_DIR="$PROJECT_ROOT/data/raw"
+OUTPUT_FILE="$PROJECT_ROOT/results/cross_domain_matrix.json"
+RESULTS_DIR="$PROJECT_ROOT/results"
 
 # Create results directory if needed
 mkdir -p "$RESULTS_DIR"
 
 # Build project if needed
-if [ ! -f "target/sentiment-analyzer-1.0.0.jar" ]; then
+if [ ! -f "$PROJECT_ROOT/target/sentiment-analyzer-1.0.0.jar" ]; then
     echo "Building project..."
     mvn clean package -DskipTests
     echo "[OK] Build complete"
@@ -61,11 +65,15 @@ echo ""
 CLASSPATH=$(mvn -q dependency:build-classpath -Dmdep.outputFile=/dev/stdout)
 CLASSPATH="target/classes:target/sentiment-analyzer-1.0.0.jar.original:$CLASSPATH"
 
+# Use full saved test sets (up to 25K per domain, more than any test set has)
+MAX_SAMPLES_PER_DOMAIN=25000
+
 java -Xmx8g -cp "$CLASSPATH" \
     sentiment.evaluation.CrossDomainEvaluator \
     "$MODELS_DIR" \
     "$TEST_DATA_DIR" \
-    "$OUTPUT_FILE"
+    "$OUTPUT_FILE" \
+    "$MAX_SAMPLES_PER_DOMAIN"
 
 if [ $? -eq 0 ]; then
     echo ""

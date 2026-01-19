@@ -10,7 +10,7 @@ import sentiment.preprocessing.WekaInstancesConverter;
 import sentiment.evaluation.ClassifierEvaluationResult;
 import sentiment.data.Dataset;
 
-import javax.annotation.PreDestroy;
+import jakarta.annotation.PreDestroy;
 import java.util.*;
 
 /**

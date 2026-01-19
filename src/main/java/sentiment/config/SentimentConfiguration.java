@@ -20,6 +20,7 @@ import java.nio.file.Paths;
  * Spring configuration for sentiment analysis components.
  */
 @Configuration
+@org.springframework.boot.context.properties.EnableConfigurationProperties(FeatureExtractionProperties.class)
 @org.springframework.context.annotation.Profile("!training")
 public class SentimentConfiguration {
 
@@ -55,6 +56,16 @@ public class SentimentConfiguration {
     @SuppressWarnings("rawtypes")
     public WekaModelPersistence wekaModelPersistence() {
         return new WekaModelPersistence<>();
+    }
+
+    /**
+     * Provides the actual model path used for the loaded classifier.
+     * This is needed for feature importance file lookup.
+     */
+    @Bean
+    public String loadedModelPath() {
+        AlgorithmType algorithm = AlgorithmType.fromString(modelType);
+        return getModelPath(algorithm);
     }
 
     /**

@@ -22,7 +22,7 @@ This document details the technical architecture, design patterns, and implement
 +-----------------------------------------------------------------------+
 |                          REST API LAYER                               |
 |  - Spring Boot Controllers (Port 8080)                                |
-|  - Rate Limiting: 60 req/min (Resilience4j)                           |
+|  - Rate Limiting: 1000 req/min (Resilience4j)                         |
 |  - Circuit Breaker: Fails fast on model errors                        |
 |  - Production Metrics: Micrometer + Prometheus                        |
 +-----------------------------------+-----------------------------------+
@@ -64,10 +64,7 @@ This document details the technical architecture, design patterns, and implement
 |  SimpleDatasetLoader:                                                 |
 |    - CSV/TSV format support with auto-detection                       |
 |    - Flexible column matching (text/review, sentiment/label)          |
-|    - Numeric rating conversion (1-5 stars -> pos/neg/neutral)         |
-|                                                                       |
-|  IMDBDatasetLoader:                                                   |
-|    - Specialized loader for IMDB dataset format                       |
+|    - Binary classification (positive/negative only)                   |
 +-----------------------------------------------------------------------+
 ```
 
@@ -91,10 +88,11 @@ This document details the technical architecture, design patterns, and implement
 
 **Key Classes:**
 - `SimpleDatasetLoader`: Flexible loader with format auto-detection (CSV, TSV, JSONL, TXT)
-- `IMDBDatasetLoader`: Specialized loader for IMDB dataset format
 - `Dataset`: Immutable data container with builder pattern
 - `DatasetLoadResult`: Metadata wrapper (load time, format type, file path)
 - `DataLoadingException`: Domain-specific exception for loading errors
+- `DataQualityReport`: Validation and quality metrics for loaded datasets
+- `DatasetStatistics`: Statistical summary of dataset characteristics
 
 **Design Pattern**: Simple factory with switch-based format detection
 
@@ -124,12 +122,11 @@ System.out.println("Loaded " + result.datasets().size() + " samples in " + resul
 // Text labels
 "positive" / "pos" / "1" / "4"  → POSITIVE
 "negative" / "neg" / "0" / "-1" → NEGATIVE
-"neutral" / "2"                 → NEUTRAL
 
 // Numeric ratings (1-5 stars)
-1.0-2.0  → NEGATIVE
-2.1-3.9  → NEUTRAL
-4.0-5.0  → POSITIVE
+1.0-2.5  → NEGATIVE
+3.5-5.0  → POSITIVE
+// Note: Neutral samples (2.5-3.5 or "neutral" label) are filtered out
 ```
 
 **Error Handling:**
@@ -286,11 +283,13 @@ public interface SentimentClassifier {
 **Responsibility**: Compute comprehensive evaluation metrics
 
 **Key Classes:**
-- `ClassifierEvaluationResult`: Immutable metrics container
-- `AUCCalculator`: ROC-AUC computation
+- `ClassifierEvaluationResult`: Immutable metrics container (includes ROC-AUC/PR-AUC via Weka's Evaluation)
 - `CalibrationMetrics`: Brier Score, ECE, MCE
 - `StratifiedDataSplitter`: Maintain class distribution in splits
-- `FeatureImportanceAnalyzer`: Interpretability metrics
+- `FeatureImportanceAnalyzer`: Interpretability metrics via permutation importance
+- `CrossDomainEvaluator`: Tests model generalization across domains (IMDB, Amazon, Yelp)
+- `EdgeCaseEvaluator`: Validates robustness on sarcasm, negation, mixed sentiment
+- `ErrorAnalyzer`: Categorizes prediction failures for model improvement
 
 **Metrics Provided:**
 
@@ -332,6 +331,37 @@ Actual Pos     4512           488
 Actual Neg      392          4608
 ```
 
+**Cross-Domain & Robustness Testing:**
+
+The evaluation package includes specialized tools to assess model generalization and robustness:
+
+**CrossDomainEvaluator:**
+- Tests trained models across multiple domains (IMDB movie reviews, Amazon products, Yelp businesses)
+- Measures domain transfer performance to detect overfitting to specific datasets
+- Evaluates whether sentiment patterns learned generalize beyond training domain
+- Critical for production deployment across diverse use cases
+
+**EdgeCaseEvaluator:**
+- Validates model behavior on challenging linguistic patterns:
+  - **Sarcasm**: "Oh great, another broken product" (positive words, negative meaning)
+  - **Negation**: "Not bad at all" (negative word, positive sentiment)
+  - **Mixed Sentiment**: "Great camera, terrible battery" (conflicting opinions)
+  - **Domain Jargon**: Technical terms and industry-specific language
+- Identifies model weaknesses before production deployment
+- Provides targeted test cases for model improvement
+
+**ErrorAnalyzer:**
+- Categorizes prediction failures by error type
+- Identifies systematic patterns in misclassifications
+- Generates actionable insights for feature engineering and data augmentation
+- Supports iterative model refinement
+
+**Why These Components Matter:**
+- Production models face diverse, unpredictable inputs
+- Domain-specific training data may not represent real-world variety
+- Systematic testing reveals blind spots and edge cases
+- Enables confident deployment with known limitations documented
+
 ---
 
 ### `sentiment.api` - REST API Layer
@@ -343,14 +373,18 @@ Actual Neg      392          4608
 - `SentimentRequest/Response`: DTOs with validation
 - `BatchRequest/BatchResponse`: Batch processing DTOs
 - `HealthResponse`: Health check response
+- `FeatureImportanceResponse`: Feature importance analysis results
+- `ErrorResponse`: Standardized error message format
 - `RestApiExceptionHandler`: Centralized error handling
+- `PredictionMetrics`: Production monitoring via Micrometer (sentiment.api.metrics package)
 
 **Endpoints:**
 
 ```
-POST /api/v1/sentiment/analyze  - Single text classification
-POST /api/v1/sentiment/batch    - Batch classification (parallel)
-GET  /api/v1/health             - Health check
+POST /api/v1/sentiment/analyze        - Single text classification
+POST /api/v1/sentiment/batch          - Batch classification (parallel)
+GET  /api/v1/model/feature-importance - Model interpretability (top features by importance)
+GET  /api/v1/health                   - Health check
 ```
 
 **Features:**
@@ -361,7 +395,7 @@ resilience4j:
   ratelimiter:
     instances:
       sentimentApi:
-        limit-for-period: 60      # requests
+        limit-for-period: 1000    # requests
         limit-refresh-period: 1m  # per minute
 ```
 
@@ -418,24 +452,20 @@ Command-line arguments (highest priority)
 **Example Configuration:**
 ```yaml
 sentiment:
-  model-type: svm
+  model-path: /app/models/production/sentiment_model.ser
   confidence-threshold: 0.7
 
-  models:
-    svm-model-path: /app/models/svm-model.ser
-    prefer-pretrained: true
-    require-pretrained: false
-
-  features:  # Correct config path (not "preprocessing")
+  preprocessing:
     min-word-length: 2
     max-features: 5000
-    min-term-freq: 1
     use-tfidf: true
     use-bigrams: true
 
   api:
     max-batch-size: 100
     rate-limit: 1000
+    validation:
+      max-text-length: 10000
 ```
 
 ---
@@ -445,27 +475,21 @@ sentiment:
 **Responsibility**: Offline model training and evaluation
 
 **Key Classes:**
-- `TrainModel`: Bootstrap tool with minimal Spring context for training
 - `ModelTrainer`: Core training logic with cross-validation
 - `TrainingMetadata`: Records training configuration and metrics
+- `ClassifierTrainingTemplate`: Template method for algorithm-specific training
 
 **Usage:**
 ```bash
-# Train SVM model with default parameters
-java -cp sentiment-analyzer.jar sentiment.training.TrainModel \
-  /path/to/Reviews.csv \
-  ./models/svm-model.ser \
-  10000
+# Train a single model
+mvn exec:java -Dexec.mainClass="sentiment.training.ModelTrainer" \
+  -Dexec.args="--algorithm SVM --dataset imdb_50k"
 
-# Train with feature importance analysis
-java -cp sentiment-analyzer.jar sentiment.training.TrainModel \
-  /path/to/Reviews.csv \
-  ./models/svm-model.ser \
-  10000 \
-  true \
-  30
+# Train all 12 models (4 algorithms x 3 datasets)
+./scripts/train_all_models.sh
 
-# Arguments: <data-path> <output-path> [max-samples] [show-feature-importance] [top-features-count] [enable-hyperparameter-tuning]
+# Algorithms: SVM, NAIVE_BAYES, LOGISTIC_REGRESSION, RANDOM_FOREST
+# Datasets: imdb_50k, amazon_polarity, yelp
 ```
 
 ---
@@ -645,10 +669,18 @@ Where:
 **Intuition**: Fits a logistic regression on top of SVM outputs to convert distances → probabilities.
 
 **Weka Implementation:**
+
+Probability calibration is enabled via SMO's `-V` option (number of cross-validation folds for internal probability calibration):
+
 ```java
-SMO svm = new SMO();
-svm.setBuildLogisticModels(true);  // Enable Platt scaling
+// From SVMConfig.toOptionsString() (line 116):
+String options = "-C " + c +
+                 " -V -1" +  // Enable CV-based probability calibration (Platt scaling)
+                 " ...";
+smo.setOptions(weka.core.Utils.splitOptions(options));
 ```
+
+The `-V -1` option enables Weka's internal cross-validation for probability calibration, which fits logistic models to convert SVM decision values into well-calibrated probabilities.
 
 **Result**: `getClassificationProbabilities()` returns calibrated probabilities in [0, 1].
 
@@ -716,10 +748,9 @@ public class WekaInstancesConverter extends TrainingTemplate<Instances> {
 ```java
 @Component
 public class PredictionMetrics {
-    // Label distribution
+    // Label distribution (binary)
     Counter positiveCounter;
     Counter negativeCounter;
-    Counter neutralCounter;
 
     // Confidence monitoring
     DistributionSummary confidenceDistribution;  // Percentiles: p50, p95, p99
@@ -731,7 +762,7 @@ public class PredictionMetrics {
 ```
 
 **Exposed Metrics (Prometheus format):**
-- `sentiment_predictions_total{label="positive|negative|neutral"}`
+- `sentiment_predictions_total{label="positive|negative"}`
 - `sentiment_predictions_low_confidence`
 - `sentiment_inference_duration_seconds{quantile="0.5|0.95|0.99"}`
 - `sentiment_prediction_confidence{quantile="0.5|0.95|0.99"}`
@@ -933,13 +964,14 @@ List<SentimentResponse> results = futures.stream()
 2. Multi-class (positive/neutral/negative)
 3. Multi-label (tags: angry, happy, sarcastic, etc.)
 
-**Decision**: Binary for v1.0.
+**Decision**: Binary classification.
 
 **Rationale**:
 - Most use cases are binary (recommend/don't recommend)
-- Neutral class is ambiguous (indifferent vs. mixed)
-- Easier evaluation and higher accuracy
-- Roadmap: Multi-class in v2.0
+- Neutral class is ambiguous (indifferent vs. mixed sentiment)
+- Higher accuracy and clearer evaluation metrics
+- Cross-domain generalization is more reliable with binary labels
+- Datasets with neutral labels have inconsistent definitions
 
 ---
 
@@ -1055,5 +1087,5 @@ List<SentimentResponse> results = futures.stream()
 
 ---
 
-**Last Updated**: 2025-12-13
+**Last Updated**: 2026-01-18
 **Author**: Victoria Alabi

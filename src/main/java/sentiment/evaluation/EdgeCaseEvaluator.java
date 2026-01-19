@@ -22,7 +22,7 @@ import java.util.stream.Collectors;
  */
 public class EdgeCaseEvaluator {
 
-    private static final String EDGE_CASES_DIR = "datasets/edge_cases";
+    private static final String EDGE_CASES_DIR = "data/raw/edge_cases";
     private static final String[] EDGE_CASE_TYPES = {
         "sarcasm", "mixed_sentiment", "negation_heavy", "domain_jargon"
     };

@@ -16,7 +16,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Simple, extensible dataset loader with format auto-detection.
@@ -118,6 +120,7 @@ public class SimpleDatasetLoader {
     /**
      * Load CSV/TSV format with flexible column detection.
      * Handles various column naming conventions automatically.
+     * Uses STRATIFIED SAMPLING when maxRows > 0 to preserve class distribution.
      *
      * @param filePath path to CSV file
      * @param delimiter delimiter character (comma or tab)
@@ -129,9 +132,36 @@ public class SimpleDatasetLoader {
         int totalRows = 0;
         int successfulRows = 0;
         int skippedRows = 0;
+        int skippedDueToQuota = 0;
 
-        // Early stopping flag
-        boolean shouldStop = maxRows > 0;
+        // Stratified sampling: calculate quotas per class if maxRows specified
+        Map<Dataset.SentimentLabel, Integer> quotas = null;
+        Map<Dataset.SentimentLabel, Integer> collected = null;
+
+        if (maxRows > 0) {
+            logger.info("Stratified sampling enabled: scanning class distribution first...");
+            Map<Dataset.SentimentLabel, Integer> distribution = scanClassDistribution(filePath, delimiter);
+
+            int totalBinarySamples = distribution.values().stream().mapToInt(Integer::intValue).sum();
+            logger.info("Dataset distribution: {} (total binary: {})", distribution, totalBinarySamples);
+
+            // Calculate proportional quotas
+            quotas = new HashMap<>();
+            for (Map.Entry<Dataset.SentimentLabel, Integer> entry : distribution.entrySet()) {
+                double ratio = (double) entry.getValue() / totalBinarySamples;
+                int quota = Math.max(1, (int) Math.round(maxRows * ratio));
+                quotas.put(entry.getKey(), quota);
+            }
+
+            // Initialize collected counts
+            collected = new HashMap<>();
+            for (Dataset.SentimentLabel label : quotas.keySet()) {
+                collected.put(label, 0);
+            }
+
+            logger.info("Stratified quotas: {} (target total: {})", quotas,
+                quotas.values().stream().mapToInt(Integer::intValue).sum());
+        }
 
         try (BufferedReader reader = new BufferedReader(new FileReader(filePath, StandardCharsets.UTF_8))) {
 
@@ -167,11 +197,20 @@ public class SimpleDatasetLoader {
                 logger.info("Using columns: text='{}', sentiment='{}'", textColumn, sentimentColumn);
 
                 for (CSVRecord record : parser) {
-                    // Early stopping: check if we've loaded enough successful rows
-                    if (shouldStop && successfulRows >= maxRows) {
-                        logger.info("Early stopping: reached maxRows limit of {} successfully loaded records", maxRows);
-                        logger.info("Total rows processed: {}, skipped: {}", totalRows, skippedRows);
-                        break;
+                    // Stratified early stopping: check if all quotas are filled
+                    if (quotas != null) {
+                        boolean allQuotasFilled = true;
+                        for (Map.Entry<Dataset.SentimentLabel, Integer> entry : quotas.entrySet()) {
+                            if (collected.get(entry.getKey()) < entry.getValue()) {
+                                allQuotasFilled = false;
+                                break;
+                            }
+                        }
+                        if (allQuotasFilled) {
+                            logger.info("Early stopping: all stratified quotas filled");
+                            logger.info("Final collection: {}", collected);
+                            break;
+                        }
                     }
 
                     totalRows++;
@@ -199,6 +238,18 @@ public class SimpleDatasetLoader {
                             continue;
                         }
 
+                        // Skip neutral samples for binary classification
+                        if (sentiment == Dataset.SentimentLabel.NEUTRAL) {
+                            skippedRows++;
+                            continue;
+                        }
+
+                        // Stratified sampling: check if quota for this class is filled
+                        if (quotas != null && collected.get(sentiment) >= quotas.get(sentiment)) {
+                            skippedDueToQuota++;
+                            continue;
+                        }
+
                         // Build dataset
                         Dataset dataset = new Dataset.Builder(text.trim(), sentiment)
                             .source("csv")
@@ -208,6 +259,11 @@ public class SimpleDatasetLoader {
 
                         datasets.add(dataset);
                         successfulRows++;
+
+                        // Update collected count for stratified sampling
+                        if (collected != null) {
+                            collected.merge(sentiment, 1, Integer::sum);
+                        }
 
                         // Log first successful record
                         if (datasets.size() == 1) {
@@ -241,6 +297,18 @@ public class SimpleDatasetLoader {
             );
         }
 
+        // Log stratification results
+        if (quotas != null) {
+            logger.info("=== Stratification Verification ===");
+            for (Dataset.SentimentLabel label : quotas.keySet()) {
+                int quota = quotas.get(label);
+                int actual = collected.get(label);
+                double deviation = quota > 0 ? Math.abs(actual - quota) / (double) quota * 100 : 0;
+                logger.info("  {}: target={}, actual={}, deviation={:.1f}%", label, quota, actual, deviation);
+            }
+            logger.info("  Skipped due to quota: {}", skippedDueToQuota);
+        }
+
         double errorRate = (double) skippedRows / totalRows;
         if (errorRate > 0.5) {
             logger.warn("High error rate: {}/{} rows skipped ({}%)",
@@ -249,6 +317,58 @@ public class SimpleDatasetLoader {
 
         logger.info("CSV loading complete: {}/{} rows loaded successfully", successfulRows, totalRows);
         return datasets;
+    }
+
+    /**
+     * First pass: scan CSV to count samples per class for stratified sampling.
+     * Only counts binary classes (skips neutral).
+     */
+    private Map<Dataset.SentimentLabel, Integer> scanClassDistribution(String filePath, char delimiter)
+            throws DataLoadingException {
+        Map<Dataset.SentimentLabel, Integer> distribution = new HashMap<>();
+        distribution.put(Dataset.SentimentLabel.POSITIVE, 0);
+        distribution.put(Dataset.SentimentLabel.NEGATIVE, 0);
+
+        try (BufferedReader reader = new BufferedReader(new FileReader(filePath, StandardCharsets.UTF_8))) {
+            CSVFormat format = CSVFormat.Builder.create()
+                .setDelimiter(delimiter)
+                .setHeader()
+                .setSkipHeaderRecord(true)
+                .setIgnoreEmptyLines(true)
+                .setTrim(true)
+                .setQuote('"')
+                .setIgnoreHeaderCase(true)
+                .build();
+
+            try (CSVParser parser = format.parse(reader)) {
+                List<String> headers = parser.getHeaderNames();
+                String sentimentColumn = detectColumn(headers, SENTIMENT_COLUMNS);
+
+                if (sentimentColumn == null) {
+                    throw new DataLoadingException(
+                        "Could not detect sentiment column for distribution scan",
+                        filePath, "CSV");
+                }
+
+                for (CSVRecord record : parser) {
+                    try {
+                        String sentimentStr = record.get(sentimentColumn);
+                        if (ValidationUtils.isNullOrEmpty(sentimentStr)) continue;
+
+                        Dataset.SentimentLabel sentiment = parseSentiment(sentimentStr.trim());
+                        if (sentiment != null && sentiment != Dataset.SentimentLabel.NEUTRAL) {
+                            distribution.merge(sentiment, 1, Integer::sum);
+                        }
+                    } catch (Exception e) {
+                        // Skip problematic rows in scan
+                    }
+                }
+            }
+        } catch (IOException e) {
+            throw new DataLoadingException("Failed to scan CSV distribution", filePath, "CSV", e);
+        }
+
+        return distribution;
     }
 
     /**

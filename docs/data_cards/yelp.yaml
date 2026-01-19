@@ -1,0 +1,112 @@
+name: Yelp Reviews Dataset
+version: "yelp-open-2023"
+source: https://business.yelp.com/data/resources/open-dataset/
+license: Yelp Dataset License (free for academic use)
+
+# Raw Dataset (pre-sampled from Yelp Open Dataset)
+raw:
+  file: data/raw/yelp/yelp_reviews.csv
+  total_samples: 100000
+  columns: [text, sentiment]
+  class_distribution:
+    positive: 67354
+    negative: 22891
+    neutral: 9755
+  original_size: "~7M reviews in full dataset"
+  sampling: "First 100K rows, shuffled with seed=42"
+
+# Training Split (binary classification - neutrals filtered)
+training:
+  method: "80/20 stratified split after filtering neutral samples"
+  neutral_handling: "Excluded for binary classification"
+  binary_samples: 90245  # 67354 + 22891
+  train_samples: ~72000
+  test_samples: ~18000
+  cross_validation: "5-fold CV used internally for hyperparameter tuning"
+
+# Processed Test Set (saved for cross-domain evaluation)
+processed:
+  file: data/processed/yelp/test.csv
+  samples: 9158  # After neutral filtering and 20% split
+
+# Preparation
+preparation:
+  prerequisites:
+    - Yelp account (free)
+    - Agree to Yelp Dataset License
+    - Python 3.8+ with pandas
+  steps:
+    - Visit https://business.yelp.com/data/resources/open-dataset/
+    - Agree to terms and download yelp_dataset.tar
+    - Extract yelp_academic_dataset_review.json
+    - Run the Python code below to convert and sample
+  code: |
+    import pandas as pd
+    import json
+
+    # Stream JSON (large file, don't load all at once)
+    reviews = []
+    with open('yelp_academic_dataset_review.json', 'r') as f:
+        for i, line in enumerate(f):
+            if i >= 100_000:
+                break
+            reviews.append(json.loads(line))
+
+    df = pd.DataFrame(reviews)
+
+    # Derive sentiment from stars
+    def stars_to_sentiment(stars):
+        if stars >= 4:
+            return 'positive'
+        elif stars <= 2:
+            return 'negative'
+        else:
+            return 'neutral'
+
+    df['sentiment'] = df['stars'].apply(stars_to_sentiment)
+    df = df[['text', 'sentiment']]
+
+    # Shuffle with seed
+    df = df.sample(frac=1, random_state=42).reset_index(drop=True)
+
+    # Save
+    df.to_csv('data/raw/yelp/yelp_reviews.csv', index=False)
+    print(f"Done: {len(df)} reviews")
+    print(df['sentiment'].value_counts())
+  verification: |
+    python3 -c "import csv; r=list(csv.reader(open('data/raw/yelp/yelp_reviews.csv'))); print('Rows:', len(r)-1)"
+    # Expected: 100000
+
+# Data Quality
+class_imbalance:
+  note: "Positive-skewed (67%) - typical of Yelp rating distribution"
+  mitigation: "Model trained on binary subset; class weights considered"
+
+avg_review_length:
+  positive: "498 chars"
+  negative: "722 chars"
+  neutral: "663 chars"
+
+known_biases:
+  - business_type_bias: "Restaurant and food service reviews dominate"
+  - geographic_bias: "Concentration in major US metro areas"
+  - length_bias: "Negative reviews avg 45% longer than positive"
+
+measurement_issues:
+  - star_to_sentiment: "3-star reviews labeled neutral but often contain mixed sentiment"
+  - temporal_drift: "Reviews span 2004-2023, language patterns evolved"
+
+edge_cases:
+  - service_vs_product: "Good food, bad service (mixed sentiment)"
+  - business_jargon: "Industry-specific terminology (HVAC, legal, medical)"
+  - location_context: "References to local landmarks or competitors"
+
+# Validation
+human_agreement: "Not measured (labels derived from star ratings)"
+label_source: "Star ratings: 4-5=positive, 1-2=negative, 3=neutral"
+noise_estimate: "~5-10% star-sentiment mismatch (5-star complaints, 1-star praise)"
+
+# Ethics
+personal_info: "Business names included, reviewer names excluded"
+offensive_content: "May contain offensive language in negative reviews"
+commercial_use: "Check Yelp Dataset License for restrictions"

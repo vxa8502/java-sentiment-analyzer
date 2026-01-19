@@ -33,7 +33,6 @@ import org.springframework.validation.annotation.Validated;
  * @see sentiment.preprocessing.TextPreprocessor
  * @see sentiment.preprocessing.WekaInstancesConverter
  */
-@Configuration
 @ConfigurationProperties(prefix = "sentiment.features")
 @Validated
 public class FeatureExtractionProperties {

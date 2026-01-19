@@ -2,70 +2,24 @@
 
 A multi-algorithm sentiment analysis system in Java, built with Spring Boot and Weka.
 
-## Description
-
-This project is a high-performance sentiment analysis service that provides a REST API for analyzing the sentiment of text. It supports single and batch text analysis, confidence thresholds, and provides detailed model performance metrics. The system is designed for scalability and can be easily extended with new machine learning models.
-
 ## Features
 
-- **REST API:** Simple and intuitive API for sentiment analysis.
-- **Batch Processing:** Analyze multiple texts in a single request for efficiency.
-- **Multiple Algorithms:** SVM, Naive Bayes, Random Forest, Logistic Regression.
-- **Confidence Scores:** Provides confidence scores for each prediction.
-- **Cross-Domain Evaluation:** 12 models trained, tested across 3 domains (movies, products, restaurants).
-- **Edge Case Testing:** 200 real failures tested (sarcasm, negation, mixed sentiment, jargon).
-- **Error Analysis:** Built-in tools to find and categorize model failures.
-- **Docker Support:** Comes with a `Dockerfile` and `docker-compose.yml` for easy deployment.
-
-## Production Model
-
-**Deployed Model**: Logistic Regression (trained on Amazon Product Reviews)
-
-| Metric | Performance |
-|--------|-------------|
-| **Cross-domain average** | 83.0% (rank #2) |
-| **Edge case accuracy** | **62.5% (rank #1)**  |
-| **In-domain (Amazon)** | 87.5% |
-| **Generalization** | IMDB: 83.5%, Yelp: 82.5% |
-| **Model size** | 17 MB |
-| **Inference speed** | ~10ms per prediction |
-
-**Why this model?**
-- Best balance of cross-domain generalization and edge case robustness
-- Handles sarcasm (58%), negation (60%), and mixed sentiment (64%)
-- Well-calibrated confidence scores (Brier: 0.095)
-- Fast inference and production-ready
-
-## Evaluation Results
-
-- **12 Models Trained**: 4 algorithms × 3 domains
-- **Best Cross-Domain**: SVM Amazon (84.3%)
-- **Best Edge Cases**: Logistic Regression Amazon (62.5%)
-- **Most Robust**: Logistic Regression Amazon (deployed)
-- **200 Edge Cases**: Real failures from 18,000+ prediction errors
-- See [results/FINAL_COMPREHENSIVE_REPORT.md](results/FINAL_COMPREHENSIVE_REPORT.md) for complete evaluation
-
-## Technology Stack
-
-- **Java 21**
-- **Spring Boot 3:** For the REST API and application framework.
-- **Weka 3.9:** For machine learning algorithms.
-- **Maven:** For project build and dependency management.
-- **Jackson:** For JSON processing.
-- **Resilience4j:** For rate limiting.
-- **Docker:** For containerization.
+- **REST API:** Simple endpoints for single and batch sentiment analysis
+- **Multiple Algorithms:** SVM, Naive Bayes, Random Forest, Logistic Regression
+- **Cross-Domain Evaluation:** Models trained and tested across 3 domains (movies, products, restaurants)
+- **Edge Case Testing:** Curated test suite for sarcasm, negation, mixed sentiment, jargon
+- **Docker Support:** Production-ready containerization
 
 ## Quick Start
 
-**Clone and run with production model (< 1 minute):**
-
 ```bash
-git clone https://github.com/your-username/java-sentiment-analyzer.git
+# Clone and run
+git clone <repo-url>
 cd java-sentiment-analyzer
 docker-compose up
 ```
 
-The API will start on http://localhost:8080 using the **production model** (Logistic Regression trained on Amazon reviews).
+The API starts on http://localhost:8080.
 
 **Test it:**
 ```bash
@@ -83,179 +37,100 @@ curl -X POST http://localhost:8080/api/v1/sentiment/analyze \
 }
 ```
 
----
-
-## Three Ways to Use This Project
-
-### 1�� Quick Demo (95% of users)
-
-**Just want to see it working?**
-
-```bash
-git clone https://github.com/your-username/java-sentiment-analyzer.git
-cd java-sentiment-analyzer
-docker-compose up
-```
-
- Uses production model (included in repo)
- ~50MB repo size
- Works immediately
-
----
-
-### 2�� Reproduce Full Evaluation (Researchers)
-
-**Want all 12 models to compare performance?**
-
-```bash
-git clone https://github.com/your-username/java-sentiment-analyzer.git
-cd java-sentiment-analyzer
-
-# Download all pre-trained models (~294MB)
-./scripts/download_pretrained_models.sh
-
-# Re-run cross-domain evaluation
-./scripts/evaluate_cross_domain.sh
-
-# Test on edge cases
-./scripts/evaluate_edge_cases.sh all
-
-# View results
-cat results/cross_domain_matrix.json
-```
-
- All 12 models included
- Full evaluation reproducible
- ~30 second download
-
----
-
-### 3�� Retrain from Scratch (ML Engineers)
-
-**Want to modify and retrain?**
-
-```bash
-git clone https://github.com/your-username/java-sentiment-analyzer.git
-cd java-sentiment-analyzer
-
-# Train all 12 models (~2 hours)
-./scripts/train_all_models.sh
-
-# Models saved to models/{svm,naive_bayes,random_forest,logistic_regression}/
-```
-
- Full training pipeline
- Modify preprocessing, hyperparameters
- Train on your own data
-
----
-
-## Prerequisites
-
-- **Docker** (for quick start)
-- **Java 21** (for local development)
-- **Maven 3.6+** (for building from source)
-
-## API Usage
+## API Endpoints
 
 ### Single Text Analysis
-
 ```bash
 curl -X POST http://localhost:8080/api/v1/sentiment/analyze \
   -H "Content-Type: application/json" \
   -d '{"text":"This product is amazing!"}'
 ```
 
-**Response:**
-```json
-{
-  "sentiment": "positive",
-  "confidence": 0.94,
-  "processingTimeMs": 42
-}
-```
-
 ### Batch Analysis
-
 ```bash
 curl -X POST http://localhost:8080/api/v1/sentiment/batch \
   -H "Content-Type: application/json" \
   -d '{"texts":["Great product!", "Terrible quality.", "It works."]}'
 ```
 
-### Health Check (with Production Metrics)
-
+### Health Check
 ```bash
 curl http://localhost:8080/api/v1/health
 ```
 
-**Response includes:**
-- Model status and algorithm
-- Production metrics: confidence, latency, label distribution
-- See [DEPLOYMENT.md](docs/DEPLOYMENT.md) for monitoring details
+## Training Pipeline
 
-## Cross-Domain Evaluation
+Train all 12 models (4 algorithms x 3 datasets):
+```bash
+./scripts/train_all_models.sh
+```
 
-Test all models across all domains:
+Run cross-domain evaluation:
 ```bash
 ./scripts/evaluate_cross_domain.sh
 ```
 
-Analyze prediction errors:
-```bash
-./scripts/analyze_errors.sh svm imdb_50k --export --top-n 50
-```
-
-Test models on edge cases:
+Evaluate edge cases:
 ```bash
 ./scripts/evaluate_edge_cases.sh all
 ```
 
-## Datasets
-
-- **IMDB 50K**: 25K train, 10K test (movie reviews)
-- **Amazon Polarity**: 100K train, 20K test (product reviews)
-- **Yelp**: 100K train, 20K test (restaurant reviews)
-
-See [datasets/README.md](datasets/README.md) for sources, biases, and edge case details.
-
-## Model Details
-
-### All 12 Models
-
-| Algorithm | Training Domain | Cross-Domain Avg | Edge Case Accuracy |
-|-----------|----------------|------------------|-------------------|
-| **Logistic Regression** | **Amazon** | **83.0%** | **62.5%**  |
-| SVM | Amazon | **84.3%**  | 57.5% |
-| Random Forest | Yelp | 68.2% | 61.5%  |
-| SVM | IMDB | 80.6% | 46.0% |
-| Naive Bayes | Amazon | 68.5% | 12.5%  |
-
-**Download all models**: `./scripts/download_pretrained_models.sh`
-
-### Training Your Own Models
-
+Promote best model to production:
 ```bash
-# Train a specific model
-mvn exec:java -Dexec.mainClass="sentiment.training.TrainModel" \
-  -Dexec.args="./data/Reviews.csv ./models/svm-model.ser 10000 true"
-
-# Or train all 12 models
-./scripts/train_all_models.sh
+./scripts/promote_to_production.sh
 ```
 
-Each training run generates:
-- `model.ser` - Trained model
-- `model.metadata.json` - Training metrics, hyperparameters, reproducibility info
-- `model.feature-importance.json` - Feature analysis (if available)
+See [docs/TRAINING.md](docs/TRAINING.md) for detailed training documentation.
 
-**For detailed training documentation, see [TRAINING.md](docs/TRAINING.md)**
+## Datasets
+
+| Dataset | Size | Domain |
+|---------|------|--------|
+| IMDB 50K | 25K train, 10K test | Movie reviews |
+| Amazon Polarity | 100K train, 20K test | Product reviews |
+| Yelp | 100K train, 20K test | Restaurant reviews |
+
+## Technology Stack
+
+- **Java 21**
+- **Spring Boot 3.4**
+- **Weka 3.9.6** (ML algorithms)
+- **Maven** (build)
+- **Resilience4j** (rate limiting)
+- **Docker** (deployment)
+
+## Prerequisites
+
+- **Docker** (for quick start)
+- **Java 21** (for local development)
+- **Maven 3.9+** (for building from source)
+
+## Project Structure
+
+```
+├── src/main/java/sentiment/
+│   ├── api/                 # REST controllers
+│   ├── models/              # ML classifiers
+│   ├── preprocessing/       # Text preprocessing
+│   ├── training/            # Model training
+│   └── evaluation/          # Cross-domain & edge case evaluation
+├── scripts/                 # Training and evaluation scripts
+├── models/production/       # Deployed model
+└── docs/                    # Documentation
+```
 
 ## Documentation
 
-- **[TRAINING.md](docs/TRAINING.md)** - Model training, comparison, and reproducibility
-- **[DEPLOYMENT.md](docs/DEPLOYMENT.md)** - Docker deployment and production monitoring
+- [TRAINING.md](docs/TRAINING.md) - Model training and evaluation
+- [DEPLOYMENT.md](docs/DEPLOYMENT.md) - Docker deployment and monitoring
+- [ARCHITECTURE.md](docs/ARCHITECTURE.md) - System design
+
+## Limitations
+
+- **Binary classifier only**: Predicts `positive` or `negative` (no `neutral`)
+- Neutral/ambiguous text will be classified with lower confidence
+- For 3-class prediction, retrain with a dataset containing neutral labels
 
 ## License
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+MIT License. See [LICENSE](LICENSE) for details.

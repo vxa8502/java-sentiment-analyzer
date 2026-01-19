@@ -17,7 +17,7 @@ import java.util.stream.Collectors;
  * 1. Run this tool to find misclassifications
  * 2. Review worst predictions (high confidence errors)
  * 3. Manually categorize them into edge case sets
- * 4. Add to datasets/edge_cases/*.csv
+ * 4. Add to data/raw/edge_cases/*.csv
  *
  * @author Victoria Alabi
  */
@@ -178,7 +178,7 @@ public class ErrorAnalyzer {
             sb.append("\nNext Steps:\n");
             sb.append("1. Review the worst predictions above\n");
             sb.append("2. Manually categorize them (sarcasm, negation, mixed, jargon)\n");
-            sb.append("3. Add to datasets/edge_cases/*.csv\n");
+            sb.append("3. Add to data/raw/edge_cases/*.csv\n");
             sb.append("4. Use --export to save all errors to CSV for batch review\n");
 
             return sb.toString();

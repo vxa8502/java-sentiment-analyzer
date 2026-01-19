@@ -283,8 +283,9 @@ public class WekaInstancesConverter extends sentiment.TrainingTemplate<Instances
             logger.info("INFERENCE: Transforming {} datasets with preserved labels (thread-safe)",
                     datasets.size());
 
-            // Step 1: Create raw instances with preprocessing
-            Instances rawInstances = createRawInstances(datasets);
+            // Step 1: Create raw instances using TRAINING structure's class attribute
+            // This ensures class values match what the model was trained on
+            Instances rawInstances = createRawInstancesForInference(datasets);
 
             // Step 2: Apply trained StringToWordVector filter to entire batch (more efficient)
             Instances tfidfInstances = Filter.useFilter(rawInstances, trainedStringToWordFilter);
@@ -319,6 +320,32 @@ public class WekaInstancesConverter extends sentiment.TrainingTemplate<Instances
         for (Dataset dataset : datasets) {
             DenseInstance instance = new DenseInstance(2);
             instance.setDataset(instances);  // Must set dataset BEFORE setValue()
+            String preprocessed = textPreprocessor.transform(dataset.getText());
+            instance.setValue(0, preprocessed);
+            instance.setValue(1, dataset.getSentiment().getDisplayName());
+            instances.add(instance);
+        }
+
+        return instances;
+    }
+
+    /**
+     * Create raw instances for inference using the training structure's class attribute.
+     * This ensures class values match what the model was trained on.
+     */
+    private Instances createRawInstancesForInference(List<Dataset> datasets) {
+        if (filterTrainingStructure == null) {
+            throw new IllegalStateException("No training structure available. Call fit() first.");
+        }
+
+        logger.info("Creating raw instances for inference: {} datasets", datasets.size());
+
+        // Use the training structure as template to preserve class attribute values
+        Instances instances = new Instances(filterTrainingStructure, datasets.size());
+
+        for (Dataset dataset : datasets) {
+            DenseInstance instance = new DenseInstance(2);
+            instance.setDataset(instances);
             String preprocessed = textPreprocessor.transform(dataset.getText());
             instance.setValue(0, preprocessed);
             instance.setValue(1, dataset.getSentiment().getDisplayName());
@@ -370,12 +397,72 @@ public class WekaInstancesConverter extends sentiment.TrainingTemplate<Instances
         Instances singleSet = new Instances(rawInstance.dataset(), 1);
         singleSet.add(rawInstance);
 
+        Instances filtered;
+
         // Apply StringToWordVector (thread-safe)
-        Instances filtered = Filter.useFilter(singleSet, trainedStringToWordFilter);
+        try {
+            filtered = Filter.useFilter(singleSet, trainedStringToWordFilter);
+        } catch (RuntimeException e) {
+            // Weka throws "Queue is empty" when all tokens are filtered out
+            if (e.getMessage() != null && e.getMessage().contains("Queue is empty")) {
+                logger.warn("Filter resulted in empty queue (all tokens filtered out). Creating zero-vector instance.");
+                filtered = null;
+            } else {
+                throw e;
+            }
+        }
+
+        // Handle case where all words are filtered out (not in vocabulary or below min frequency)
+        if (filtered == null || filtered.numInstances() == 0) {
+            logger.warn("All tokens filtered out for text. Creating zero-vector instance. " +
+                    "This may indicate out-of-vocabulary words or very short text.");
+
+            // Create a zero-vector instance with the proper structure
+            // Get the output format from the filter to ensure correct structure
+            Instances outputFormat = trainedStringToWordFilter.getOutputFormat();
+            if (outputFormat == null) {
+                throw new IllegalStateException("Filter output format is null");
+            }
+
+            // Create instance with all zeros
+            Instance zeroInstance = new DenseInstance(outputFormat.numAttributes());
+            zeroInstance.setDataset(outputFormat);
+
+            // Set class value if present
+            if (outputFormat.classIndex() >= 0 && rawInstance.classIndex() >= 0) {
+                try {
+                    zeroInstance.setClassValue(rawInstance.classValue());
+                } catch (Exception e) {
+                    logger.debug("Could not set class value on zero instance: {}", e.getMessage());
+                }
+            }
+
+            filtered = new Instances(outputFormat, 1);
+            filtered.add(zeroInstance);
+        }
 
         // Apply normalization if enabled (thread-safe)
         if (normalizeFeatures && trainedNormalizationFilter != null) {
-            filtered = Filter.useFilter(filtered, trainedNormalizationFilter);
+            try {
+                filtered = Filter.useFilter(filtered, trainedNormalizationFilter);
+            } catch (RuntimeException e) {
+                if (e.getMessage() != null && e.getMessage().contains("Queue is empty")) {
+                    logger.warn("Normalization filter resulted in empty queue. Creating zero-vector.");
+                    filtered = null;
+                } else {
+                    throw e;
+                }
+            }
+
+            // Normalization can also result in empty instances in edge cases
+            if (filtered == null || filtered.numInstances() == 0) {
+                logger.warn("Normalization resulted in empty instances. Creating zero-vector.");
+                Instances outputFormat = trainedNormalizationFilter.getOutputFormat();
+                Instance zeroInstance = new DenseInstance(outputFormat.numAttributes());
+                zeroInstance.setDataset(outputFormat);
+                filtered = new Instances(outputFormat, 1);
+                filtered.add(zeroInstance);
+            }
         }
 
         return filtered.instance(0);

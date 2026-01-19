@@ -2,9 +2,13 @@
 
 # Training Pipeline Script
 # Trains all model variants (SVM, Naive Bayes, Random Forest, Logistic Regression) on all datasets
-# Following David's and Sofia's recommendations for reproducible training
 
 set -e
+
+# Resolve project root (works regardless of where script is called from)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+cd "$PROJECT_ROOT"
 
 echo "-----------------------------------------------------------------"
 echo "  Multi-Dataset Model Training Pipeline"
@@ -14,8 +18,16 @@ echo ""
 # Configuration
 DATASETS=("yelp" "imdb_50k" "amazon_polarity")
 ALGORITHMS=("naive_bayes" "svm" "random_forest" "logistic_regression")
-MAX_SAMPLES=100000  # Sofia's recommendation: 100K balanced samples
 RANDOM_SEED=42
+
+# Consistent sample sizes across all datasets:
+#   - 50K total with STRATIFIED SAMPLING (preserves class distribution)
+#   - After 80/20 split: ~40K train, ~10K test
+#   - After class balancing: varies by dataset imbalance
+#   - IMDB: 50K (all available) -> 40K train balanced
+#   - Amazon: 50K (from 300K) -> 40K train balanced
+#   - Yelp: 50K (from 90K binary) -> ~20K train after 75/25 balancing
+MAX_SAMPLES=50000
 
 # Counters for progress tracking
 total_models=$((${#DATASETS[@]} * ${#ALGORITHMS[@]}))
@@ -24,7 +36,7 @@ models_skipped=0
 models_failed=0
 
 # Build project if needed
-if [ ! -f "target/sentiment-analyzer-1.0.0.jar" ]; then
+if [ ! -f "$PROJECT_ROOT/target/sentiment-analyzer-1.0.0.jar" ]; then
     echo "Building project..."
     mvn clean package -DskipTests
     echo "[OK] Build complete"
@@ -46,23 +58,18 @@ for dataset in "${DATASETS[@]}"; do
         echo "Training: $algo on $dataset"
         echo "-----------------------------------------------------------------"
 
-        # Prepare paths (respect original data format)
-        # Adjust maxSamples for memory-constrained environments
+        # Prepare paths
+        # All datasets use MAX_SAMPLES (50K) with unified 80/20 stratified split
+        # No separate test files - we create our own splits for consistency
         case "$dataset" in
             imdb_50k)
-                dataset_path="data/raw/imdb_50k/IMDB Dataset.csv"  # 50K single file
-                test_path=""  # No pre-split, training will do 60/20/20
-                dataset_max_samples=$MAX_SAMPLES
+                dataset_path="$PROJECT_ROOT/data/raw/imdb_50k/IMDB Dataset.csv"
                 ;;
             amazon_polarity)
-                dataset_path="data/raw/amazon_polarity/train.csv"  # 3.6M official training set
-                test_path="data/raw/amazon_polarity/test.csv"      # 400K official test set
-                dataset_max_samples=50000  # Reduced for memory constraints (8GB RAM)
+                dataset_path="$PROJECT_ROOT/data/raw/amazon_polarity/train.csv"
                 ;;
             yelp)
-                dataset_path="data/raw/yelp/yelp_reviews.csv"  # 100K single file
-                test_path=""  # No pre-split, training will do 60/20/20
-                dataset_max_samples=$MAX_SAMPLES
+                dataset_path="$PROJECT_ROOT/data/raw/yelp/yelp_reviews.csv"
                 ;;
             *)
                 echo "[WARN] Unknown dataset: $dataset"
@@ -70,7 +77,7 @@ for dataset in "${DATASETS[@]}"; do
                 ;;
         esac
 
-        model_path="models/${algo}/${dataset}_${algo}_model.ser"
+        model_path="$PROJECT_ROOT/models/${algo}/${dataset}_${algo}_model.ser"
 
         # Check if model already exists (skip if it does)
         if [ -f "$model_path" ]; then
@@ -89,26 +96,18 @@ for dataset in "${DATASETS[@]}"; do
         fi
 
         # Train model using TrainModel CLI via Maven exec
-        # Args: <dataPath> <outputPath> <algorithm> [maxSamples] [showFeatureImportance] [topFeaturesCount] [enableHyperparameterTuning] [testDataPath]
-        # Note: Memory settings are passed via MAVEN_OPTS environment variable (8g for logistic regression, 6g for others)
+        # Args: <dataPath> <outputPath> <algorithm> [maxSamples] [showFeatureImportance] [topFeaturesCount] [enableHyperparameterTuning]
+        # Note: Memory settings are passed via MAVEN_OPTS environment variable
         heap_size="8g"
         if [ "$algo" = "logistic_regression" ]; then
             heap_size="10g"
         fi
 
-        if [ -n "$test_path" ] && [ -f "$test_path" ]; then
-            echo "Using official test set: $test_path (heap: $heap_size)"
-            MAVEN_OPTS="-Xmx${heap_size} -XX:+UseG1GC -XX:MaxGCPauseMillis=200" mvn -q exec:java \
-                -Dexec.mainClass="sentiment.training.TrainModel" \
-                -Dexec.args="\"$dataset_path\" \"$model_path\" \"$algo\" $MAX_SAMPLES false 30 false \"$test_path\"" \
-                -Dexec.cleanupDaemonThreads=false
-        else
-            echo "Using 60/20/20 split (heap: $heap_size)"
-            MAVEN_OPTS="-Xmx${heap_size} -XX:+UseG1GC -XX:MaxGCPauseMillis=200" mvn -q exec:java \
-                -Dexec.mainClass="sentiment.training.TrainModel" \
-                -Dexec.args="\"$dataset_path\" \"$model_path\" \"$algo\" $MAX_SAMPLES false 30 false" \
-                -Dexec.cleanupDaemonThreads=false
-        fi
+        echo "Using stratified 80/20 split (heap: $heap_size)"
+        MAVEN_OPTS="-Xmx${heap_size} -XX:+UseG1GC -XX:MaxGCPauseMillis=200" mvn -q exec:java \
+            -Dexec.mainClass="sentiment.training.TrainModel" \
+            -Dexec.args="\"$dataset_path\" \"$model_path\" \"$algo\" $MAX_SAMPLES false 30 false" \
+            -Dexec.cleanupDaemonThreads=false
 
         if [ $? -eq 0 ]; then
             echo "[OK] Training complete: $model_path"

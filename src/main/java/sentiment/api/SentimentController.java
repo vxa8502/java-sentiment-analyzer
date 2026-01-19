@@ -14,6 +14,8 @@ import sentiment.api.metrics.PredictionMetrics;
 import sentiment.evaluation.FeatureImportancePersistence;
 import sentiment.models.SentimentClassifier;
 
+import java.util.List;
+
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -32,7 +34,7 @@ public class SentimentController {
     private static final Logger logger = LoggerFactory.getLogger(SentimentController.class);
     private final SentimentClassifier classifier;
     private final PredictionMetrics metrics;
-    private final String svmModelPath;
+    private final String loadedModelPath;
     private final long startTime;
 
     private FeatureImportanceResponse cachedFeatureImportance;
@@ -40,13 +42,13 @@ public class SentimentController {
 
     public SentimentController(SentimentClassifier classifier,
                                PredictionMetrics metrics,
-                               @Value("${sentiment.models.svm-model-path:./models/svm-model.ser}") String svmModelPath) {
+                               String loadedModelPath) {
         this.classifier = classifier;
         this.metrics = metrics;
-        this.svmModelPath = svmModelPath;
+        this.loadedModelPath = loadedModelPath;
         this.startTime = System.currentTimeMillis();
-        logger.info("SentimentController initialized with {} classifier and production metrics",
-                   classifier.getAlgorithmName());
+        logger.info("SentimentController initialized with {} classifier (model: {}) and production metrics",
+                   classifier.getAlgorithmName(), loadedModelPath);
     }
 
     /**
@@ -115,7 +117,8 @@ public class SentimentController {
     }
 
     /**
-     * Returns feature importance analysis from pre-computed data.
+     * Returns feature importance analysis.
+     * For SVM models, extracts coefficients directly from the trained model.
      * Results are cached after first request.
      *
      * @param topFeatures Number of top features to return (default: 30)
@@ -152,15 +155,89 @@ public class SentimentController {
                     ));
                 }
 
+                long startTime = System.currentTimeMillis();
+
+                // For SVM models, extract weights directly from the model
+                if (classifier instanceof sentiment.models.SVMClassifier svmClassifier) {
+                    logger.info("Extracting feature importance directly from SVM coefficients...");
+                    java.util.Map<String, Double> weights = svmClassifier.extractFeatureWeights();
+
+                    if (!weights.isEmpty()) {
+                        long nonZero = weights.values().stream()
+                                .filter(w -> Math.abs(w) > 1e-10).count();
+
+                        if (nonZero > 0) {
+                            // Sort by absolute weight
+                            List<FeatureImportanceResponse.FeatureInfo> allFeatures = weights.entrySet().stream()
+                                    .sorted((a, b) -> Double.compare(Math.abs(b.getValue()), Math.abs(a.getValue())))
+                                    .map(e -> new FeatureImportanceResponse.FeatureInfo(
+                                            e.getKey(),
+                                            e.getValue(),
+                                            Math.abs(e.getValue()),
+                                            e.getValue() > 0 ? "positive" : (e.getValue() < 0 ? "negative" : "neutral")
+                                    ))
+                                    .collect(Collectors.toList());
+
+                            // Compute statistics
+                            double[] absWeights = weights.values().stream()
+                                    .mapToDouble(Math::abs).toArray();
+                            double mean = java.util.Arrays.stream(absWeights).average().orElse(0);
+                            double variance = java.util.Arrays.stream(absWeights)
+                                    .map(w -> (w - mean) * (w - mean))
+                                    .average().orElse(0);
+                            double stdDev = Math.sqrt(variance);
+
+                            java.util.Arrays.sort(absWeights);
+                            double median = absWeights.length % 2 == 0
+                                    ? (absWeights[absWeights.length/2 - 1] + absWeights[absWeights.length/2]) / 2
+                                    : absWeights[absWeights.length/2];
+                            double p95 = absWeights[(int)(0.95 * (absWeights.length - 1))];
+
+                            FeatureImportanceResponse.Statistics stats = new FeatureImportanceResponse.Statistics(
+                                    mean, stdDev, median, p95);
+
+                            long duration = System.currentTimeMillis() - startTime;
+
+                            cachedFeatureImportance = new FeatureImportanceResponse(
+                                    classifier.getAlgorithmName(),
+                                    weights.size(),
+                                    allFeatures,
+                                    stats,
+                                    duration,
+                                    "Feature importance extracted directly from SVM coefficients. " +
+                                    "Positive weights indicate positive sentiment, negative weights indicate negative sentiment."
+                            );
+
+                            List<FeatureImportanceResponse.FeatureInfo> subset = allFeatures.stream()
+                                    .limit(topFeatures)
+                                    .collect(Collectors.toList());
+
+                            logger.info("Extracted {} features with {} non-zero weights in {}ms",
+                                    weights.size(), nonZero, duration);
+
+                            return ResponseEntity.ok(new FeatureImportanceResponse(
+                                    classifier.getAlgorithmName(),
+                                    weights.size(),
+                                    subset,
+                                    stats,
+                                    duration,
+                                    cachedFeatureImportance.note()
+                            ));
+                        }
+                    }
+                    logger.warn("SVM coefficient extraction returned no non-zero weights, falling back to file");
+                }
+
+                // Fall back to loading from pre-computed file
                 logger.info("Loading pre-computed feature importance from file...");
                 Path featureImportancePath = FeatureImportancePersistence.getFeatureImportancePath(
-                        Paths.get(svmModelPath));
+                        Paths.get(loadedModelPath));
 
                 if (!Files.exists(featureImportancePath)) {
                     return ResponseEntity.status(HttpStatus.NOT_FOUND)
                             .body(FeatureImportanceResponse.error(
-                                    "Feature importance data not found. Please re-train the model with " +
-                                    "--show-feature-importance flag to generate feature importance data. " +
+                                    "Feature importance data not found and could not be extracted from model. " +
+                                    "Please re-train the model with --show-feature-importance flag. " +
                                     "Expected file: " + featureImportancePath));
                 }
 
@@ -222,6 +299,11 @@ public class SentimentController {
         // Get production metrics snapshot
         PredictionMetrics.MetricsSnapshot snapshot = metrics.getSnapshot();
 
+        // Get supported labels from classifier (may be subset of all possible labels)
+        List<String> supportedLabels = classifier.isTrained()
+                ? List.of(classifier.getSupportedClasses())
+                : List.of();
+
         HealthResponse.ProductionMetrics productionMetrics = new HealthResponse.ProductionMetrics(
                 snapshot.totalPredictions(),
                 new HealthResponse.LabelDistribution(
@@ -242,6 +324,7 @@ public class SentimentController {
             "1.0.0",
             classifier.isTrained(),
             classifier.isTrained() ? classifier.getAlgorithmName() : "Not loaded",
+            supportedLabels,
             uptime,
             productionMetrics
         );
@@ -269,22 +352,24 @@ public class SentimentController {
                             "Check /api/v1/health for status.", text));
             }
 
-            String sentiment = classifier.classify(text);
-            double[] probabilities = classifier.getClassificationProbabilities(text);
+            // Use atomic classification to avoid race conditions in concurrent batch processing
+            SentimentClassifier.ClassificationResult result = classifier.classifyWithProbabilities(text);
+            String sentiment = result.label();
+            double confidence = result.confidence();
 
-            String[] classes = classifier.getSupportedClasses();
-            double confidence = 0.0;
-            for (int i = 0; i < classes.length; i++) {
-                if (classes[i].equalsIgnoreCase(sentiment)) {
-                    confidence = probabilities[i];
-                    break;
-                }
-            }
+            String warning = null;
 
             if (confidenceThreshold != null && confidence < confidenceThreshold) {
                 logger.debug("Confidence {} below threshold {}, marking uncertain",
                            confidence, confidenceThreshold);
                 sentiment = "uncertain";
+            }
+
+            // Warn if confidence is low - may indicate neutral text misclassified
+            // Production model is binary (positive/negative only)
+            if (confidence < 0.75) {
+                warning = "Low confidence prediction. This model only supports 'positive' and 'negative' labels. " +
+                         "Neutral or ambiguous text may be misclassified. Check /api/v1/health for supportedLabels.";
             }
 
             long processingTime = System.currentTimeMillis() - startTime;
@@ -294,9 +379,15 @@ public class SentimentController {
             // Record production metrics
             metrics.recordPrediction(sentiment, confidence, Duration.ofMillis(processingTime));
 
-            return ResponseEntity.ok(
-                SentimentResponse.success(sentiment, confidence, text, processingTime)
-            );
+            if (warning != null) {
+                return ResponseEntity.ok(
+                    SentimentResponse.successWithWarning(sentiment, confidence, text, processingTime, warning)
+                );
+            } else {
+                return ResponseEntity.ok(
+                    SentimentResponse.success(sentiment, confidence, text, processingTime)
+                );
+            }
 
         } catch (Exception e) {
             logger.error("Classification failed for text: {}",

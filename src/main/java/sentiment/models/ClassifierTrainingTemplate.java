@@ -506,6 +506,48 @@ public abstract class ClassifierTrainingTemplate<T> extends TrainingTemplate<T> 
     }
 
     /**
+     * Classifies text and returns both label and probabilities in a single atomic operation.
+     * This avoids race conditions that can occur when calling classify() and
+     * getClassificationProbabilities() separately under concurrent load.
+     *
+     * @param text input text to classify
+     * @return ClassificationResult containing label, probabilities, and class names
+     * @throws Exception if classification fails or classifier is not trained
+     */
+    @Override
+    public SentimentClassifier.ClassificationResult classifyWithProbabilities(String text) throws Exception {
+        requireTrained();
+        validateTextInput(text);
+
+        return executeInference((InferenceTask<SentimentClassifier.ClassificationResult>) () -> {
+            getLogger().debug("INFERENCE: Classifying with probabilities: '{}'",
+                    text.substring(0, Math.min(50, text.length())));
+
+            // Single instance creation and transformation
+            Instance instance = converter.transform(text, "unknown");
+            instance.setDataset(trainingDataStructure);
+
+            // Get both classification and probabilities from the same instance
+            double[] probs = getWekaClassifierInstance().distributionForInstance(instance);
+
+            // Find the predicted class (highest probability)
+            int predictedIndex = 0;
+            double maxProb = probs[0];
+            for (int i = 1; i < probs.length; i++) {
+                if (probs[i] > maxProb) {
+                    maxProb = probs[i];
+                    predictedIndex = i;
+                }
+            }
+
+            String predicted = supportedClasses[predictedIndex];
+            getLogger().debug("Classification result: {} (confidence: {})", predicted, maxProb);
+
+            return new SentimentClassifier.ClassificationResult(predicted, probs, supportedClasses.clone());
+        });
+    }
+
+    /**
      * Evaluates the classifier on test data.
 
      * @param testData Weka Instances to evaluate on
