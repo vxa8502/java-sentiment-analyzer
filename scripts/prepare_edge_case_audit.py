@@ -78,13 +78,13 @@ def load_all_errors(candidates_dir, algorithms):
                         'hash': text_hash,
                         'text': text,
                         'actual_sentiment': row.get('actual_sentiment', '').upper(),
-                        'failed_models': [],
+                        'failed_models': set(),  # Use set to prevent duplicates
                         'predictions': {},
                         'confidences': {},
                         'domains': set()
                     }
 
-                all_errors[text_hash]['failed_models'].append(model_name)
+                all_errors[text_hash]['failed_models'].add(model_name)  # Set.add() prevents duplicates
                 all_errors[text_hash]['predictions'][model_name] = row.get('predicted_sentiment', '').lower()
                 all_errors[text_hash]['confidences'][model_name] = row.get('confidence', '')
                 all_errors[text_hash]['domains'].add(domain)
@@ -99,8 +99,10 @@ def load_all_errors(candidates_dir, algorithms):
 def compute_error_metadata(all_errors):
     """Add computed fields to each error."""
     for h, error in all_errors.items():
+        # Convert sets to sorted lists for JSON serialization and deterministic output
+        error['failed_models'] = sorted(list(error['failed_models']))
+        error['domains'] = sorted(list(error['domains']))
         error['num_models_failed'] = len(error['failed_models'])
-        error['domains'] = list(error['domains'])  # Convert set to list for JSON
 
         # Determine primary domain (most common among failing models)
         domain_counts = defaultdict(int)

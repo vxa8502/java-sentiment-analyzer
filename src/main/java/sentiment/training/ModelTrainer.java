@@ -134,8 +134,8 @@ public class ModelTrainer {
             logger.info(" Split complete: train={}, test={}",
                     split.train.size(), split.test.size());
 
-            // Save test split for reproducible cross-domain evaluation
-            saveTestSplit(split.test, dataPath);
+            // Save train/test splits for reproducibility and auditability
+            saveDataSplits(split.train, split.test, dataPath);
 
             // Step 3: Create and train classifier (ONLY on train set)
             logger.info("Step 3/5: Training {} classifier on TRAIN SET ONLY...", algorithmType.getDisplayName());
@@ -586,40 +586,46 @@ public class ModelTrainer {
     }
 
     /**
-     * Save test split to data/processed/{dataset}/test.csv for reproducible cross-domain evaluation.
-     * Sofia's requirement: Test splits must be saved for data integrity and reproducibility.
+     * Save train and test splits to data/processed/{dataset}/ for reproducibility and auditability.
+     * Enables exact reconstruction of what data the model trained on.
      *
+     * @param trainData Training portion from stratified split
      * @param testData Test portion from stratified split
      * @param dataPath Original data path (used to infer dataset name)
      */
-    private void saveTestSplit(List<Dataset> testData, String dataPath) {
+    private void saveDataSplits(List<Dataset> trainData, List<Dataset> testData, String dataPath) {
+        String datasetName = inferDatasetName(dataPath);
+        Path processedDir = Paths.get("data/processed", datasetName).toAbsolutePath();
+
         try {
-            // Infer dataset name from dataPath
-            String datasetName = inferDatasetName(dataPath);
-            Path testCsvPath = Paths.get("data/processed", datasetName, "test.csv").toAbsolutePath();
-            logger.debug("Saving test split to: {}", testCsvPath);
+            Files.createDirectories(processedDir);
+        } catch (IOException e) {
+            logger.error("ARTIFACT_SAVE_FAILED: Could not create directory {} - {}", processedDir, e.getMessage());
+            return;
+        }
 
-            // Create directory if needed
-            Files.createDirectories(testCsvPath.getParent());
+        // Save both splits
+        saveSplitToFile(trainData, processedDir.resolve("train.csv"), "train");
+        saveSplitToFile(testData, processedDir.resolve("test.csv"), "test");
+    }
 
-            // Save test data to CSV
-            try (FileWriter writer = new FileWriter(testCsvPath.toFile())) {
-                // Write header
-                writer.write("review,sentiment\n");
+    /**
+     * Save a data split to CSV file.
+     */
+    private void saveSplitToFile(List<Dataset> data, Path filePath, String splitName) {
+        try (FileWriter writer = new FileWriter(filePath.toFile())) {
+            writer.write("review,sentiment\n");
 
-                // Write test samples
-                for (Dataset sample : testData) {
-                    String sentiment = sample.getSentiment().name().toLowerCase();
-                    String text = escapeCsv(sample.getText());
-                    writer.write("\"" + text + "\"," + sentiment + "\n");
-                }
+            for (Dataset sample : data) {
+                String sentiment = sample.getSentiment().name().toLowerCase();
+                String text = escapeCsv(sample.getText());
+                writer.write("\"" + text + "\"," + sentiment + "\n");
             }
 
-            logger.info("✓ Saved test split ({} samples) to: {}", testData.size(), testCsvPath);
+            logger.info("Saved {} split ({} samples) to: {}", splitName, data.size(), filePath);
 
         } catch (Exception e) {
-            logger.error("ARTIFACT_SAVE_FAILED: test_split - {}", e.getMessage());
-            logger.error("Training succeeded but test.csv was NOT saved. Cross-domain evaluation may fail.");
+            logger.error("ARTIFACT_SAVE_FAILED: {} split - {}", splitName, e.getMessage());
         }
     }
 
