@@ -21,6 +21,25 @@ RESULTS_DIR="$PROJECT_ROOT/results"
 PRODUCTION_DIR="$MODELS_DIR/production"
 CROSS_DOMAIN_JSON="$RESULTS_DIR/cross_domain_matrix.json"
 
+# Dataset paths - configurable via environment variables
+DATA_PATH_IMDB="${SENTIMENT_DATA_IMDB:-data/raw/imdb_50k/IMDB Dataset.csv}"
+DATA_PATH_AMAZON="${SENTIMENT_DATA_AMAZON:-data/raw/amazon_polarity/train.csv}"
+DATA_PATH_YELP="${SENTIMENT_DATA_YELP:-data/raw/yelp/yelp_reviews.csv}"
+
+# Get data path for a dataset name
+get_data_path() {
+    local dataset="$1"
+    case $dataset in
+        imdb_50k) echo "$DATA_PATH_IMDB" ;;
+        amazon_polarity) echo "$DATA_PATH_AMAZON" ;;
+        yelp) echo "$DATA_PATH_YELP" ;;
+        *)
+            log_error "Unknown dataset: $dataset"
+            return 1
+            ;;
+    esac
+}
+
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -35,6 +54,7 @@ log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 log_step() { echo -e "${BLUE}[STEP]${NC} ${BOLD}$1${NC}"; }
 
 FORCE_MODEL=""
+SKIP_TUNING=false
 
 # Parse arguments
 for arg in "$@"; do
@@ -42,14 +62,19 @@ for arg in "$@"; do
         --force-model=*)
             FORCE_MODEL="${arg#*=}"
             ;;
+        --skip-tuning)
+            SKIP_TUNING=true
+            ;;
         --help|-h)
             echo "Usage: $0 [OPTIONS]"
             echo ""
             echo "Options:"
             echo "  --force-model=<model>  Override winner (e.g., svm-amazon_polarity)"
+            echo "  --skip-tuning          Skip hyperparameter tuning for SVM (use default C)"
             echo ""
             echo "Examples:"
             echo "  $0                                # Auto-detect winner, full pipeline"
+            echo "  $0 --skip-tuning                 # Skip SVM tuning, faster"
             echo "  $0 --force-model=svm-imdb_50k    # Force specific model"
             echo ""
             exit 0
@@ -114,35 +139,37 @@ get_source_metadata_path() {
 
 # Tune and retrain SVM
 tune_and_retrain_svm() {
-    log_step "Hyperparameter tuning SVM (grid search)..."
+    local enable_tuning="true"
+    if [ "$SKIP_TUNING" = true ]; then
+        log_step "Training SVM (tuning SKIPPED)..."
+        enable_tuning="false"
+    else
+        log_step "Hyperparameter tuning SVM (grid search)..."
+    fi
 
-    # Determine data path based on dataset (must be file path, not directory)
+    # Get data path (configurable via environment variables)
     local data_path
-    case $DATASET in
-        imdb_50k) data_path="data/raw/imdb_50k/IMDB Dataset.csv" ;;
-        amazon_polarity) data_path="data/raw/amazon_polarity/train.csv" ;;
-        yelp) data_path="data/raw/yelp/yelp_reviews.csv" ;;
-        *)
-            log_error "Unknown dataset: $DATASET"
-            exit 1
-            ;;
-    esac
+    data_path=$(get_data_path "$DATASET") || exit 1
 
     log_info "Dataset: $DATASET"
     log_info "Data path: $data_path"
-    log_info "This will take 5-10x longer than base training..."
+    if [ "$SKIP_TUNING" = true ]; then
+        log_info "Hyperparameter tuning: DISABLED (using default C)"
+    else
+        log_info "This will take 5-10x longer than base training..."
+    fi
     echo ""
 
     cd "$PROJECT_ROOT"
 
-    # Run training with hyperparameter tuning enabled
+    # Run training with hyperparameter tuning based on flag
     # Args: dataPath outputPath algorithm [maxSamples] [showFeatureImportance] [topFeaturesCount] [enableHyperparameterTuning]
     # IMPORTANT: Use same 50K cap as base models for fair comparison
     local output_file="$PRODUCTION_DIR/sentiment_model.ser"
     mvn -q exec:java -Dexec.mainClass="sentiment.training.TrainModel" \
-        -Dexec.args="\"$data_path\" \"$output_file\" SVM 50000 true 100 true"
+        -Dexec.args="\"$data_path\" \"$output_file\" SVM 50000 true 100 $enable_tuning"
 
-    log_info "SVM tuned and retrained with feature importance"
+    log_info "SVM trained with feature importance"
 }
 
 # Retrain non-SVM model with feature importance
@@ -152,17 +179,9 @@ retrain_with_feature_importance() {
     log_warn "Expected time: 5-10 minutes depending on algorithm"
     echo ""
 
-    # Determine data path based on dataset (must be file path, not directory)
+    # Get data path (configurable via environment variables)
     local data_path
-    case $DATASET in
-        imdb_50k) data_path="data/raw/imdb_50k/IMDB Dataset.csv" ;;
-        amazon_polarity) data_path="data/raw/amazon_polarity/train.csv" ;;
-        yelp) data_path="data/raw/yelp/yelp_reviews.csv" ;;
-        *)
-            log_error "Unknown dataset: $DATASET"
-            exit 1
-            ;;
-    esac
+    data_path=$(get_data_path "$DATASET") || exit 1
 
     log_info "Algorithm: $ALGO_ENUM"
     log_info "Dataset: $DATASET"
@@ -179,6 +198,44 @@ retrain_with_feature_importance() {
         -Dexec.args="\"$data_path\" \"$output_file\" $ALGO_ENUM 50000 true 100 false"
 
     log_info "$ALGO_ENUM retrained with feature importance"
+}
+
+# Copy cross_domain_performance and edge_case_performance from source model
+copy_source_metadata() {
+    local source_meta=$(get_source_metadata_path)
+    local prod_meta="$PRODUCTION_DIR/sentiment_model.metadata.json"
+
+    if [ ! -f "$source_meta" ]; then
+        log_warn "Source metadata not found: $source_meta"
+        return
+    fi
+
+    if [ ! -f "$prod_meta" ]; then
+        log_warn "Production metadata not found: $prod_meta"
+        return
+    fi
+
+    log_step "Copying evaluation metadata from source model..."
+
+    # Extract cross_domain_performance and edge_case_performance from source
+    local cross_domain=$(jq '.cross_domain_performance' "$source_meta")
+    local edge_case=$(jq '.edge_case_performance' "$source_meta")
+
+    # Merge into production metadata
+    local updated=$(jq \
+        --argjson cross_domain "$cross_domain" \
+        --argjson edge_case "$edge_case" \
+        '.cross_domain_performance = $cross_domain | .edge_case_performance = $edge_case' \
+        "$prod_meta")
+
+    echo "$updated" > "$prod_meta"
+
+    if [ "$cross_domain" != "null" ]; then
+        log_info "Copied cross_domain_performance from source model"
+    fi
+    if [ "$edge_case" != "null" ]; then
+        log_info "Copied edge_case_performance from source model"
+    fi
 }
 
 # Print summary
@@ -255,13 +312,17 @@ main() {
 
     # Branch based on algorithm
     if [ "$ALGO" = "svm" ]; then
-        log_info "SVM detected - will tune hyperparameters and retrain with feature importance"
-        echo ""
-        read -p "This will take 5-10x longer than base training. Continue? [y/N] " -n 1 -r
-        echo ""
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            log_info "Aborted. Use --force-model to pick a different model."
-            exit 0
+        if [ "$SKIP_TUNING" = true ]; then
+            log_info "SVM detected - will retrain with feature importance (tuning SKIPPED)"
+        else
+            log_info "SVM detected - will tune hyperparameters and retrain with feature importance"
+            echo ""
+            read -p "This will take 5-10x longer than base training. Continue? [y/N] " -n 1 -r
+            echo ""
+            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                log_info "Aborted. Use --skip-tuning to skip tuning, or --force-model to pick a different model."
+                exit 0
+            fi
         fi
 
         tune_and_retrain_svm
@@ -273,6 +334,9 @@ main() {
 
         retrain_with_feature_importance
     fi
+
+    # Copy evaluation metadata from source model
+    copy_source_metadata
 
     print_summary
 

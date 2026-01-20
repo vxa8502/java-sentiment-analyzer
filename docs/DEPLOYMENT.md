@@ -81,14 +81,28 @@ docker run -d \
 | `SENTIMENT_PREPROCESSING_MIN_WORD_LENGTH` | `2` | Min word length |
 | `SENTIMENT_PREPROCESSING_USE_TFIDF` | `true` | Use TF-IDF weighting |
 | `SENTIMENT_PREPROCESSING_USE_BIGRAMS` | `true` | Include bigrams |
+| `SENTIMENT_MI_THRESHOLD` | `50000` | MI feature selection threshold |
+
+### Training Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SENTIMENT_RANDOM_SEED` | `42` | Random seed for reproducibility |
+| `SENTIMENT_DATA_IMDB` | `data/raw/imdb_50k/IMDB Dataset.csv` | IMDB dataset path |
+| `SENTIMENT_DATA_AMAZON` | `data/raw/amazon_polarity/train.csv` | Amazon dataset path |
+| `SENTIMENT_DATA_YELP` | `data/raw/yelp/yelp_reviews.csv` | Yelp dataset path |
 
 ### API Configuration
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `SENTIMENT_API_MAX_BATCH_SIZE` | `100` | Max texts per batch request |
-| `SENTIMENT_API_RATE_LIMIT` | `1000` | Requests per minute |
 | `SENTIMENT_API_VALIDATION_MAX_TEXT_LENGTH` | `10000` | Max characters per text |
+
+**Rate Limits (configured in `application.yml`):**
+- Single analysis: 100 requests/min
+- Batch analysis: 20 requests/min
+- Model comparison: 2 requests/5min
 
 ## Health Check & Monitoring
 

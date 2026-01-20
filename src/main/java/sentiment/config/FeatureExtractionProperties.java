@@ -131,6 +131,21 @@ public class FeatureExtractionProperties {
     private int batchSize = 1000;
 
     /**
+     * Threshold for triggering MI-based feature selection.
+     *
+     * <p>When raw vocabulary exceeds this threshold, mutual information (MI)
+     * is used to select the most discriminative features before applying
+     * the final max-features limit.
+     *
+     * <p>Flow: raw vocab → MI selection (if > threshold) → max-features limit
+     *
+     * <p>Range: [10000, 100000]. Default: 50000
+     */
+    @Min(value = 10000, message = "sentiment.features.mi-selection-threshold must be >= 10000")
+    @Max(value = 100000, message = "sentiment.features.mi-selection-threshold must be <= 100000")
+    private int miSelectionThreshold = 50000;
+
+    /**
      * Validates that when bigrams are enabled, max-features is sufficient.
      *
      * <p>Bigrams increase feature count significantly. This validation ensures
@@ -204,5 +219,13 @@ public class FeatureExtractionProperties {
 
     public void setBatchSize(int batchSize) {
         this.batchSize = batchSize;
+    }
+
+    public int getMiSelectionThreshold() {
+        return miSelectionThreshold;
+    }
+
+    public void setMiSelectionThreshold(int miSelectionThreshold) {
+        this.miSelectionThreshold = miSelectionThreshold;
     }
 }

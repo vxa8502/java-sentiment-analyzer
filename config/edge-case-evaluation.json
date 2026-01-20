@@ -1,0 +1,75 @@
+{
+  "_comment": "Edge Case Evaluation Configuration - shared by Java and Python",
+  "_version": "1.1.0",
+
+  "directories": {
+    "edge_cases_dir": "data/raw/edge_cases",
+    "candidates_dir": "data/raw/edge_cases/candidates",
+    "models_dir": "models"
+  },
+
+  "edge_case_definition": {
+    "_comment": "Defines what qualifies as an edge case vs a one-off model error",
+    "min_models_failed": 3,
+    "rationale": "Errors where 3+ algorithms failed indicate systematic difficulty, not model-specific variance. Single-model failures are excluded from edge case categorization."
+  },
+
+  "sampling": {
+    "_comment": "Statistical sampling parameters",
+    "min_samples_per_category": 40,
+    "target_margin_of_error": 0.15,
+    "distribution_buffer": 1.25,
+    "_categorization_formula": "sample_size = min_samples_per_category * num_categories * distribution_buffer",
+    "random_seed": 42
+  },
+
+  "filtering": {
+    "_comment": "Audit-based filtering thresholds for label noise detection",
+    "label_error_threshold": 0.25,
+    "high_signal_min_models": 3,
+    "very_conservative_min_models": 4
+  },
+
+  "evaluation": {
+    "_comment": "Statistical parameters for evaluation metrics",
+    "confidence_level": 0.95,
+    "ci_method": "wilson",
+    "warn_if_samples_below": 30
+  },
+
+  "categories": [
+    {
+      "id": "sarcasm",
+      "name": "Sarcasm",
+      "description": "Surface sentiment contradicts true intent (e.g., 'Oh great, another broken product')"
+    },
+    {
+      "id": "mixed_sentiment",
+      "name": "Mixed Sentiment",
+      "description": "Contains both positive and negative aspects (e.g., 'Great features but terrible support')"
+    },
+    {
+      "id": "negation_heavy",
+      "name": "Negation Heavy",
+      "description": "Complex negation patterns (e.g., 'I can't say I didn't like it')"
+    },
+    {
+      "id": "domain_jargon",
+      "name": "Domain Jargon",
+      "description": "Domain-specific terms requiring context (e.g., 'sick beats' = positive in music)"
+    }
+  ],
+
+  "algorithms": [
+    "svm",
+    "naive_bayes",
+    "random_forest",
+    "logistic_regression"
+  ],
+
+  "domains": [
+    "imdb_50k",
+    "amazon_polarity",
+    "yelp"
+  ]
+}

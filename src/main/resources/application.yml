@@ -62,6 +62,12 @@ sentiment:
     # Fail startup if no model is available (false = train minimal model as fallback)
     require-pretrained: false
 
+  # Training configuration
+  training:
+    # Random seed for reproducibility (shuffle, splits, CV)
+    # Set to different values to assess variance across runs
+    random-seed: ${SENTIMENT_RANDOM_SEED:42}
+
   # Feature extraction configuration (shared across entire pipeline)
   # Single source of truth for all preprocessing, feature extraction, and Weka conversion
   # This ensures consistency across: tokenization → feature extraction → Weka conversion
@@ -85,6 +91,11 @@ sentiment:
 
     # Batch size for processing large datasets
     batch-size: 1000
+
+    # Threshold for triggering MI-based feature selection
+    # When raw vocabulary exceeds this, MI is used to select discriminative features
+    # Flow: raw vocab → MI selection (if > threshold) → max-features limit
+    mi-selection-threshold: ${SENTIMENT_MI_THRESHOLD:50000}
 
   # SVM specific configuration
   svm:
@@ -255,7 +266,7 @@ resilience4j:
     instances:
       # Rate limiter for sentiment analysis endpoints
       sentimentApi:
-        limit-for-period: 10         # Number of requests allowed per period
+        limit-for-period: 100        # 100 requests per minute (reasonable default)
         limit-refresh-period: 1m     # Time period (1 minute)
         timeout-duration: 0ms        # Don't wait, fail immediately if limit exceeded
         register-health-indicator: true
@@ -264,7 +275,7 @@ resilience4j:
 
       # Rate limiter for batch endpoints (lower limit due to higher load)
       batchApi:
-        limit-for-period: 5
+        limit-for-period: 20         # 20 batch requests per minute
         limit-refresh-period: 1m
         timeout-duration: 0ms
         register-health-indicator: true

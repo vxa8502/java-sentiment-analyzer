@@ -384,13 +384,78 @@ public class CrossDomainEvaluator {
     }
 
     /**
+     * Persist cross-domain performance to each model's metadata file.
+     * Uses TrainingMetadata class to ensure correct JSON structure.
+     */
+    private static void persistToModelMetadata(CrossDomainMatrix matrix, Path modelsDir) {
+        ObjectMapper mapper = new ObjectMapper();
+        mapper.enable(SerializationFeature.INDENT_OUTPUT);
+
+        for (String algo : ALGORITHMS) {
+            for (String trainDomain : TRAIN_DOMAINS) {
+                // Build metadata file path
+                String algoDir = algo; // svm, naive_bayes, etc.
+                String metadataFile = trainDomain + "_" + algo + "_model.metadata.json";
+                Path metadataPath = modelsDir.resolve(algoDir).resolve(metadataFile);
+
+                if (!Files.exists(metadataPath)) {
+                    System.out.println("  Skipping " + metadataPath + " (not found)");
+                    continue;
+                }
+
+                try {
+                    // Load existing metadata using TrainingMetadata class
+                    sentiment.training.TrainingMetadata metadata =
+                        sentiment.training.TrainingMetadata.load(metadataPath);
+
+                    // Build CrossDomainPerformance object
+                    sentiment.training.TrainingMetadata.CrossDomainPerformance cdp =
+                        new sentiment.training.TrainingMetadata.CrossDomainPerformance();
+                    cdp.evaluatedAt = matrix.evaluatedAt.toString();
+                    cdp.crossDomainAverage = matrix.getCrossDomainAverage(algo, trainDomain);
+
+                    // Populate each domain's performance
+                    for (String testDomain : TEST_DOMAINS) {
+                        EvaluationResult result = matrix.getResult(algo, trainDomain, testDomain);
+                        if (result != null) {
+                            sentiment.training.TrainingMetadata.DomainPerformance dp =
+                                new sentiment.training.TrainingMetadata.DomainPerformance();
+                            dp.accuracy = result.accuracy;
+                            dp.f1 = result.f1;
+                            dp.precision = result.precision;
+                            dp.recall = result.recall;
+                            dp.testSamples = result.testSamples;
+                            dp.isInDomain = result.isInDomain;
+
+                            switch (testDomain) {
+                                case "imdb_50k" -> cdp.imdb50k = dp;
+                                case "amazon_polarity" -> cdp.amazonPolarity = dp;
+                                case "yelp" -> cdp.yelp = dp;
+                            }
+                        }
+                    }
+
+                    // Update and save
+                    metadata.setCrossDomainPerformance(cdp);
+                    metadata.save(metadataPath);
+                    System.out.println("  Updated " + metadataPath.getFileName());
+
+                } catch (IOException e) {
+                    System.err.println("  Failed to update " + metadataPath + ": " + e.getMessage());
+                }
+            }
+        }
+    }
+
+    /**
      * CLI entry point for cross-domain evaluation
      */
     public static void main(String[] args) {
         if (args.length < 3) {
-            System.err.println("Usage: java CrossDomainEvaluator <models-dir> <test-data-dir> <output-json> [max-samples-per-domain]");
-            System.err.println("Example: java CrossDomainEvaluator models/ data/processed/ results/cross_domain_matrix.json 2000");
+            System.err.println("Usage: java CrossDomainEvaluator <models-dir> <test-data-dir> <output-json> [max-samples-per-domain] [--persist]");
+            System.err.println("Example: java CrossDomainEvaluator models/ data/processed/ results/cross_domain_matrix.json 2000 --persist");
             System.err.println("  max-samples-per-domain: Optional. Max test samples per domain (default: 2000 for speed)");
+            System.err.println("  --persist: Optional. Update each model's metadata.json with cross-domain performance");
             System.exit(1);
         }
 
@@ -464,6 +529,13 @@ public class CrossDomainEvaluator {
 
             // Export to JSON
             matrix.exportToJson(outputPath);
+
+            // Persist to model metadata files if requested
+            boolean persist = args.length > 4 && "--persist".equals(args[4]);
+            if (persist) {
+                System.out.println("\nPersisting cross-domain performance to model metadata files...");
+                persistToModelMetadata(matrix, modelsDir);
+            }
 
         } catch (Exception e) {
             System.err.println("Error during cross-domain evaluation: " + e.getMessage());

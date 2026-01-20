@@ -2,6 +2,10 @@
 
 # Cross-Domain Evaluation Script
 # Tests all models (SVM, Naive Bayes, Random Forest, Logistic Regression) across all datasets
+#
+# Usage:
+#   ./scripts/evaluate_cross_domain.sh           # Evaluate only, output to JSON
+#   ./scripts/evaluate_cross_domain.sh --persist # Also update model metadata files
 
 set -e
 
@@ -9,6 +13,16 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 cd "$PROJECT_ROOT"
+
+# Parse arguments
+PERSIST_FLAG=""
+for arg in "$@"; do
+    case $arg in
+        --persist)
+            PERSIST_FLAG="--persist"
+            ;;
+    esac
+done
 
 echo "---------------------------------------------------------------"
 echo "  Cross-Domain Evaluation"
@@ -73,7 +87,8 @@ java -Xmx8g -cp "$CLASSPATH" \
     "$MODELS_DIR" \
     "$TEST_DATA_DIR" \
     "$OUTPUT_FILE" \
-    "$MAX_SAMPLES_PER_DOMAIN"
+    "$MAX_SAMPLES_PER_DOMAIN" \
+    $PERSIST_FLAG
 
 if [ $? -eq 0 ]; then
     echo ""
@@ -82,6 +97,12 @@ if [ $? -eq 0 ]; then
     echo "---------------------------------------------------------------"
     echo ""
     echo "Results saved to: $OUTPUT_FILE"
+    if [ -n "$PERSIST_FLAG" ]; then
+        echo "Model metadata files updated with cross_domain_performance"
+    else
+        echo ""
+        echo "Tip: Use --persist to update model metadata files"
+    fi
     echo ""
     echo "Key Insight:"
     echo "  The best model is the one with highest CROSS-DOMAIN average,"

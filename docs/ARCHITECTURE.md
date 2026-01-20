@@ -50,7 +50,7 @@ This document details the technical architecture, design patterns, and implement
 |    - Text cleaning (URLs, HTML, emoticons)                            |
 |    - Tokenization via AdvancedTokenizer                               |
 |    - Stopword removal via IntelligentStopwordRemover                  |
-|    - Vocabulary capture with MI feature selection (50k limit)         |
+|    - Vocabulary capture with MI feature selection (configurable)      |
 |                                                                       |
 |  WekaInstancesConverter:                                              |
 |    - TF-IDF vectorization (Weka's StringToWordVector filter)          |
@@ -224,7 +224,9 @@ sentiment:
     use-bigrams: true
 ```
 
-**Note:** There is no `use-mutual-information` config flag - MI selection is always applied when vocabulary exceeds 50,000 features (see `TextPreprocessor.PipelineState`, line 599)
+**Note:** There is no `use-mutual-information` config flag - MI selection is always applied when vocabulary exceeds the threshold (default: 50,000). The threshold is configurable via:
+- `sentiment.features.mi-selection-threshold` in `application.yml`
+- `SENTIMENT_MI_THRESHOLD` environment variable
 
 ---
 

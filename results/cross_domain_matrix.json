@@ -1,0 +1,379 @@
+{
+  "evaluated_at" : "2026-01-20T14:56:43.389824",
+  "domains" : [ "imdb_50k", "amazon_polarity", "yelp" ],
+  "algorithms" : [ "svm", "naive_bayes", "random_forest", "logistic_regression" ],
+  "results" : {
+    "svm" : {
+      "imdb_50k" : {
+        "imdb_50k" : {
+          "accuracy" : 0.9401940194019401,
+          "f1" : 0.9401940194019401,
+          "precision" : 0.9401940194019401,
+          "recall" : 0.9401940194019401,
+          "brier_score" : 0.059805980598059805,
+          "test_samples" : 9999,
+          "is_in_domain" : true
+        },
+        "amazon_polarity" : {
+          "accuracy" : 0.8125,
+          "f1" : 0.8125,
+          "precision" : 0.8125,
+          "recall" : 0.8125,
+          "brier_score" : 0.1875,
+          "test_samples" : 10000,
+          "is_in_domain" : false
+        },
+        "yelp" : {
+          "accuracy" : 0.8403626330311391,
+          "f1" : 0.8403626330311391,
+          "precision" : 0.8403626330311391,
+          "recall" : 0.8403626330311391,
+          "brier_score" : 0.15963736696886086,
+          "test_samples" : 5074,
+          "is_in_domain" : false
+        },
+        "cross_domain_avg" : 0.8264313165155696
+      },
+      "amazon_polarity" : {
+        "imdb_50k" : {
+          "accuracy" : 0.8514851485148515,
+          "f1" : 0.8514851485148515,
+          "precision" : 0.8514851485148515,
+          "recall" : 0.8514851485148515,
+          "brier_score" : 0.1485148514851485,
+          "test_samples" : 9999,
+          "is_in_domain" : false
+        },
+        "amazon_polarity" : {
+          "accuracy" : 0.9293,
+          "f1" : 0.9293,
+          "precision" : 0.9293,
+          "recall" : 0.9293,
+          "brier_score" : 0.0707,
+          "test_samples" : 10000,
+          "is_in_domain" : true
+        },
+        "yelp" : {
+          "accuracy" : 0.9111154907370911,
+          "f1" : 0.9111154907370911,
+          "precision" : 0.9111154907370911,
+          "recall" : 0.9111154907370911,
+          "brier_score" : 0.08888450926290895,
+          "test_samples" : 5074,
+          "is_in_domain" : false
+        },
+        "cross_domain_avg" : 0.8813003196259712
+      },
+      "yelp" : {
+        "imdb_50k" : {
+          "accuracy" : 0.7882788278827882,
+          "f1" : 0.7882788278827882,
+          "precision" : 0.7882788278827882,
+          "recall" : 0.7882788278827882,
+          "brier_score" : 0.21172117211721173,
+          "test_samples" : 9999,
+          "is_in_domain" : false
+        },
+        "amazon_polarity" : {
+          "accuracy" : 0.8146,
+          "f1" : 0.8146,
+          "precision" : 0.8146,
+          "recall" : 0.8146,
+          "brier_score" : 0.1854,
+          "test_samples" : 10000,
+          "is_in_domain" : false
+        },
+        "yelp" : {
+          "accuracy" : 0.9365392195506503,
+          "f1" : 0.9365392195506503,
+          "precision" : 0.9365392195506503,
+          "recall" : 0.9365392195506503,
+          "brier_score" : 0.06346078044934962,
+          "test_samples" : 5074,
+          "is_in_domain" : true
+        },
+        "cross_domain_avg" : 0.8014394139413941
+      }
+    },
+    "naive_bayes" : {
+      "imdb_50k" : {
+        "imdb_50k" : {
+          "accuracy" : 0.8350835083508351,
+          "f1" : 0.8350835083508351,
+          "precision" : 0.8350835083508351,
+          "recall" : 0.8350835083508351,
+          "brier_score" : 0.1438350905827041,
+          "test_samples" : 9999,
+          "is_in_domain" : true
+        },
+        "amazon_polarity" : {
+          "accuracy" : 0.7261,
+          "f1" : 0.7261,
+          "precision" : 0.7261,
+          "recall" : 0.7261,
+          "brier_score" : 0.22888308318445866,
+          "test_samples" : 10000,
+          "is_in_domain" : false
+        },
+        "yelp" : {
+          "accuracy" : 0.7786756011036657,
+          "f1" : 0.7786756011036657,
+          "precision" : 0.7786756011036657,
+          "recall" : 0.7786756011036657,
+          "brier_score" : 0.17942391983980843,
+          "test_samples" : 5074,
+          "is_in_domain" : false
+        },
+        "cross_domain_avg" : 0.7523878005518329
+      },
+      "amazon_polarity" : {
+        "imdb_50k" : {
+          "accuracy" : 0.7212721272127213,
+          "f1" : 0.7212721272127213,
+          "precision" : 0.7212721272127213,
+          "recall" : 0.7212721272127213,
+          "brier_score" : 0.24026553839799103,
+          "test_samples" : 9999,
+          "is_in_domain" : false
+        },
+        "amazon_polarity" : {
+          "accuracy" : 0.8034,
+          "f1" : 0.8034,
+          "precision" : 0.8034,
+          "recall" : 0.8034,
+          "brier_score" : 0.15635079865065435,
+          "test_samples" : 10000,
+          "is_in_domain" : true
+        },
+        "yelp" : {
+          "accuracy" : 0.8198659834450138,
+          "f1" : 0.8198659834450138,
+          "precision" : 0.8198659834450138,
+          "recall" : 0.8198659834450138,
+          "brier_score" : 0.14525917770484467,
+          "test_samples" : 5074,
+          "is_in_domain" : false
+        },
+        "cross_domain_avg" : 0.7705690553288675
+      },
+      "yelp" : {
+        "imdb_50k" : {
+          "accuracy" : 0.5975597559755975,
+          "f1" : 0.5975597559755975,
+          "precision" : 0.5975597559755975,
+          "recall" : 0.5975597559755975,
+          "brier_score" : 0.38519116203420756,
+          "test_samples" : 9999,
+          "is_in_domain" : false
+        },
+        "amazon_polarity" : {
+          "accuracy" : 0.6823,
+          "f1" : 0.6823,
+          "precision" : 0.6823,
+          "recall" : 0.6823,
+          "brier_score" : 0.2828300013248615,
+          "test_samples" : 10000,
+          "is_in_domain" : false
+        },
+        "yelp" : {
+          "accuracy" : 0.8072526606227828,
+          "f1" : 0.8072526606227828,
+          "precision" : 0.8072526606227828,
+          "recall" : 0.8072526606227828,
+          "brier_score" : 0.17504190235719477,
+          "test_samples" : 5074,
+          "is_in_domain" : true
+        },
+        "cross_domain_avg" : 0.6399298779877988
+      }
+    },
+    "random_forest" : {
+      "imdb_50k" : {
+        "imdb_50k" : {
+          "accuracy" : 0.8645864586458646,
+          "f1" : 0.8645864586458646,
+          "precision" : 0.8645864586458646,
+          "recall" : 0.8645864586458646,
+          "brier_score" : 0.14600741074107218,
+          "test_samples" : 9999,
+          "is_in_domain" : true
+        },
+        "amazon_polarity" : {
+          "accuracy" : 0.7792,
+          "f1" : 0.7792,
+          "precision" : 0.7792,
+          "recall" : 0.7792,
+          "brier_score" : 0.1676332899999995,
+          "test_samples" : 10000,
+          "is_in_domain" : false
+        },
+        "yelp" : {
+          "accuracy" : 0.8123768230193141,
+          "f1" : 0.8123768230193141,
+          "precision" : 0.8123768230193141,
+          "recall" : 0.8123768230193141,
+          "brier_score" : 0.15878182893180592,
+          "test_samples" : 5074,
+          "is_in_domain" : false
+        },
+        "cross_domain_avg" : 0.7957884115096571
+      },
+      "amazon_polarity" : {
+        "imdb_50k" : {
+          "accuracy" : 0.812981298129813,
+          "f1" : 0.812981298129813,
+          "precision" : 0.812981298129813,
+          "recall" : 0.812981298129813,
+          "brier_score" : 0.16709084908490693,
+          "test_samples" : 9999,
+          "is_in_domain" : false
+        },
+        "amazon_polarity" : {
+          "accuracy" : 0.8686,
+          "f1" : 0.8686,
+          "precision" : 0.8686,
+          "recall" : 0.8686,
+          "brier_score" : 0.12997343999999883,
+          "test_samples" : 10000,
+          "is_in_domain" : true
+        },
+        "yelp" : {
+          "accuracy" : 0.8914071738273551,
+          "f1" : 0.8914071738273551,
+          "precision" : 0.8914071738273551,
+          "recall" : 0.8914071738273551,
+          "brier_score" : 0.12577335435553605,
+          "test_samples" : 5074,
+          "is_in_domain" : false
+        },
+        "cross_domain_avg" : 0.8521942359785841
+      },
+      "yelp" : {
+        "imdb_50k" : {
+          "accuracy" : 0.7104710471047104,
+          "f1" : 0.7104710471047104,
+          "precision" : 0.7104710471047104,
+          "recall" : 0.7104710471047104,
+          "brier_score" : 0.19099108910890913,
+          "test_samples" : 9999,
+          "is_in_domain" : false
+        },
+        "amazon_polarity" : {
+          "accuracy" : 0.81,
+          "f1" : 0.81,
+          "precision" : 0.81,
+          "recall" : 0.81,
+          "brier_score" : 0.15973509999999944,
+          "test_samples" : 10000,
+          "is_in_domain" : false
+        },
+        "yelp" : {
+          "accuracy" : 0.9168309026409145,
+          "f1" : 0.9168309026409145,
+          "precision" : 0.9168309026409145,
+          "recall" : 0.9168309026409145,
+          "brier_score" : 0.10092035869136809,
+          "test_samples" : 5074,
+          "is_in_domain" : true
+        },
+        "cross_domain_avg" : 0.7602355235523552
+      }
+    },
+    "logistic_regression" : {
+      "imdb_50k" : {
+        "imdb_50k" : {
+          "accuracy" : 0.8518851885188519,
+          "f1" : 0.8518851885188519,
+          "precision" : 0.8518851885188519,
+          "recall" : 0.8518851885188519,
+          "brier_score" : 0.1334167030988304,
+          "test_samples" : 9999,
+          "is_in_domain" : true
+        },
+        "amazon_polarity" : {
+          "accuracy" : 0.7849,
+          "f1" : 0.7849,
+          "precision" : 0.7849,
+          "recall" : 0.7849,
+          "brier_score" : 0.18439141518008625,
+          "test_samples" : 10000,
+          "is_in_domain" : false
+        },
+        "yelp" : {
+          "accuracy" : 0.7966101694915254,
+          "f1" : 0.7966101694915254,
+          "precision" : 0.7966101694915254,
+          "recall" : 0.7966101694915254,
+          "brier_score" : 0.17415517548393578,
+          "test_samples" : 5074,
+          "is_in_domain" : false
+        },
+        "cross_domain_avg" : 0.7907550847457627
+      },
+      "amazon_polarity" : {
+        "imdb_50k" : {
+          "accuracy" : 0.8181818181818182,
+          "f1" : 0.8181818181818182,
+          "precision" : 0.8181818181818182,
+          "recall" : 0.8181818181818182,
+          "brier_score" : 0.1721994517795985,
+          "test_samples" : 9999,
+          "is_in_domain" : false
+        },
+        "amazon_polarity" : {
+          "accuracy" : 0.9503,
+          "f1" : 0.9503,
+          "precision" : 0.9503,
+          "recall" : 0.9503,
+          "brier_score" : 0.04397352544041711,
+          "test_samples" : 10000,
+          "is_in_domain" : true
+        },
+        "yelp" : {
+          "accuracy" : 0.8590855340953882,
+          "f1" : 0.8590855340953882,
+          "precision" : 0.8590855340953882,
+          "recall" : 0.8590855340953882,
+          "brier_score" : 0.12981977724734262,
+          "test_samples" : 5074,
+          "is_in_domain" : false
+        },
+        "cross_domain_avg" : 0.8386336761386033
+      },
+      "yelp" : {
+        "imdb_50k" : {
+          "accuracy" : 0.7477747774777478,
+          "f1" : 0.7477747774777478,
+          "precision" : 0.7477747774777478,
+          "recall" : 0.7477747774777478,
+          "brier_score" : 0.24510407129681244,
+          "test_samples" : 9999,
+          "is_in_domain" : false
+        },
+        "amazon_polarity" : {
+          "accuracy" : 0.7691,
+          "f1" : 0.7691,
+          "precision" : 0.7691,
+          "recall" : 0.7691,
+          "brier_score" : 0.2196045255132426,
+          "test_samples" : 10000,
+          "is_in_domain" : false
+        },
+        "yelp" : {
+          "accuracy" : 0.9217579818683485,
+          "f1" : 0.9217579818683485,
+          "precision" : 0.9217579818683485,
+          "recall" : 0.9217579818683485,
+          "brier_score" : 0.07467332315167628,
+          "test_samples" : 5074,
+          "is_in_domain" : true
+        },
+        "cross_domain_avg" : 0.7584373887388739
+      }
+    }
+  },
+  "best_generalizing_model" : {
+    "model" : "svm-amazon_polarity",
+    "cross_domain_avg_accuracy" : 0.8813003196259712
+  }
+}

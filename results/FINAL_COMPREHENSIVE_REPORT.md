@@ -1,7 +1,7 @@
 # Sentiment Analysis: Final Comprehensive Evaluation Report
 
 **Project**: Cross-Domain Sentiment Classification with Edge Case Analysis
-**Date**: January 18, 2026
+**Date**: January 20, 2026
 **Author**: Victoria Alabi
 **Generated**: Auto-generated from model metadata (do not edit manually)
 
@@ -14,29 +14,29 @@ This report summarizes the training and evaluation of sentiment analysis models 
 ### Production Model
 
 **Algorithm**: SVM
-**Training Dataset**: amazon_polarity (35999 samples)
-**Model Size**: 10.7 MB
+**Training Dataset**: amazon_polarity (40000 samples)
+**Model Size**: 14.4 MB
 
 | Metric | Value |
 |--------|-------|
-| Test Accuracy | 89.3% |
-| Test F1 | 0.893 |
-| Test Precision | 0.893 |
-| Test Recall | 0.893 |
-| ROC-AUC | 0.893 |
+| Test Accuracy | 88.4% |
+| Test F1 | 0.884 |
+| Test Precision | 0.884 |
+| Test Recall | 0.884 |
+| ROC-AUC | 0.884 |
 | Cross-Domain Avg | N/A |
 
 ### Production Model Confusion Matrix
 
 | | Predicted Negative | Predicted Positive |
 |---|---|---|
-| **Actual Negative** | 5279 (TN) | 670 (FP) |
-| **Actual Positive** | 615 (FN) | 5436 (TP) |
+| **Actual Negative** | 4404 (TN) | 599 (FP) |
+| **Actual Positive** | 560 (FN) | 4437 (TP) |
 
 ### Best Generalizing Model
 
 **Model**: svm-amazon_polarity
-**Cross-Domain Average Accuracy**: 84.8%
+**Cross-Domain Average Accuracy**: 88.1%
 
 ---
 
@@ -44,18 +44,18 @@ This report summarizes the training and evaluation of sentiment analysis models 
 
 | Algorithm | Dataset | Accuracy | F1 | Precision | Recall | Training Time |
 |-----------|---------|----------|-----|-----------|--------|---------------|
-| SVM | amazon_polarity | 89.8% | 0.898 | 0.898 | 0.898 | 295m 54s |
-| SVM | imdb_50k | 88.9% | 0.890 | 0.883 | 0.897 | 119m 54s |
-| SVM | yelp | 92.1% | 0.948 | 0.942 | 0.953 | 477m 41s |
-| LOGISTIC_REGRESSION | amazon_polarity | 88.0% | 0.880 | 0.880 | 0.880 | 167m 56s |
-| Logistic Regression | imdb_50k | 83.9% | 0.838 | 0.844 | 0.831 | 39m 22s |
-| Logistic Regression | yelp | 87.3% | 0.914 | 0.928 | 0.900 | 64m 44s |
-| Random Forest | amazon_polarity | 87.9% | 0.878 | 0.886 | 0.871 | 94m 23s |
-| Random Forest | imdb_50k | 85.9% | 0.860 | 0.853 | 0.867 | 36m 7s |
-| Random Forest | yelp | 89.8% | 0.936 | 0.886 | 0.992 | 124m 6s |
-| Naive Bayes | amazon_polarity | 79.9% | 0.791 | 0.827 | 0.758 | 69m 6s |
-| Naive Bayes | imdb_50k | 83.0% | 0.831 | 0.825 | 0.837 | 27m 41s |
-| Naive Bayes | yelp | 65.4% | 0.737 | 0.853 | 0.649 | 61m 38s |
+| SVM | amazon_polarity | 88.7% | 0.887 | 0.887 | 0.887 | 84m 19s |
+| SVM | imdb_50k | 89.0% | 0.890 | 0.890 | 0.890 | 342m 32s |
+| SVM | yelp | 93.7% | 0.937 | 0.937 | 0.937 | 17m 7s |
+| LOGISTIC_REGRESSION | amazon_polarity | 85.1% | 0.851 | 0.851 | 0.851 | 23m 30s |
+| LOGISTIC_REGRESSION | imdb_50k | 85.2% | 0.852 | 0.852 | 0.852 | 71m 36s |
+| LOGISTIC_REGRESSION | yelp | 92.2% | 0.922 | 0.922 | 0.922 | 43m 21s |
+| RANDOM_FOREST | amazon_polarity | 86.9% | 0.869 | 0.869 | 0.869 | 62m 25s |
+| RANDOM_FOREST | imdb_50k | 86.5% | 0.865 | 0.865 | 0.865 | 63m 32s |
+| RANDOM_FOREST | yelp | 91.7% | 0.917 | 0.917 | 0.917 | 20m 3s |
+| NAIVE_BAYES | amazon_polarity | 80.9% | 0.809 | 0.811 | 0.809 | 21m 55s |
+| NAIVE_BAYES | imdb_50k | 83.9% | 0.839 | 0.839 | 0.839 | 84m 35s |
+| NAIVE_BAYES | yelp | 80.7% | 0.807 | 0.808 | 0.807 | 7m 47s |
 
 ---
 
@@ -67,33 +67,33 @@ Each model was evaluated on all three test domains. Asterisk (*) indicates in-do
 
 | Train Domain | IMDB Test | Amazon Test | Yelp Test | Cross-Domain Avg |
 |--------------|-----------|-------------|-----------|------------------|
-| imdu 50k | 87.6% * | 81.4% | 79.8% | 80.6% |
-| amazon polarity | 85.0% | 89.8% * | 84.5% | 84.8% |
-| yelp | 74.4% | 79.2% | 94.0% * | 76.8% |
+| imdu 50k | 94.0% * | 81.9% | 84.0% | 83.0% |
+| amazon polarity | 85.1% | 88.7% * | 91.1% | 88.1% |
+| yelp | 78.8% | 82.1% | 93.7% * | 80.5% |
 
 #### LOGISTIC REGRESSION
 
 | Train Domain | IMDB Test | Amazon Test | Yelp Test | Cross-Domain Avg |
 |--------------|-----------|-------------|-----------|------------------|
-| imdu 50k | 82.4% * | 74.6% | 73.0% | 73.8% |
-| amazon polarity | 83.5% | 88.0% * | 82.6% | 83.0% |
-| yelp | 62.2% | 71.0% | 89.1% * | 66.6% |
+| imdu 50k | 85.2% * | 77.8% | 79.7% | 78.8% |
+| amazon polarity | 81.8% | 85.1% * | 85.9% | 83.9% |
+| yelp | 74.8% | 77.9% | 92.2% * | 76.4% |
 
 #### RANDOM FOREST
 
 | Train Domain | IMDB Test | Amazon Test | Yelp Test | Cross-Domain Avg |
 |--------------|-----------|-------------|-----------|------------------|
-| imdu 50k | 85.5% * | 78.8% | 79.0% | 78.9% |
-| amazon polarity | 80.5% | 87.9% * | 78.3% | 79.4% |
-| yelp | 69.1% | 67.3% | 92.5% * | 68.2% |
+| imdu 50k | 86.5% * | 78.1% | 81.2% | 79.7% |
+| amazon polarity | 81.3% | 97.4% * | 89.1% | 85.2% |
+| yelp | 71.0% | 81.3% | 91.7% * | 76.2% |
 
 #### NAIVE BAYES
 
 | Train Domain | IMDB Test | Amazon Test | Yelp Test | Cross-Domain Avg |
 |--------------|-----------|-------------|-----------|------------------|
-| imdu 50k | 82.6% * | 61.4% | 61.1% | 61.3% |
-| amazon polarity | 69.5% | 78.5% * | 67.5% | 68.5% |
-| yelp | 51.3% | 62.0% | 61.9% * | 56.6% |
+| imdu 50k | 83.5% * | 73.1% | 77.9% | 75.5% |
+| amazon polarity | 72.1% | 80.9% * | 82.0% | 77.1% |
+| yelp | 59.8% | 69.8% | 80.7% * | 64.8% |
 
 **Legend**: * = in-domain evaluation
 
@@ -101,20 +101,11 @@ Each model was evaluated on all three test domains. Asterisk (*) indicates in-do
 
 ## Part 3: Edge Case Evaluation
 
-**Total Edge Cases**: 516 curated examples across 4 categories:
+**Total Edge Cases**: 419 curated examples across 4 categories:
 - Sarcasm
 - Mixed Sentiment
 - Negation Heavy
 - Domain Jargon
-
-### Production Model Edge Case Performance
-
-| Category | Accuracy |
-|----------|----------|
-| sarcasm | 62.0% |
-| mixed sentiment | 70.0% |
-| negation heavy | 52.0% |
-| domain jargon | 60.0% |
 
 ---
 
@@ -140,25 +131,25 @@ All results can be reproduced via:
 
 | File | Algorithm | Dataset | Size |
 |------|-----------|---------|------|
-| amazon_polarity_logistic_regression_model_100k.ser | LOGISTIC_REGRESSION | amazon_polarity | 17.2 MB |
-| imdb_50k_logistic_regression_model.ser | Logistic Regression | imdb_50k | 19.5 MB |
-| yelp_logistic_regression_model.ser | Logistic Regression | yelp | 20.5 MB |
-| amazon_polarity_naive_bayes_model.ser | Naive Bayes | amazon_polarity | 17.7 MB |
-| imdb_50k_naive_bayes_model.ser | Naive Bayes | imdb_50k | 19.9 MB |
-| yelp_naive_bayes_model.ser | Naive Bayes | yelp | 21.1 MB |
-| sentiment_model.ser | SVM | amazon_polarity | 10.7 MB |
-| amazon_polarity_random_forest_model.ser | Random Forest | amazon_polarity | 318.9 MB |
-| imdb_50k_random_forest_model.ser | Random Forest | imdb_50k | 157.2 MB |
-| yelp_random_forest_model.ser | Random Forest | yelp | 324.3 MB |
-| amazon_polarity_svm_model_100k.ser | SVM | amazon_polarity | 17.0 MB |
-| imdb_50k_svm_model.ser | SVM | imdb_50k | 55.2 MB |
-| yelp_svm_model.ser | SVM | yelp | 64.8 MB |
+| amazon_polarity_logistic_regression_model.ser | LOGISTIC_REGRESSION | amazon_polarity | 14.6 MB |
+| imdb_50k_logistic_regression_model.ser | LOGISTIC_REGRESSION | imdb_50k | 31.2 MB |
+| yelp_logistic_regression_model.ser | LOGISTIC_REGRESSION | yelp | 9.8 MB |
+| amazon_polarity_naive_bayes_model.ser | NAIVE_BAYES | amazon_polarity | 14.7 MB |
+| imdb_50k_naive_bayes_model.ser | NAIVE_BAYES | imdb_50k | 31.3 MB |
+| yelp_naive_bayes_model.ser | NAIVE_BAYES | yelp | 10.0 MB |
+| sentiment_model.ser | SVM | amazon_polarity | 14.4 MB |
+| amazon_polarity_random_forest_model.ser | RANDOM_FOREST | amazon_polarity | 199.5 MB |
+| imdb_50k_random_forest_model.ser | RANDOM_FOREST | imdb_50k | 197.6 MB |
+| yelp_random_forest_model.ser | RANDOM_FOREST | yelp | 94.8 MB |
+| amazon_polarity_svm_model.ser | SVM | amazon_polarity | 14.4 MB |
+| imdb_50k_svm_model.ser | SVM | imdb_50k | 31.0 MB |
+| yelp_svm_model.ser | SVM | yelp | 9.6 MB |
 
 ---
 
 ## Metadata
 
-- **Report Generated**: 2026-01-18T14:02:45Z
-- **Git Commit**: 5d07a3d
+- **Report Generated**: 2026-01-20T19:53:08Z
+- **Git Commit**: f8b57b2
 - **Java Version**: 24.0.1
 

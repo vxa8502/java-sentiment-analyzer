@@ -35,7 +35,10 @@ public class TrainingMetadata {
     private MetricsInfo metrics;
 
     @JsonProperty("cross_domain_performance")
-    private Map<String, DomainPerformance> crossDomainPerformance;
+    private CrossDomainPerformance crossDomainPerformance;
+
+    @JsonProperty("edge_case_performance")
+    private EdgeCaseEvaluationResult edgeCasePerformance;
 
     @JsonProperty("artifacts")
     private ArtifactsInfo artifacts;
@@ -130,6 +133,114 @@ public class TrainingMetadata {
 
         @JsonProperty("recall")
         public double recall;
+
+        @JsonProperty("test_samples")
+        public Long testSamples;
+
+        @JsonProperty("is_in_domain")
+        public Boolean isInDomain;
+    }
+
+    /**
+     * Cross-domain evaluation results wrapper.
+     */
+    public static class CrossDomainPerformance {
+        @JsonProperty("evaluated_at")
+        public String evaluatedAt;
+
+        @JsonProperty("imdb_50k")
+        public DomainPerformance imdb50k;
+
+        @JsonProperty("amazon_polarity")
+        public DomainPerformance amazonPolarity;
+
+        @JsonProperty("yelp")
+        public DomainPerformance yelp;
+
+        @JsonProperty("cross_domain_average")
+        public double crossDomainAverage;
+    }
+
+    /**
+     * Edge case evaluation results with statistical context.
+     * Stores per-category performance with confidence intervals.
+     */
+    public static class EdgeCaseEvaluationResult {
+        @JsonProperty("evaluated_at")
+        public String evaluatedAt;
+
+        @JsonProperty("config_version")
+        public String configVersion;
+
+        @JsonProperty("overall_accuracy")
+        public double overallAccuracy;
+
+        @JsonProperty("overall_samples")
+        public int overallSamples;
+
+        @JsonProperty("overall_correct")
+        public int overallCorrect;
+
+        @JsonProperty("confidence_level")
+        public double confidenceLevel = 0.95;
+
+        @JsonProperty("categories")
+        public Map<String, CategoryPerformance> categories;
+
+        @JsonProperty("notes")
+        public String notes;
+    }
+
+    /**
+     * Performance metrics for a single edge case category.
+     * Includes Wilson score confidence interval for accuracy.
+     */
+    public static class CategoryPerformance {
+        @JsonProperty("accuracy")
+        public double accuracy;
+
+        @JsonProperty("samples")
+        public int samples;
+
+        @JsonProperty("correct")
+        public int correct;
+
+        @JsonProperty("ci_lower")
+        public double ciLower;
+
+        @JsonProperty("ci_upper")
+        public double ciUpper;
+
+        @JsonProperty("margin_of_error")
+        public double marginOfError;
+
+        /**
+         * Static factory with Wilson score CI calculation.
+         */
+        public static CategoryPerformance create(int correct, int samples, double confidenceLevel) {
+            CategoryPerformance perf = new CategoryPerformance();
+            perf.samples = samples;
+            perf.correct = correct;
+            perf.accuracy = samples > 0 ? (double) correct / samples : 0.0;
+
+            // Wilson score interval (better for small samples than normal approximation)
+            if (samples > 0) {
+                double z = confidenceLevel == 0.95 ? 1.96 : 1.645; // 95% or 90%
+                double p = perf.accuracy;
+                double n = samples;
+                double denominator = 1 + z * z / n;
+                double center = (p + z * z / (2 * n)) / denominator;
+                double spread = z * Math.sqrt((p * (1 - p) + z * z / (4 * n)) / n) / denominator;
+                perf.ciLower = Math.max(0, center - spread);
+                perf.ciUpper = Math.min(1, center + spread);
+                perf.marginOfError = (perf.ciUpper - perf.ciLower) / 2;
+            } else {
+                perf.ciLower = 0;
+                perf.ciUpper = 1;
+                perf.marginOfError = 0.5;
+            }
+            return perf;
+        }
     }
 
     public static class ArtifactsInfo {
@@ -333,6 +444,11 @@ public class TrainingMetadata {
             return this;
         }
 
+        public Builder edgeCasePerformance(EdgeCaseEvaluationResult result) {
+            metadata.edgeCasePerformance = result;
+            return this;
+        }
+
         public TrainingMetadata build() {
             return metadata;
         }
@@ -378,4 +494,15 @@ public class TrainingMetadata {
     public long getTrainingDurationSeconds() { return trainingDurationSeconds; }
     public String getModelFile() { return modelFile; }
     public long getModelSizeBytes() { return modelSizeBytes; }
+    public EdgeCaseEvaluationResult getEdgeCasePerformance() { return edgeCasePerformance; }
+    public CrossDomainPerformance getCrossDomainPerformance() { return crossDomainPerformance; }
+
+    // Setters for post-training evaluation updates
+    public void setEdgeCasePerformance(EdgeCaseEvaluationResult result) {
+        this.edgeCasePerformance = result;
+    }
+
+    public void setCrossDomainPerformance(CrossDomainPerformance performance) {
+        this.crossDomainPerformance = performance;
+    }
 }

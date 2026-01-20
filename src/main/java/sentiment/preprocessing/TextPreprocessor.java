@@ -48,6 +48,7 @@ public class TextPreprocessor {
     private final ContractionExpander contractionExpander;
     private final AdvancedTokenizer advancedTokenizer;
     private final IntelligentStopwordRemover stopwordRemover;
+    private final FeatureExtractionProperties featureConfig;
 
     // Pipeline state management - THREAD-SAFE with ReadWriteLock
     private final ReadWriteLock stateLock = new ReentrantReadWriteLock();
@@ -105,6 +106,7 @@ public class TextPreprocessor {
         this.contractionExpander = contractionExpander;
         this.advancedTokenizer = advancedTokenizer;
         this.stopwordRemover = stopwordRemover;
+        this.featureConfig = featureConfig;
         this.minWordLength = minWordLength;
         this.preserveEmoticons = true; // Default behavior for sentiment analysis
         this.pipelineState = new PipelineState();
@@ -146,7 +148,8 @@ public class TextPreprocessor {
                 }
 
                 // Step 2: Extract and store vocabulary statistics with MI-based feature selection
-                pipelineState.captureVocabularyStatsWithPrincipledSelection(preprocessedTexts, data);
+                pipelineState.captureVocabularyStatsWithPrincipledSelection(
+                        preprocessedTexts, data, featureConfig.getMiSelectionThreshold());
 
                 // Step 3: Store configuration
                 pipelineState.storeConfiguration(this);
@@ -554,11 +557,13 @@ public class TextPreprocessor {
          *
          * @param preprocessedTexts preprocessed text samples
          * @param originalDatasets original datasets with labels
+         * @param miThreshold threshold for triggering MI-based feature selection
          * @throws IllegalArgumentException if sizes don't match
          */
         public void captureVocabularyStatsWithPrincipledSelection(
                 List<String> preprocessedTexts,
-                List<Dataset> originalDatasets) {
+                List<Dataset> originalDatasets,
+                int miThreshold) {
 
             if (preprocessedTexts.size() != originalDatasets.size()) {
                 throw new IllegalArgumentException(
@@ -596,16 +601,15 @@ public class TextPreprocessor {
             }
 
             // Step 3: Apply vocabulary size limit with MI-based selection
-            final int MAX_VOCAB_SIZE = 50000;
-
-            if (frequencies.size() > MAX_VOCAB_SIZE) {
+            // Threshold is configurable via sentiment.features.mi-selection-threshold (default: 50000)
+            if (frequencies.size() > miThreshold) {
                 logger.warn("Vocabulary size {} exceeds limit {}. Selecting top-{} by mutual information",
-                           frequencies.size(), MAX_VOCAB_SIZE, MAX_VOCAB_SIZE);
+                           frequencies.size(), miThreshold, miThreshold);
 
                 // Select top-k features by INFORMATION GAIN, not frequency
                 this.vocabularyFrequencies = mutualInformation.entrySet().stream()
                     .sorted(Map.Entry.<String, Double>comparingByValue().reversed())
-                    .limit(MAX_VOCAB_SIZE)
+                    .limit(miThreshold)
                     .collect(Collectors.toMap(
                         Map.Entry::getKey,
                         e -> frequencies.get(e.getKey()),  // Store frequency, not MI
@@ -613,7 +617,7 @@ public class TextPreprocessor {
                         LinkedHashMap::new
                     ));
 
-                this.vocabularySize = MAX_VOCAB_SIZE;
+                this.vocabularySize = miThreshold;
 
                 // Step 4: Report information loss
                 double totalMI = mutualInformation.values().stream()
@@ -626,7 +630,7 @@ public class TextPreprocessor {
                                100.0 * retainedMI / totalMI, retainedMI, totalMI));
 
                 // Report some statistics about discarded features
-                long discardedFeatures = frequencies.size() - MAX_VOCAB_SIZE;
+                long discardedFeatures = frequencies.size() - miThreshold;
                 logger.info("Discarded {} features with low discriminative power", discardedFeatures);
 
             } else {

@@ -84,11 +84,13 @@ See [docs/TRAINING.md](docs/TRAINING.md) for detailed training documentation.
 
 ## Datasets
 
-| Dataset | Size | Domain |
-|---------|------|--------|
-| IMDB 50K | 25K train, 10K test | Movie reviews |
-| Amazon Polarity | 100K train, 20K test | Product reviews |
-| Yelp | 100K train, 20K test | Restaurant reviews |
+| Dataset | Train | Test | Domain |
+|---------|-------|------|--------|
+| IMDB 50K | ~40K | ~10K | Movie reviews |
+| Amazon Polarity | ~40K | ~10K | Product reviews |
+| Yelp | ~20K | ~5K | Restaurant reviews |
+
+All datasets are capped at 50K samples with stratified sampling to preserve class distribution. Binary classification only (positive/negative).
 
 ## Technology Stack
 
@@ -124,6 +126,25 @@ See [docs/TRAINING.md](docs/TRAINING.md) for detailed training documentation.
 - [TRAINING.md](docs/TRAINING.md) - Model training and evaluation
 - [DEPLOYMENT.md](docs/DEPLOYMENT.md) - Docker deployment and monitoring
 - [ARCHITECTURE.md](docs/ARCHITECTURE.md) - System design
+
+## Configuration
+
+Key settings can be customized via environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SENTIMENT_RANDOM_SEED` | 42 | Random seed for reproducibility |
+| `SENTIMENT_MI_THRESHOLD` | 50000 | MI feature selection threshold |
+| `SENTIMENT_DATA_IMDB` | `data/raw/imdb_50k/IMDB Dataset.csv` | IMDB dataset path |
+| `SENTIMENT_DATA_AMAZON` | `data/raw/amazon_polarity/train.csv` | Amazon dataset path |
+| `SENTIMENT_DATA_YELP` | `data/raw/yelp/yelp_reviews.csv` | Yelp dataset path |
+
+**Rate Limits** (per minute):
+- Single analysis: 100 requests
+- Batch analysis: 20 requests
+- Model comparison: 2 requests (per 5 min)
+
+See `application.yml` for all configuration options.
 
 ## Limitations
 
