@@ -42,7 +42,13 @@ public class SentimentControllerWebTest {
         when(classifier.getAlgorithmName()).thenReturn("SVM (Mocked)");
         when(classifier.getSupportedClasses()).thenReturn(new String[]{"positive", "negative"});
 
-        // Default classification behavior
+        // Default classification behavior - mock classifyWithProbabilities which controller uses
+        SentimentClassifier.ClassificationResult mockResult = new SentimentClassifier.ClassificationResult(
+            "positive", new double[]{0.85, 0.15}, new String[]{"positive", "negative"}
+        );
+        when(classifier.classifyWithProbabilities(anyString())).thenReturn(mockResult);
+
+        // Also mock legacy methods for backwards compatibility
         when(classifier.classify(anyString())).thenReturn("positive");
         when(classifier.getClassificationProbabilities(anyString()))
             .thenReturn(new double[]{0.85, 0.15});
@@ -95,9 +101,11 @@ public class SentimentControllerWebTest {
     @Test
     @DisplayName("Analyze positive text should return positive sentiment")
     public void testAnalyzeSentiment_PositiveSentiment() throws Exception {
-        when(classifier.classify(anyString())).thenReturn("positive");
-        when(classifier.getClassificationProbabilities(anyString()))
-            .thenReturn(new double[]{0.92, 0.08});
+        when(classifier.classifyWithProbabilities(anyString())).thenReturn(
+            new SentimentClassifier.ClassificationResult(
+                "positive", new double[]{0.92, 0.08}, new String[]{"positive", "negative"}
+            )
+        );
 
         String requestJson = """
                 {
@@ -116,9 +124,11 @@ public class SentimentControllerWebTest {
     @Test
     @DisplayName("Analyze negative text should return negative sentiment")
     public void testAnalyzeSentiment_NegativeSentiment() throws Exception {
-        when(classifier.classify(anyString())).thenReturn("negative");
-        when(classifier.getClassificationProbabilities(anyString()))
-            .thenReturn(new double[]{0.12, 0.88});
+        when(classifier.classifyWithProbabilities(anyString())).thenReturn(
+            new SentimentClassifier.ClassificationResult(
+                "negative", new double[]{0.12, 0.88}, new String[]{"positive", "negative"}
+            )
+        );
 
         String requestJson = """
                 {
@@ -137,9 +147,11 @@ public class SentimentControllerWebTest {
     @Test
     @DisplayName("Analyze sentiment with confidence threshold below threshold returns uncertain")
     public void testAnalyzeSentiment_BelowThreshold_ReturnsUncertain() throws Exception {
-        when(classifier.classify(anyString())).thenReturn("positive");
-        when(classifier.getClassificationProbabilities(anyString()))
-            .thenReturn(new double[]{0.65, 0.35});  // Below 0.9 threshold
+        when(classifier.classifyWithProbabilities(anyString())).thenReturn(
+            new SentimentClassifier.ClassificationResult(
+                "positive", new double[]{0.65, 0.35}, new String[]{"positive", "negative"}
+            )
+        );  // Below 0.9 threshold
 
         String requestJson = """
                 {
@@ -159,9 +171,11 @@ public class SentimentControllerWebTest {
     @Test
     @DisplayName("Analyze sentiment with confidence above threshold returns sentiment")
     public void testAnalyzeSentiment_AboveThreshold_ReturnsSentiment() throws Exception {
-        when(classifier.classify(anyString())).thenReturn("positive");
-        when(classifier.getClassificationProbabilities(anyString()))
-            .thenReturn(new double[]{0.95, 0.05});  // Above 0.7 threshold
+        when(classifier.classifyWithProbabilities(anyString())).thenReturn(
+            new SentimentClassifier.ClassificationResult(
+                "positive", new double[]{0.95, 0.05}, new String[]{"positive", "negative"}
+            )
+        );  // Above 0.7 threshold
 
         String requestJson = """
                 {
@@ -318,8 +332,11 @@ public class SentimentControllerWebTest {
     @Test
     @DisplayName("Batch analysis with confidence threshold should apply to all texts")
     public void testBatchAnalysis_WithConfidenceThreshold() throws Exception {
-        when(classifier.getClassificationProbabilities(anyString()))
-            .thenReturn(new double[]{0.75, 0.25});
+        when(classifier.classifyWithProbabilities(anyString())).thenReturn(
+            new SentimentClassifier.ClassificationResult(
+                "positive", new double[]{0.75, 0.25}, new String[]{"positive", "negative"}
+            )
+        );
 
         String requestJson = """
                 {

@@ -47,6 +47,9 @@ public class SentimentConfiguration {
     @Value("${sentiment.models.logistic-model-path:./models/logistic_regression-model.ser}")
     private String logisticModelPath;
 
+    @Value("${sentiment.models.production-model-path:./models/production/sentiment_model.ser}")
+    private String productionModelPath;
+
 
     /**
      * Creates WekaModelPersistence bean for model save/load operations.
@@ -64,6 +67,9 @@ public class SentimentConfiguration {
      */
     @Bean
     public String loadedModelPath() {
+        if ("PRODUCTION".equalsIgnoreCase(modelType)) {
+            return productionModelPath;
+        }
         AlgorithmType algorithm = AlgorithmType.fromString(modelType);
         return getModelPath(algorithm);
     }
@@ -78,6 +84,11 @@ public class SentimentConfiguration {
     public SentimentClassifier sentimentClassifier() {
         logger.info("Initializing sentiment classifier bean...");
         logger.info("Requested algorithm: {}", modelType);
+
+        // Handle PRODUCTION model type specially - loads the promoted best model
+        if ("PRODUCTION".equalsIgnoreCase(modelType)) {
+            return loadProductionModel();
+        }
 
         // Parse algorithm type
         AlgorithmType algorithm;
@@ -148,6 +159,75 @@ public class SentimentConfiguration {
 
             logger.error(errorMsg, e);
             throw new IllegalStateException(errorMsg, e);
+        }
+    }
+
+    /**
+     * Loads the production model (best generalizing model promoted by promote_to_production.sh).
+     * Reads metadata to determine the algorithm type dynamically.
+     */
+    private SentimentClassifier loadProductionModel() {
+        logger.info("Loading PRODUCTION model from: {}", productionModelPath);
+        Path modelPath = Paths.get(productionModelPath);
+
+        if (!Files.exists(modelPath)) {
+            throw new IllegalStateException(
+                "Production model not found at: " + productionModelPath + "\n" +
+                "Run ./scripts/promote_to_production.sh to create the production model.");
+        }
+
+        // Read metadata to determine algorithm type
+        Path metadataPath = Paths.get(productionModelPath.replace(".ser", ".metadata.json"));
+        AlgorithmType algorithm = readAlgorithmFromMetadata(metadataPath);
+
+        logger.info("Production model algorithm: {}", algorithm.getDisplayName());
+
+        SentimentClassifier classifier = createClassifier(algorithm);
+        @SuppressWarnings("unchecked")
+        WekaModelPersistence<ClassifierTrainingTemplate<?>> persistence = wekaModelPersistence();
+
+        try {
+            if (!persistence.isValidModel(modelPath)) {
+                throw new IllegalStateException("Production model validation failed: " + productionModelPath);
+            }
+
+            @SuppressWarnings("unchecked")
+            ClassifierTrainingTemplate<?> template = (ClassifierTrainingTemplate<?>) classifier;
+            persistence.loadModel(template, modelPath);
+
+            logger.info("Production model loaded successfully");
+            return classifier;
+
+        } catch (IOException | ClassNotFoundException e) {
+            throw new IllegalStateException("Failed to load production model: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Reads the algorithm type from model metadata JSON file.
+     */
+    private AlgorithmType readAlgorithmFromMetadata(Path metadataPath) {
+        if (!Files.exists(metadataPath)) {
+            logger.warn("Metadata file not found at: {}. Defaulting to SVM.", metadataPath);
+            return AlgorithmType.SVM;
+        }
+
+        try {
+            String content = Files.readString(metadataPath);
+            // Simple parsing - look for "algorithm": "value"
+            if (content.contains("\"algorithm\"")) {
+                int start = content.indexOf("\"algorithm\"");
+                int colonPos = content.indexOf(":", start);
+                int quoteStart = content.indexOf("\"", colonPos + 1);
+                int quoteEnd = content.indexOf("\"", quoteStart + 1);
+                String algorithmStr = content.substring(quoteStart + 1, quoteEnd);
+                return AlgorithmType.fromString(algorithmStr);
+            }
+            logger.warn("Algorithm not found in metadata. Defaulting to SVM.");
+            return AlgorithmType.SVM;
+        } catch (IOException e) {
+            logger.warn("Failed to read metadata: {}. Defaulting to SVM.", e.getMessage());
+            return AlgorithmType.SVM;
         }
     }
 

@@ -242,7 +242,7 @@ public class DataQualityReport {
         sb.append(statistics.generateReport());
 
         // Bias Detection
-        sb.append("\n⚠️  BIAS DETECTION\n");
+        sb.append("\n[!] BIAS DETECTION\n");
         sb.append(String.format("   Length Bias: %s\n", biases.hasLengthBias ? "DETECTED" : "✓ Not detected"));
         if (!biases.lengthBias.isEmpty()) {
             for (var entry : biases.lengthBias.entrySet()) {
@@ -254,7 +254,7 @@ public class DataQualityReport {
         sb.append(String.format("   Label Inconsistency: %.2f%%\n\n", biases.labelInconsistencyRate * 100));
 
         // Label Quality
-        sb.append("🔍 LABEL QUALITY\n");
+        sb.append("[*] LABEL QUALITY\n");
         sb.append(String.format("   Estimated Noise Rate: %.1f%% (based on %d samples)\n",
             labelQuality.estimatedNoiseRate * 100, labelQuality.sampleSize));
         if (!labelQuality.suspiciousExamples.isEmpty()) {
@@ -266,7 +266,7 @@ public class DataQualityReport {
         sb.append("\n");
 
         // Edge Cases
-        sb.append("🎯 EDGE CASE ANALYSIS\n");
+        sb.append("[>] EDGE CASE ANALYSIS\n");
         sb.append(String.format("   Sarcasm Candidates: %,d (%.1f%%)\n",
             edgeCases.sarcasmCandidates,
             (edgeCases.sarcasmCandidates * 100.0) / edgeCases.totalSamples));

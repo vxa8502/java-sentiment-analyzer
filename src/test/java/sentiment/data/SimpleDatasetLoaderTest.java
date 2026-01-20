@@ -35,7 +35,7 @@ class SimpleDatasetLoaderTest {
             text,sentiment
             This is great,positive
             This is terrible,negative
-            This is okay,neutral
+            This is also good,positive
             """);
 
         List<Dataset> datasets = loader.load(csvFile.toString());
@@ -43,7 +43,7 @@ class SimpleDatasetLoaderTest {
         assertEquals(3, datasets.size());
         assertEquals(Dataset.SentimentLabel.POSITIVE, datasets.get(0).getSentiment());
         assertEquals(Dataset.SentimentLabel.NEGATIVE, datasets.get(1).getSentiment());
-        assertEquals(Dataset.SentimentLabel.NEUTRAL, datasets.get(2).getSentiment());
+        assertEquals(Dataset.SentimentLabel.POSITIVE, datasets.get(2).getSentiment());
     }
 
     @Test
@@ -81,7 +81,7 @@ class SimpleDatasetLoaderTest {
     }
 
     @Test
-    @DisplayName("Should handle star ratings (1-5)")
+    @DisplayName("Should handle star ratings (1-5, neutral filtered for binary classification)")
     void testLoadCsv_StarRatings() throws Exception {
         Path csvFile = tempDir.resolve("ratings.csv");
         Files.writeString(csvFile, """
@@ -95,12 +95,12 @@ class SimpleDatasetLoaderTest {
 
         List<Dataset> datasets = loader.load(csvFile.toString());
 
-        assertEquals(5, datasets.size());
+        // Neutral (3.0) is filtered out for binary classification
+        assertEquals(4, datasets.size());
         assertEquals(Dataset.SentimentLabel.POSITIVE, datasets.get(0).getSentiment()); // 5.0
         assertEquals(Dataset.SentimentLabel.NEGATIVE, datasets.get(1).getSentiment()); // 1.0
-        assertEquals(Dataset.SentimentLabel.NEUTRAL, datasets.get(2).getSentiment());  // 3.0
-        assertEquals(Dataset.SentimentLabel.POSITIVE, datasets.get(3).getSentiment()); // 4.0
-        assertEquals(Dataset.SentimentLabel.NEGATIVE, datasets.get(4).getSentiment()); // 2.0
+        assertEquals(Dataset.SentimentLabel.POSITIVE, datasets.get(2).getSentiment()); // 4.0
+        assertEquals(Dataset.SentimentLabel.NEGATIVE, datasets.get(3).getSentiment()); // 2.0
     }
 
     @Test
@@ -291,17 +291,14 @@ class SimpleDatasetLoaderTest {
     // ==================== INTEGRATION TEST ====================
 
     @Test
-    @DisplayName("Should handle realistic CSV with multiple rows")
+    @DisplayName("Should handle realistic CSV with multiple rows (binary classification)")
     void testLoadCsv_RealisticDataset() throws Exception {
         Path csvFile = tempDir.resolve("realistic.csv");
         StringBuilder content = new StringBuilder("text,sentiment\n");
 
+        // Binary classification: only positive and negative labels
         for (int i = 0; i < 100; i++) {
-            String sentiment = switch (i % 3) {
-                case 0 -> "positive";
-                case 1 -> "negative";
-                default -> "neutral";
-            };
+            String sentiment = (i % 2 == 0) ? "positive" : "negative";
             content.append(String.format("Review number %d with some text,", i))
                    .append(sentiment)
                    .append("\n");
@@ -313,19 +310,15 @@ class SimpleDatasetLoaderTest {
 
         assertEquals(100, datasets.size());
 
-        // Verify distribution
+        // Verify distribution (50/50 split for binary classification)
         long positiveCount = datasets.stream()
             .filter(d -> d.getSentiment() == Dataset.SentimentLabel.POSITIVE)
             .count();
         long negativeCount = datasets.stream()
             .filter(d -> d.getSentiment() == Dataset.SentimentLabel.NEGATIVE)
             .count();
-        long neutralCount = datasets.stream()
-            .filter(d -> d.getSentiment() == Dataset.SentimentLabel.NEUTRAL)
-            .count();
 
-        assertEquals(34, positiveCount);
-        assertEquals(33, negativeCount);
-        assertEquals(33, neutralCount);
+        assertEquals(50, positiveCount);
+        assertEquals(50, negativeCount);
     }
 }

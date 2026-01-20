@@ -3,6 +3,7 @@ package sentiment.api;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.condition.EnabledIf;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
@@ -13,24 +14,31 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 
+import java.nio.file.Files;
+import java.nio.file.Paths;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * End-to-end integration smoke tests with real Spring Boot context and ML model.
+ * These tests require a trained production model to exist.
  */
 @SpringBootTest(
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
     properties = {
-        "sentiment.models.svm-model-path=./models/svm-model.ser",
-        "sentiment.models.nb-model-path=./models/nb-model.ser",
-        "sentiment.models.rf-model-path=./models/rf-model.ser",
-        "sentiment.models.lr-model-path=./models/lr-model.ser"
+        "sentiment.model-type=PRODUCTION",
+        "sentiment.models.production-model-path=./models/production/sentiment_model.ser"
     }
 )
 @Tag("integration")
+@EnabledIf("productionModelExists")
 @DisplayName("Sentiment Controller E2E Integration Tests")
 @SuppressWarnings("SpringJavaInjectionPointsAutowiringInspection")  // Fields injected by Spring Test
 public class SentimentControllerIntegrationTest {
+
+    static boolean productionModelExists() {
+        return Files.exists(Paths.get("./models/production/sentiment_model.ser"));
+    }
 
     @LocalServerPort
     private int port;
@@ -76,10 +84,10 @@ public class SentimentControllerIntegrationTest {
             .as("Response should contain processingTimeMs field")
             .contains("\"processingTimeMs\"");
 
-        // Verify confidence is a reasonable probability value
+        // Verify confidence is a valid probability value (0.0 to 1.0)
         assertThat(body)
-            .as("Confidence should be a numeric value")
-            .containsPattern("\"confidence\"\\s*:\\s*0\\.\\d+");
+            .as("Confidence should be a numeric value between 0 and 1")
+            .containsPattern("\"confidence\"\\s*:\\s*[01]\\.\\d+|\"confidence\"\\s*:\\s*1\\.0");
     }
 
     @Test

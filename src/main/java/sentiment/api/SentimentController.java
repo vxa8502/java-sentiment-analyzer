@@ -42,7 +42,7 @@ public class SentimentController {
 
     public SentimentController(SentimentClassifier classifier,
                                PredictionMetrics metrics,
-                               String loadedModelPath) {
+                               @Value("${sentiment.models.production-path:models/production/sentiment_model.ser}") String loadedModelPath) {
         this.classifier = classifier;
         this.metrics = metrics;
         this.loadedModelPath = loadedModelPath;
@@ -128,6 +128,13 @@ public class SentimentController {
             @RequestParam(defaultValue = "30") int topFeatures) {
 
         logger.info("Feature importance request: topFeatures={}", topFeatures);
+
+        // Validate topFeatures parameter
+        if (topFeatures < 1) {
+            return ResponseEntity.badRequest()
+                    .body(FeatureImportanceResponse.error(
+                            "Invalid topFeatures value: must be at least 1"));
+        }
 
         try {
             if (!classifier.isTrained()) {
