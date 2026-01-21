@@ -106,9 +106,6 @@ public class TrainingMetadata {
         @JsonProperty("samples")
         public SampleCounts samples;
 
-        @JsonProperty("hash")
-        public String hash; // Optional: SHA-256 of dataset file
-
         @JsonProperty("split_manifest_hash")
         public String splitManifestHash; // SHA-256 of splits.manifest.json for audit trail
 
@@ -252,12 +249,6 @@ public class TrainingMetadata {
     public static class ArtifactsInfo {
         @JsonProperty("model_file")
         public String modelFile;
-
-        @JsonProperty("preprocessor_state")
-        public String preprocessorState;
-
-        @JsonProperty("vocabulary_file")
-        public String vocabularyFile;
 
         @JsonProperty("feature_importance")
         public String featureImportance;
@@ -424,12 +415,10 @@ public class TrainingMetadata {
             return this;
         }
 
-        public Builder artifacts(String modelFile, String featureImportance, String preprocessorState, String vocabularyFile) {
+        public Builder artifacts(String modelFile, String featureImportance) {
             metadata.artifacts = new ArtifactsInfo();
             metadata.artifacts.modelFile = modelFile;
             metadata.artifacts.featureImportance = featureImportance;
-            metadata.artifacts.preprocessorState = preprocessorState;
-            metadata.artifacts.vocabularyFile = vocabularyFile;
             return this;
         }
 

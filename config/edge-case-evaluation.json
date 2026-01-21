@@ -1,6 +1,8 @@
 {
   "_comment": "Edge Case Evaluation Configuration - shared by Java and Python",
-  "_version": "1.3.0",
+  "_version": "1.4.0",
+
+  "_methodology_note": "IMPORTANT: Edge cases were extracted from prediction errors of the 4 trained algorithms. Evaluating those same models on these edge cases is CIRCULAR - by construction, they already failed on these texts. Results should be interpreted as 'error characterization' (understanding WHY models fail) not 'robustness benchmarking' (measuring generalization). For valid robustness testing, use a held-out 5th algorithm or evaluate only on edge cases from OTHER domains.",
 
   "directories": {
     "edge_cases_dir": "data/raw/edge_cases",
@@ -27,7 +29,8 @@
     "_comment": "Statistical parameters for evaluation metrics",
     "confidence_level": 0.95,
     "ci_method": "wilson",
-    "warn_if_samples_below": 30
+    "min_samples_for_inclusion": 30,
+    "_min_samples_rationale": "Categories with fewer samples are excluded from metrics (CI too wide to be meaningful). Currently excludes: sarcasm (n=2)."
   },
 
   "categories": [

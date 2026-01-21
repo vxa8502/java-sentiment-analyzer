@@ -1,23 +1,29 @@
 # Java Sentiment Analyzer
 
-**88% accuracy across 3 domains** | **<50ms latency** | **Production-ready REST API**
+A sentiment analysis API built in Java with Spring Boot.
 
-A sentiment analysis system that classifies text as positive or negative, built in Java with Spring Boot and Weka. Trained and evaluated across movie reviews, product reviews, and restaurant reviews to ensure real-world generalization.
+Goal: Understand engineering rigor of production ML Systems (type safety, circuit breakers, health checks, and containerized deployment).
+
+| Metric | Value |
+|--------|-------|
+| Cross-domain accuracy | **88%** (tested on 3 different text domains) |
+| Latency | **10-50ms** per request |
+| Throughput | **1,000+ req/min** |
+
+<!-- TODO: Add live demo link once deployed -->
 
 ---
 
 ## Why Java for ML?
 
-Most ML projects live in Python notebooks. This one ships as a production service.
+I built this to demonstrate cross-language proficiency and enterprise deployment patterns that Python notebooks don't address:
 
-I built this in Java to demonstrate:
+- **Type-safe pipelines** catch errors at compile time, not in production
+- **Spring Boot patterns**: circuit breakers, rate limiting, health checks
+- **Weka's maturity**: 20+ years of peer-reviewed ML algorithms
+- **JVM concurrency**: ReadWriteLock enables parallel inference during model updates
 
-- **Enterprise deployment patterns**: Spring Boot containerization, health checks, circuit breakers
-- **Production reliability**: Type-safe pipelines catch errors at compile time, not runtime
-- **Weka's maturity**: 20+ years of peer-reviewed ML research, proven accuracy on text classification
-- **JVM performance**: Parallel preprocessing and inference via ReadWriteLock concurrency
-
-The result: a sentiment classifier that runs anywhere Docker runs, handles 1,000+ requests/minute, and maintains consistent accuracy across different text domains.
+The result: a sentiment classifier that runs anywhere Docker runs, handles real traffic patterns, and maintains consistent accuracy across completely different text domains (movie reviews, product reviews, restaurant reviews).
 
 ---
 
@@ -53,6 +59,22 @@ Trained 4 algorithms across 3 domains to find the best trade-off between accurac
 | Naive Bayes | 83.9% (IMDB) | 76.2% | Fastest inference |
 
 Full results: [Model Comparison Report](results/FINAL_COMPREHENSIVE_REPORT.md)
+
+### What the Model Learned
+
+Top features by SVM weight show the model captures negation patterns and domain-specific language:
+
+| Positive Indicators | Weight | Negative Indicators | Weight |
+|---------------------|--------|---------------------|--------|
+| not disappointed | +1.31 | not worth | -1.52 |
+| excellent | +0.94 | disappointing | -1.28 |
+| awesome | +0.92 | not recommend | -1.25 |
+| fantastic | +0.90 | worst | -1.22 |
+| four stars | +0.89 | two stars | -1.02 |
+
+The bigram "not disappointed" ranking as the top positive indicator demonstrates that TF-IDF bigrams successfully capture negation—a common failure mode for bag-of-words models.
+
+Full feature analysis: [Feature Importance API endpoint](#feature-importance) or `models/production/sentiment_model-feature-importance.json`
 
 ---
 

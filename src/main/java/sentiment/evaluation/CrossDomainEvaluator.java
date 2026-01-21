@@ -14,7 +14,7 @@ import java.time.LocalDateTime;
 import java.util.*;
 
 /**
- * Cross-domain evaluation tool following David's recommendations.
+ * Cross-domain evaluation tool for testing model generalization.
  * Tests models across all datasets to measure generalization capability.
  *
  * Key Insight: Models trained on their own domain perform best,

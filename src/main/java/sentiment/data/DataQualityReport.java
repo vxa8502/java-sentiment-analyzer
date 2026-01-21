@@ -12,7 +12,7 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * Comprehensive data quality analysis tool following Sofia's recommendations.
+ * Comprehensive data quality analysis tool.
  * Detects biases, measures label quality, identifies edge cases, and generates detailed reports.
  *
  * @author Victoria Alabi

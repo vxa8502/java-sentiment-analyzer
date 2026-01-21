@@ -179,17 +179,63 @@ get_best_model_accuracy() {
     jq -r '.best_generalizing_model.cross_domain_avg_accuracy' "$matrix" | awk '{printf "%.1f%%", $1*100}'
 }
 
-# Count edge cases
+# Count edge cases (handles multi-line CSV fields correctly)
 count_edge_cases() {
     local edge_dir="$PROJECT_ROOT/data/raw/edge_cases"
-    local total=0
-    for f in "$edge_dir"/*.csv; do
-        if [ -f "$f" ]; then
-            local count=$(($(wc -l < "$f") - 1))  # Subtract header
-            total=$((total + count))
-        fi
-    done
-    echo $total
+    python3 -c "
+import csv, os
+total = 0
+edge_dir = '$edge_dir'
+for f in os.listdir(edge_dir):
+    if f.endswith('.csv'):
+        with open(os.path.join(edge_dir, f)) as csvfile:
+            total += sum(1 for _ in csv.reader(csvfile)) - 1  # subtract header
+print(total)
+"
+}
+
+# Count edge cases included in metrics (n >= 30)
+count_included_edge_cases() {
+    local edge_dir="$PROJECT_ROOT/data/raw/edge_cases"
+    python3 -c "
+import csv, os
+total = 0
+edge_dir = '$edge_dir'
+for f in os.listdir(edge_dir):
+    if f.endswith('.csv'):
+        with open(os.path.join(edge_dir, f)) as csvfile:
+            count = sum(1 for _ in csv.reader(csvfile)) - 1
+            if count >= 30:
+                total += count
+print(total)
+"
+}
+
+# Build edge case breakdown table
+build_edge_case_table() {
+    local edge_dir="$PROJECT_ROOT/data/raw/edge_cases"
+    python3 -c "
+import csv, os
+
+edge_dir = '$edge_dir'
+categories = []
+
+for f in sorted(os.listdir(edge_dir)):
+    if f.endswith('.csv'):
+        name = f.replace('.csv', '').replace('_', ' ').title()
+        with open(os.path.join(edge_dir, f)) as csvfile:
+            count = sum(1 for _ in csv.reader(csvfile)) - 1
+        included = 'Yes' if count >= 30 else 'No (n < 30)'
+        categories.append((name, count, included))
+
+# Sort by count descending
+categories.sort(key=lambda x: -x[1])
+
+print('| Category | Samples | Included |')
+print('|----------|---------|----------|')
+for name, count, included in categories:
+    print(f'| {name} | {count} | {included} |')
+"
 }
 
 # Generate the report
@@ -259,11 +305,11 @@ $(build_cross_domain_tables)
 
 ## Part 3: Edge Case Evaluation
 
-**Total Edge Cases**: $(count_edge_cases) curated examples across 4 categories:
-- Sarcasm
-- Mixed Sentiment
-- Negation Heavy
-- Domain Jargon
+**Total Edge Cases**: $(count_edge_cases) samples across 5 categories ($(count_included_edge_cases) included in metrics)
+
+$(build_edge_case_table)
+
+Categories with fewer than 30 samples are excluded from aggregate metrics (confidence intervals too wide for meaningful analysis).
 
 EOF
 

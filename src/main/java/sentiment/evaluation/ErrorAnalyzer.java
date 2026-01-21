@@ -11,7 +11,7 @@ import java.util.stream.Collectors;
 
 /**
  * Analyzes model prediction errors to identify failure patterns.
- * Following Sofia's method: find real failures, then manually categorize them.
+ * Identifies systematic failure patterns for error analysis.
  *
  * Usage:
  * 1. Run this tool to find misclassifications

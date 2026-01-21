@@ -62,7 +62,7 @@ class Filtering:
 class Evaluation:
     confidence_level: float = 0.95
     ci_method: str = "wilson"
-    warn_if_samples_below: int = 30
+    min_samples_for_inclusion: int = 30
 
 
 @dataclass
@@ -160,7 +160,7 @@ def _parse_config(data: dict) -> EdgeCaseConfig:
     evaluation = Evaluation(
         confidence_level=data.get("evaluation", {}).get("confidence_level", 0.95),
         ci_method=data.get("evaluation", {}).get("ci_method", "wilson"),
-        warn_if_samples_below=data.get("evaluation", {}).get("warn_if_samples_below", 30),
+        min_samples_for_inclusion=data.get("evaluation", {}).get("min_samples_for_inclusion", 30),
     )
 
     categories = [

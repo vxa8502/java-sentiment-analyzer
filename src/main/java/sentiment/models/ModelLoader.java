@@ -8,7 +8,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 
 /**
- * Model loader with metadata validation following David's requirements.
+ * Model loader with metadata validation.
  * Ensures every model has companion metadata and validates compatibility.
  *
  * @author Victoria Alabi
@@ -29,7 +29,7 @@ public class ModelLoader {
 
         Path path = Paths.get(modelPath);
 
-        // David's requirement: EVERY model MUST have metadata
+        // Every model must have metadata for reproducibility
         Path metadataPath = TrainingMetadata.getMetadataPath(path);
         if (!Files.exists(metadataPath)) {
             throw new IllegalStateException(

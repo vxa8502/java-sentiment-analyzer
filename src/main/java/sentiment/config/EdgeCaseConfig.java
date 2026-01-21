@@ -123,12 +123,12 @@ public class EdgeCaseConfig {
         @JsonProperty("ci_method")
         private String ciMethod = "wilson";
 
-        @JsonProperty("warn_if_samples_below")
-        private int warnIfSamplesBelow = 30;
+        @JsonProperty("min_samples_for_inclusion")
+        private int minSamplesForInclusion = 30;
 
         public double getConfidenceLevel() { return confidenceLevel; }
         public String getCiMethod() { return ciMethod; }
-        public int getWarnIfSamplesBelow() { return warnIfSamplesBelow; }
+        public int getMinSamplesForInclusion() { return minSamplesForInclusion; }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)

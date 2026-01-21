@@ -503,10 +503,17 @@ public class ModelTrainer {
             String kernel = null;
             String notes = null;
             if (classifier instanceof SVMClassifier svm && svm.getOptimalConfig() != null) {
-                kernel = svm.getOptimalConfig().getKernelType().name().toLowerCase();
-                notes = String.format("Tuned SVM with C=%.4f, 5-fold CV accuracy=%.4f",
-                        svm.getOptimalConfig().getC(),
-                        svm.getOptimalConfig().getCvAccuracy());
+                SVMConfig config = svm.getOptimalConfig();
+                kernel = config.getKernelType().name().toLowerCase();
+
+                // Generate notes based on whether grid search actually ran
+                if (config.getCvAccuracy() != null) {
+                    notes = String.format("Tuned SVM with C=%.4f, 5-fold CV accuracy=%.2f%%",
+                            config.getC(), config.getCvAccuracy() * 100);
+                } else {
+                    notes = String.format("SVM with C=%.4f, %s kernel (default config, no grid search)",
+                            config.getC(), kernel);
+                }
             } else if (algorithmType == AlgorithmType.SVM) {
                 kernel = "linear";
                 notes = "SVM with default parameters";
@@ -534,7 +541,7 @@ public class ModelTrainer {
                     .trainingDuration(trainingTimeMs)
                     .modelFile(modelFileName, Files.size(modelFilePath))
                     .modelInfo(algorithmType.name(), kernel, "Weka 3.9.6", "2.0.0", notes)
-                    .artifacts(modelFileName, featureImportanceFile, null, null)
+                    .artifacts(modelFileName, featureImportanceFile)
                     .reproducibility(42L, System.getProperty("java.version"), "3.9.6", commitHash)
                     .build();
 
@@ -559,9 +566,18 @@ public class ModelTrainer {
             SVMConfig config = svm.getOptimalConfig();
             hyperparameters.put("kernel", config.getKernelType().name().toLowerCase());
             hyperparameters.put("c_parameter", config.getC());
-            hyperparameters.put("tuning_method", "grid_search");
-            hyperparameters.put("cv_folds", 5);  // Standard 5-fold CV
-            hyperparameters.put("cv_accuracy", config.getCvAccuracy());
+
+            // Determine if grid search actually ran by checking for CV metrics
+            boolean gridSearchRan = config.getCvAccuracy() != null;
+            hyperparameters.put("tuning_method", gridSearchRan ? "grid_search" : "default");
+
+            if (gridSearchRan) {
+                hyperparameters.put("cv_folds", 5);
+                hyperparameters.put("cv_accuracy", config.getCvAccuracy());
+                if (config.getCvStdDev() != null) {
+                    hyperparameters.put("cv_std_dev", config.getCvStdDev());
+                }
+            }
         } else if (algorithmType == AlgorithmType.SVM) {
             hyperparameters.put("kernel", "linear");
             hyperparameters.put("c_parameter", 1.0);

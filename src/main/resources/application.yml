@@ -1,5 +1,5 @@
 server:
-  port: 8080
+  port: ${PORT:8080}
 
 logging:
   level:
@@ -141,7 +141,7 @@ sentiment:
     # Export results to files
     export-results: true
 
-  # Model versioning configuration (David's systems approach)
+  # Model versioning configuration
   versioning:
     # Directory where versioned models are stored
     models-directory: "${SENTIMENT_MODELS_DIR:/app/models}"

@@ -39,16 +39,21 @@ RUN chown -R appuser:appuser /app
 # Switch to non-root user
 USER appuser
 
-# Expose the application port
+# Expose the application port (Render uses PORT env var, defaults to 8080 locally)
 EXPOSE 8080
 
-# Health check
+# Health check (uses PORT env var at runtime)
 HEALTHCHECK --interval=30s --timeout=3s --start-period=60s --retries=3 \
-  CMD curl -f http://localhost:8080/api/v1/health || exit 1
+  CMD curl -f http://localhost:${PORT:-8080}/api/v1/health || exit 1
 
-# Default memory limits (override at runtime with -e MAX_HEAP=1g)
-ENV MAX_HEAP=512m
-ENV MIN_HEAP=256m
+# Default memory limits optimized for Render free tier (512MB container)
+# SerialGC uses less memory overhead than G1GC
+ENV MAX_HEAP=384m
+ENV MIN_HEAP=128m
+ENV PORT=8080
 
-# Run the application (JAVA_OPTS constructed at runtime so ENV overrides work)
-ENTRYPOINT ["sh", "-c", "java -Xmx${MAX_HEAP} -Xms${MIN_HEAP} -XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -jar /app/app.jar"]
+# Run the application with memory-optimized JVM settings
+# -XX:+UseSerialGC: Single-threaded GC, lower memory overhead
+# -XX:+UseContainerSupport: Respect container memory limits
+# -Xss512k: Reduce thread stack size from 1MB default
+ENTRYPOINT ["sh", "-c", "java -Xmx${MAX_HEAP} -Xms${MIN_HEAP} -XX:+UseSerialGC -XX:+UseContainerSupport -Xss512k -Dserver.port=${PORT} -jar /app/app.jar"]

@@ -101,11 +101,17 @@ Each model was evaluated on all three test domains. Asterisk (*) indicates in-do
 
 ## Part 3: Edge Case Evaluation
 
-**Total Edge Cases**: 497 curated examples across 4 categories:
-- Sarcasm
-- Mixed Sentiment
-- Negation Heavy
-- Domain Jargon
+**Total Edge Cases**: 213 samples across 5 categories (204 included in metrics)
+
+| Category | Samples | Included |
+|----------|---------|----------|
+| Mixed Sentiment | 83 | Yes |
+| Domain Jargon | 69 | Yes |
+| Negation Heavy | 52 | Yes |
+| Label Error | 7 | No (n < 30) |
+| Sarcasm | 2 | No (n < 30) |
+
+Categories with fewer than 30 samples are excluded from aggregate metrics (confidence intervals too wide for meaningful analysis).
 
 ---
 
@@ -149,7 +155,7 @@ All results can be reproduced via:
 
 ## Metadata
 
-- **Report Generated**: 2026-01-21T17:34:03Z
-- **Git Commit**: 8d2bf54
+- **Report Generated**: 2026-01-21T19:55:22Z
+- **Git Commit**: df2fc1f
 - **Java Version**: 24.0.1
 
