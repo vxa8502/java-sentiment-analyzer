@@ -4,15 +4,27 @@ This document details the technical architecture, design patterns, and implement
 
 ---
 
+## TL;DR
+
+| Component | Technology | Key Design |
+|-----------|------------|------------|
+| **API** | Spring Boot | REST endpoints, rate limiting (100 req/min), circuit breaker |
+| **Models** | Weka (SVM, NB, LR, RF) | Strategy pattern, calibrated probabilities |
+| **Preprocessing** | TF-IDF + MI selection | Thread-safe with ReadWriteLock |
+| **Deployment** | Docker | Non-root container, health checks |
+
+**Production model**: SVM trained on Amazon reviews, 88% cross-domain accuracy.
+
+**Quick links**: [Training Guide](TRAINING.md) | [Deployment Guide](DEPLOYMENT.md) | [Data Cards](data_cards/)
+
+---
+
 ## Table of Contents
 
 1. [High-Level Architecture](#high-level-architecture)
 2. [Package Structure](#package-structure)
-3. [Design Patterns](#design-patterns)
-4. [Component Deep Dive](#component-deep-dive)
-5. [Data Flow](#data-flow)
-6. [Concurrency Model](#concurrency-model)
-7. [Technical Decisions](#technical-decisions)
+3. [Component Deep Dive](#component-deep-dive)
+4. [Technical Decisions](#technical-decisions)
 
 ---
 
@@ -22,7 +34,7 @@ This document details the technical architecture, design patterns, and implement
 +-----------------------------------------------------------------------+
 |                          REST API LAYER                               |
 |  - Spring Boot Controllers (Port 8080)                                |
-|  - Rate Limiting: 1000 req/min (Resilience4j)                         |
+|  - Rate Limiting: 100 req/min (Resilience4j)                          |
 |  - Circuit Breaker: Fails fast on model errors                        |
 |  - Production Metrics: Micrometer + Prometheus                        |
 +-----------------------------------+-----------------------------------+
@@ -93,6 +105,8 @@ This document details the technical architecture, design patterns, and implement
 - `DataLoadingException`: Domain-specific exception for loading errors
 - `DataQualityReport`: Validation and quality metrics for loaded datasets
 - `DatasetStatistics`: Statistical summary of dataset characteristics
+- `DataPreparer`: Creates immutable train/test splits with manifest-based locking
+- `SplitManifest`: Tracks split metadata and SHA-256 checksums for reproducibility
 
 **Design Pattern**: Simple factory with switch-based format detection
 
@@ -139,6 +153,27 @@ System.out.println("Loaded " + result.datasets().size() + " samples in " + resul
 - Uses Apache Commons CSV for robust parsing (handles quotes, escapes, edge cases)
 - Streaming parser: Processes row-by-row (memory-efficient for large files)
 - Builder pattern for Dataset construction (validates at build time)
+
+**Data Preparation Workflow:**
+
+The `DataPreparer` and `SplitManifest` classes ensure reproducible, immutable data splits:
+
+```
+raw/{domain}/*.csv
+  → DataPreparer.prepare()
+    → StratifiedDataSplitter (80/20 split preserving class balance)
+    → processed/{domain}/
+        ├── train.csv
+        ├── test.csv
+        └── splits.manifest.json  ← Lock file with SHA-256 checksums
+```
+
+**Key Invariant:** Once splits are created, they are immutable. The manifest acts as a "lock file":
+- `prepare()` skips if manifest exists (prevents accidental overwrites)
+- `forceReset()` required for explicit regeneration
+- `verify()` checks SHA-256 checksums match actual files
+
+This ensures `test_accuracy == in-domain accuracy` across all experiments.
 
 ---
 
@@ -308,7 +343,7 @@ public interface SentimentClassifier {
 
 **Calibration Metrics:**
 - **Brier Score**: Mean squared error of probability predictions
-  - Formula: `(1/n) × £(p_i - y_i)²`
+  - Formula: `(1/n) × ∑(p_i - y_i)²`
   - Range: [0, 1], lower is better
 - **Expected Calibration Error (ECE)**: Average calibration gap across probability bins
 - **Maximum Calibration Error (MCE)**: Worst-case calibration gap
@@ -397,8 +432,8 @@ resilience4j:
   ratelimiter:
     instances:
       sentimentApi:
-        limit-for-period: 1000    # requests
-        limit-refresh-period: 1m  # per minute
+        limit-for-period: 100     # requests per minute
+        limit-refresh-period: 1m
 ```
 
 **2. Validation (Bean Validation):**
@@ -465,7 +500,7 @@ sentiment:
 
   api:
     max-batch-size: 100
-    rate-limit: 1000
+    rate-limit: 100
     validation:
       max-text-length: 10000
 ```
@@ -492,117 +527,6 @@ mvn exec:java -Dexec.mainClass="sentiment.training.ModelTrainer" \
 
 # Algorithms: SVM, NAIVE_BAYES, LOGISTIC_REGRESSION, RANDOM_FOREST
 # Datasets: imdb_50k, amazon_polarity, yelp
-```
-
----
-
-## Design Patterns
-
-### 1. Strategy Pattern
-
-**Where Used**: `DatasetLoader`, `SentimentClassifier`
-
-**Why**:
-- Multiple interchangeable algorithms
-- Runtime selection based on configuration
-- Open/Closed Principle: Add new algorithms without modifying existing code
-
-**Example:**
-```java
-// Client code doesn't care which algorithm
-SentimentClassifier classifier = classifierFactory.create(algorithmType);
-classifier.train(trainingData);
-String sentiment = classifier.classify("Great product!");
-```
-
----
-
-### 2. Template Method Pattern
-
-**Where Used**: `TextPreprocessor` (fit/transform workflow)
-
-**Why**:
-- Enforces training vs. inference separation
-- Prevents common errors (e.g., transforming before fitting)
-- Consistent workflow across preprocessing steps
-
-**Example:**
-```java
-// Training: fit learns vocabulary, then transform
-preprocessor.fit(trainingData);
-Instances trainInstances = preprocessor.transform(trainingData);
-
-// Inference: transform only (no vocabulary changes)
-Instances testInstances = preprocessor.transform(testData);
-```
-
----
-
-### 3. Dependency Injection (Spring)
-
-**Where Used**: All Spring components (`@Component`, `@Service`, `@RestController`)
-
-**Why**:
-- Testability: Easy to mock dependencies
-- Loose coupling: Components depend on interfaces
-- Configuration management: Spring handles lifecycle
-
-**Example:**
-```java
-@RestController
-public class SentimentController {
-    private final SentimentClassifier classifier;
-
-    // Spring injects classifier based on configuration
-    public SentimentController(SentimentClassifier classifier) {
-        this.classifier = classifier;
-    }
-}
-```
-
----
-
-### 4. Immutable Value Objects
-
-**Where Used**: DTOs (`SentimentResponse`, `ClassifierEvaluationResult`)
-
-**Why**:
-- Thread-safe by default
-- Prevents accidental mutation
-- Easier to reason about
-
-**Example:**
-```java
-@Value  // Lombok: generates constructor, getters, equals/hashCode
-public class SentimentResponse {
-    String sentiment;
-    double confidence;
-    String text;
-    long processingTimeMs;
-}
-```
-
----
-
-### 5. Prototype Bean Scope
-
-**Where Used**: `TextPreprocessor`, `WekaInstancesConverter`
-
-**Why**:
-- Each training run gets a fresh instance
-- Prevents state conflicts when training multiple models concurrently
-- Avoids vocabulary contamination between models
-- Allows parallel training without coordination overhead
-
-**Example:**
-```java
-@Component
-@Scope("prototype")  // New instance per injection
-public class TextPreprocessor {
-    private volatile boolean isFitted = false;
-    private PipelineState pipelineState;
-    // ... each training gets isolated state
-}
 ```
 
 ---
@@ -843,46 +767,6 @@ List<SentimentResponse> results = futures.stream()
     .map(IndexedResult::getResult)
     .collect(Collectors.toList());
 ```
-
----
-
-## Data Flow
-
-### Training Pipeline
-
-```
-1. Load Dataset (DatasetLoader)
-      
-2. Preprocess & Feature Extraction (TextPreprocessor.fit + transform)
-      
-3. Train Classifier (SentimentClassifier.train)
-      
-4. Cross-Validation (ClassifierEvaluator)
-      
-5. Serialize Model (WekaModelPersistence)
-      
-6. Save Metrics (ClassifierEvaluationResult)
-```
-
-### Inference Pipeline
-
-```
-1. Receive HTTP Request (SentimentController)
-      
-2. Validate Input (Bean Validation)
-      
-3. Rate Limit Check (Resilience4j)
-      
-4. Preprocess Text (TextPreprocessor.transform)
-      
-5. Classify (SentimentClassifier.classify)
-      
-6. Apply Confidence Threshold
-      
-7. Return Response (SentimentResponse DTO)
-```
-
----
 
 ## Concurrency Model
 

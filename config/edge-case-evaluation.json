@@ -1,6 +1,6 @@
 {
   "_comment": "Edge Case Evaluation Configuration - shared by Java and Python",
-  "_version": "1.1.0",
+  "_version": "1.3.0",
 
   "directories": {
     "edge_cases_dir": "data/raw/edge_cases",
@@ -10,24 +10,17 @@
 
   "edge_case_definition": {
     "_comment": "Defines what qualifies as an edge case vs a one-off model error",
-    "min_models_failed": 3,
-    "rationale": "Errors where 3+ algorithms failed indicate systematic difficulty, not model-specific variance. Single-model failures are excluded from edge case categorization."
+    "min_models_failed": 4,
+    "rationale": "Threshold set to 4 (unanimous failure across all algorithms). Of 7,178 unique misclassified texts, 924 failed all 4 models vs 897 failing exactly 3. Unanimous failure provides the strongest signal of systematic difficulty rather than model-specific variance."
   },
 
   "sampling": {
-    "_comment": "Statistical sampling parameters",
+    "_comment": "Statistical sampling parameters for categorization",
     "min_samples_per_category": 40,
     "target_margin_of_error": 0.15,
     "distribution_buffer": 1.25,
     "_categorization_formula": "sample_size = min_samples_per_category * num_categories * distribution_buffer",
     "random_seed": 42
-  },
-
-  "filtering": {
-    "_comment": "Audit-based filtering thresholds for label noise detection",
-    "label_error_threshold": 0.25,
-    "high_signal_min_models": 3,
-    "very_conservative_min_models": 4
   },
 
   "evaluation": {
@@ -38,6 +31,11 @@
   },
 
   "categories": [
+    {
+      "id": "label_error",
+      "name": "Label Error",
+      "description": "Ground truth label is wrong (e.g., clearly positive review labeled negative)"
+    },
     {
       "id": "sarcasm",
       "name": "Sarcasm",

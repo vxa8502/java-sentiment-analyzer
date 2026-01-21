@@ -1,8 +1,9 @@
 #!/bin/bash
 # Evaluate models on edge case challenge sets
-# Usage: ./scripts/evaluate_edge_cases.sh <algorithm> <domain> [--persist]
-# Or: ./scripts/evaluate_edge_cases.sh all [--persist]  # Test all models
+# Usage: ./scripts/evaluate_edge_cases.sh <algorithm> <domain>
+# Or: ./scripts/evaluate_edge_cases.sh all  # Test all models
 #
+# Results are always persisted to model metadata files.
 # Config: Reads algorithms/domains from config/edge-case-evaluation.json
 
 set -e
@@ -12,26 +13,16 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 cd "$PROJECT_ROOT"
 
-# Check for --persist flag
-PERSIST_FLAG=""
-for arg in "$@"; do
-    if [ "$arg" = "--persist" ]; then
-        PERSIST_FLAG="--persist"
-    fi
-done
-
 if [ $# -lt 1 ]; then
-    echo "Usage: $0 <algorithm> <domain> [--persist]"
-    echo "   Or: $0 all [--persist]  # Evaluate all trained models"
+    echo "Usage: $0 <algorithm> <domain>"
+    echo "   Or: $0 all  # Evaluate all trained models"
     echo ""
-    echo "Options:"
-    echo "  --persist  Save results to model metadata files"
-    echo ""
+    echo "Results are always persisted to model metadata files."
     echo "Config: Reads from config/edge-case-evaluation.json"
     echo ""
     echo "Examples:"
     echo "  $0 svm imdb_50k"
-    echo "  $0 all --persist"
+    echo "  $0 all"
     exit 1
 fi
 
@@ -54,7 +45,6 @@ echo ""
 
 if [ "$1" = "all" ]; then
     echo "Evaluating all trained models on edge cases..."
-    [ -n "$PERSIST_FLAG" ] && echo "(Results will be persisted to metadata)"
     echo ""
 
     for algo in "${ALGORITHMS[@]}"; do
@@ -65,7 +55,7 @@ if [ "$1" = "all" ]; then
                 echo "==============================================================="
                 echo "Testing: ${algo} trained on ${domain}"
                 echo "==============================================================="
-                java -cp "$CLASSPATH" sentiment.evaluation.EdgeCaseEvaluator "$algo" "$domain" $PERSIST_FLAG
+                java -cp "$CLASSPATH" sentiment.evaluation.EdgeCaseEvaluator "$algo" "$domain"
                 echo ""
             fi
         done
@@ -73,11 +63,11 @@ if [ "$1" = "all" ]; then
 
     echo "==============================================================="
     echo "Edge case evaluation complete!"
-    [ -n "$PERSIST_FLAG" ] && echo "Results persisted to model metadata files."
+    echo "Results persisted to model metadata files."
     echo "==============================================================="
 else
     ALGORITHM=$1
     DOMAIN=$2
 
-    java -cp "$CLASSPATH" sentiment.evaluation.EdgeCaseEvaluator "$ALGORITHM" "$DOMAIN" $PERSIST_FLAG
+    java -cp "$CLASSPATH" sentiment.evaluation.EdgeCaseEvaluator "$ALGORITHM" "$DOMAIN"
 fi

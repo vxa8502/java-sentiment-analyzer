@@ -9,6 +9,7 @@ import org.springframework.stereotype.Component;
 import sentiment.data.Dataset;
 import sentiment.data.SimpleDatasetLoader;
 import sentiment.data.DatasetLoadResult;
+import sentiment.data.SplitManifest;
 import sentiment.evaluation.ClassifierEvaluationResult;
 import sentiment.evaluation.FeatureImportanceAnalyzer;
 import sentiment.evaluation.FeatureImportancePersistence;
@@ -109,33 +110,72 @@ public class ModelTrainer {
 
             long startTime = System.currentTimeMillis();
 
-            // Step 1: Load data with stratified sampling (preserves class distribution)
-            // All datasets use the same flow: load with cap -> 80/20 stratified split
-            // Note: testDataPath parameter is ignored - we always create our own splits for consistency
-            logger.info("Step 1/5: Loading data with stratified sampling...");
+            // Step 1: Load data - prefer prepared splits if available
+            logger.info("Step 1/5: Loading training data...");
             if (testDataPath != null && !testDataPath.trim().isEmpty()) {
-                logger.info("Note: Ignoring separate test file - using unified 80/20 split for consistency");
+                logger.info("Note: Ignoring separate test file - using prepared splits for consistency");
             }
 
-            List<Dataset> allData = loadTrainingData(dataPath, maxSamples);
-            long loadTime = System.currentTimeMillis() - startTime;
-            logger.info(" Loaded {} samples in {}ms", allData.size(), loadTime);
+            // Check for prepared splits (Phase 1 output from prepare_data.sh)
+            String datasetName = inferDatasetName(dataPath);
+            Path processedDir = Paths.get("data/processed", datasetName).toAbsolutePath();
+            SplitManifest manifest = null;
+            StratifiedDataSplitter.DataSplit split;
+            String splitManifestHash = null;
+            String testSplitHash = null;
 
-            // Step 2: Perform stratified train/test split (80/20)
-            // Note: No separate validation set - SVM hyperparameter tuning uses internal k-fold CV
-            logger.info("Step 2/5: Performing stratified 80/20 train/test split...");
-            StratifiedDataSplitter.DataSplit split = StratifiedDataSplitter.stratifiedSplit(
-                    allData,
-                    0.8,  // 80% train
-                    0.0,  // 0% validation (SVM uses internal CV for tuning)
-                    0.2,  // 20% test
-                    42    // Fixed seed for reproducibility
-            );
+            if (SplitManifest.exists(processedDir)) {
+                // Use prepared splits (recommended path)
+                logger.info("Found prepared splits for '{}' - loading from processed data", datasetName);
+                manifest = SplitManifest.load(SplitManifest.getManifestPath(processedDir));
+
+                // Verify checksums
+                if (!manifest.verify(processedDir)) {
+                    logger.warn("Split checksums do not match manifest! Data may have been corrupted.");
+                    logger.warn("Consider running: ./scripts/prepare_data.sh --force");
+                }
+
+                // Load from prepared splits
+                Path trainPath = processedDir.resolve(manifest.getTrain().getFile());
+                Path testPath = processedDir.resolve(manifest.getTest().getFile());
+
+                List<Dataset> trainData = datasetLoader.load(trainPath.toString());
+                List<Dataset> testData = datasetLoader.load(testPath.toString());
+
+                split = new StratifiedDataSplitter.DataSplit(trainData, List.of(), testData);
+
+                // Store hashes for audit trail
+                splitManifestHash = SplitManifest.calculateSha256(SplitManifest.getManifestPath(processedDir));
+                testSplitHash = manifest.getTest().getSha256();
+
+                logger.info(" Using prepared splits from {}", manifest.getCreatedAt());
+                logger.info(" Train: {} samples, Test: {} samples", trainData.size(), testData.size());
+
+            } else {
+                // Fall back to creating splits (backward compatibility)
+                logger.warn("No prepared splits found for '{}'. Run ./scripts/prepare_data.sh first!", datasetName);
+                logger.warn("Falling back to dynamic split creation (not recommended for reproducibility)");
+
+                List<Dataset> allData = loadTrainingData(dataPath, maxSamples);
+                long loadTime = System.currentTimeMillis() - startTime;
+                logger.info(" Loaded {} samples in {}ms", allData.size(), loadTime);
+
+                // Step 2: Perform stratified train/test split (80/20)
+                logger.info("Step 2/5: Performing stratified 80/20 train/test split...");
+                split = StratifiedDataSplitter.stratifiedSplit(
+                        allData,
+                        0.8,  // 80% train
+                        0.0,  // 0% validation (SVM uses internal CV for tuning)
+                        0.2,  // 20% test
+                        42    // Fixed seed for reproducibility
+                );
+
+                // Save train/test splits for reproducibility and auditability
+                saveDataSplits(split.train, split.test, dataPath);
+            }
+
             logger.info(" Split complete: train={}, test={}",
                     split.train.size(), split.test.size());
-
-            // Save train/test splits for reproducibility and auditability
-            saveDataSplits(split.train, split.test, dataPath);
 
             // Step 3: Create and train classifier (ONLY on train set)
             logger.info("Step 3/5: Training {} classifier on TRAIN SET ONLY...", algorithmType.getDisplayName());
@@ -187,7 +227,8 @@ public class ModelTrainer {
             logger.info("Step {}/{}: Saving model and metadata to {}...", finalStep, finalStep, outputPath);
             long saveStartTime = System.currentTimeMillis();
             saveModel(classifier, outputPath, algorithmType);
-            saveTrainingMetadata(dataPath, outputPath, algorithmType, split, testEvaluation, trainTime, classifier);
+            saveTrainingMetadata(dataPath, outputPath, algorithmType, split, testEvaluation, trainTime, classifier,
+                    splitManifestHash, testSplitHash);
             long saveTime = System.currentTimeMillis() - saveStartTime;
             logger.info(" Model and metadata saved in {}ms", saveTime);
 
@@ -434,7 +475,9 @@ public class ModelTrainer {
                                        StratifiedDataSplitter.DataSplit split,
                                        ClassifierEvaluationResult evaluation,
                                        long trainingTimeMs,
-                                       SentimentClassifier classifier) {
+                                       SentimentClassifier classifier,
+                                       String splitManifestHash,
+                                       String testSplitHash) {
         try {
             Path modelFilePath = Paths.get(modelPath);
             Path metadataPath = TrainingMetadata.getMetadataPath(modelFilePath);
@@ -484,6 +527,7 @@ public class ModelTrainer {
                     .datasetInfo(datasetName, datasetVersion, datasetSource, classBalance)
                     .trainingSamples(split.train.size())
                     .sampleCounts(split.train.size(), split.validation.size(), split.test.size())
+                    .splitHashes(splitManifestHash, testSplitHash)
                     .preprocessing(featureConfig.getMaxFeatures(), featureConfig.isUseTfidf(), featureConfig.isUseBigrams())
                     .evaluationResults(evaluation)
                     .trainedAt(java.time.Instant.now())
@@ -589,6 +633,9 @@ public class ModelTrainer {
      * Save train and test splits to data/processed/{dataset}/ for reproducibility and auditability.
      * Enables exact reconstruction of what data the model trained on.
      *
+     * IMPORTANT: If a manifest already exists (prepared splits), this method will NOT overwrite.
+     * This preserves data integrity for cross-domain evaluation consistency.
+     *
      * @param trainData Training portion from stratified split
      * @param testData Test portion from stratified split
      * @param dataPath Original data path (used to infer dataset name)
@@ -597,6 +644,13 @@ public class ModelTrainer {
         String datasetName = inferDatasetName(dataPath);
         Path processedDir = Paths.get("data/processed", datasetName).toAbsolutePath();
 
+        // Check if manifest exists - if so, DON'T overwrite (immutable splits)
+        if (SplitManifest.exists(processedDir)) {
+            logger.info("Manifest exists at {} - NOT overwriting prepared splits", processedDir);
+            logger.info("This preserves data integrity for reproducible cross-domain evaluation");
+            return;
+        }
+
         try {
             Files.createDirectories(processedDir);
         } catch (IOException e) {
@@ -604,7 +658,8 @@ public class ModelTrainer {
             return;
         }
 
-        // Save both splits
+        // Save both splits (backward compatibility path - no manifest)
+        logger.warn("Saving splits without manifest (legacy mode). Run ./scripts/prepare_data.sh for proper setup.");
         saveSplitToFile(trainData, processedDir.resolve("train.csv"), "train");
         saveSplitToFile(testData, processedDir.resolve("test.csv"), "test");
     }

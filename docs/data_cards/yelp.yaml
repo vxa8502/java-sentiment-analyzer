@@ -17,17 +17,25 @@ raw:
 
 # Training Split (binary classification - neutrals filtered)
 training:
-  method: "80/20 stratified split after filtering neutral samples"
+  method: "80/20 stratified split after filtering neutral samples and applying sample cap"
   neutral_handling: "Excluded for binary classification"
-  binary_samples: 90245  # 67354 + 22891
-  train_samples: ~72000
-  test_samples: ~18000
+  binary_samples_available: 90245  # 67354 positive + 22891 negative (before cap)
+  max_samples: 25366  # Cap applied to balance with smaller negative class
+  train_samples: ~20000
+  test_samples: ~5000
   cross_validation: "5-fold CV used internally for hyperparameter tuning"
+  note: "Yelp has fewer negative samples, so total is capped to maintain 50/50 class balance"
 
 # Processed Test Set (saved for cross-domain evaluation)
 processed:
   file: data/processed/yelp/test.csv
-  samples: 9158  # After neutral filtering and 20% split
+  samples: 5074
+
+# Actual Training Run (January 2026)
+actual_training_run:
+  train_samples: 20292
+  test_samples: 5074
+  notes: "Smaller than other datasets due to class balancing (limited by negative samples)"
 
 # Preparation
 preparation:

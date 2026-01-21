@@ -452,10 +452,11 @@ public class CrossDomainEvaluator {
      */
     public static void main(String[] args) {
         if (args.length < 3) {
-            System.err.println("Usage: java CrossDomainEvaluator <models-dir> <test-data-dir> <output-json> [max-samples-per-domain] [--persist]");
-            System.err.println("Example: java CrossDomainEvaluator models/ data/processed/ results/cross_domain_matrix.json 2000 --persist");
+            System.err.println("Usage: java CrossDomainEvaluator <models-dir> <test-data-dir> <output-json> [max-samples-per-domain]");
+            System.err.println("Example: java CrossDomainEvaluator models/ data/processed/ results/cross_domain_matrix.json 2000");
             System.err.println("  max-samples-per-domain: Optional. Max test samples per domain (default: 2000 for speed)");
-            System.err.println("  --persist: Optional. Update each model's metadata.json with cross-domain performance");
+            System.err.println();
+            System.err.println("Results are always persisted to model metadata files.");
             System.exit(1);
         }
 
@@ -530,12 +531,9 @@ public class CrossDomainEvaluator {
             // Export to JSON
             matrix.exportToJson(outputPath);
 
-            // Persist to model metadata files if requested
-            boolean persist = args.length > 4 && "--persist".equals(args[4]);
-            if (persist) {
-                System.out.println("\nPersisting cross-domain performance to model metadata files...");
-                persistToModelMetadata(matrix, modelsDir);
-            }
+            // Always persist to model metadata files
+            System.out.println("\nPersisting cross-domain performance to model metadata files...");
+            persistToModelMetadata(matrix, modelsDir);
 
         } catch (Exception e) {
             System.err.println("Error during cross-domain evaluation: " + e.getMessage());

@@ -119,7 +119,7 @@ echo ""
 if [ $FAILED -eq 0 ]; then
     echo -e "${GREEN}All datasets verified!${NC}"
     echo ""
-    echo "Next: ./scripts/train_all_models.sh"
+    echo "Next: ./scripts/prepare_data.sh"
     exit 0
 else
     echo -e "${RED}Some datasets missing or invalid.${NC}"

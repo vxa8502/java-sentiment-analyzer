@@ -331,24 +331,23 @@ public class EdgeCaseEvaluator {
      */
     public static void main(String[] args) {
         if (args.length < 2) {
-            System.err.println("Usage: java EdgeCaseEvaluator <algorithm> <domain> [--persist]");
+            System.err.println("Usage: java EdgeCaseEvaluator <algorithm> <domain>");
             System.err.println();
             System.err.println("Arguments:");
             System.err.println("  algorithm  Model algorithm (svm, naive_bayes, random_forest, logistic_regression)");
             System.err.println("  domain     Training domain (imdb_50k, amazon_polarity, yelp)");
-            System.err.println("  --persist  Save results to model metadata file");
             System.err.println();
+            System.err.println("Results are always persisted to model metadata files.");
             System.err.println("Config: Reads from config/edge-case-evaluation.json (or EDGE_CASE_CONFIG env var)");
             System.err.println();
             System.err.println("Examples:");
             System.err.println("  java EdgeCaseEvaluator svm imdb_50k");
-            System.err.println("  java EdgeCaseEvaluator logistic_regression yelp --persist");
+            System.err.println("  java EdgeCaseEvaluator logistic_regression yelp");
             System.exit(1);
         }
 
         String algorithm = args[0];
         String domain = args[1];
-        boolean persist = args.length > 2 && args[2].equals("--persist");
 
         try {
             // Load config
@@ -397,17 +396,15 @@ public class EdgeCaseEvaluator {
             }
             System.out.println();
 
-            // Persist if requested
-            if (persist) {
-                Path metadataPath = Paths.get(modelsDir, algorithm,
-                    domain + "_" + algorithm + "_model.metadata.json");
+            // Always persist results to metadata
+            Path metadataPath = Paths.get(modelsDir, algorithm,
+                domain + "_" + algorithm + "_model.metadata.json");
 
-                if (Files.exists(metadataPath)) {
-                    evaluator.persistToMetadata(metadataPath, report);
-                } else {
-                    System.err.println("  [WARN] Metadata file not found: " + metadataPath);
-                    System.err.println("         Edge case results NOT persisted.");
-                }
+            if (Files.exists(metadataPath)) {
+                evaluator.persistToMetadata(metadataPath, report);
+            } else {
+                System.err.println("  [WARN] Metadata file not found: " + metadataPath);
+                System.err.println("         Edge case results NOT persisted.");
             }
 
         } catch (Exception e) {

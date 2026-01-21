@@ -108,6 +108,12 @@ public class TrainingMetadata {
 
         @JsonProperty("hash")
         public String hash; // Optional: SHA-256 of dataset file
+
+        @JsonProperty("split_manifest_hash")
+        public String splitManifestHash; // SHA-256 of splits.manifest.json for audit trail
+
+        @JsonProperty("test_split_hash")
+        public String testSplitHash; // SHA-256 of test.csv for reproducibility verification
     }
 
     public static class SampleCounts {
@@ -350,6 +356,13 @@ public class TrainingMetadata {
             metadata.dataset.samples.train = train;
             metadata.dataset.samples.val = val;
             metadata.dataset.samples.test = test;
+            return this;
+        }
+
+        public Builder splitHashes(String splitManifestHash, String testSplitHash) {
+            if (metadata.dataset == null) metadata.dataset = new DatasetInfo();
+            metadata.dataset.splitManifestHash = splitManifestHash;
+            metadata.dataset.testSplitHash = testSplitHash;
             return this;
         }
 

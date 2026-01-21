@@ -15,6 +15,7 @@ raw:
 # Training Split (80/20, seed=42)
 training:
   method: "Stratified 80/20 split (no separate validation set)"
+  max_samples: 50000  # Cap applied before splitting
   train_samples: 40000
   test_samples: 10000
   cross_validation: "5-fold CV used internally for hyperparameter tuning"
@@ -23,6 +24,13 @@ training:
 processed:
   file: data/processed/imdb_50k/test.csv
   samples: 10000
+
+# Actual Training Run (January 2026)
+# Note: Actual samples may vary slightly due to stratified sampling
+actual_training_run:
+  train_samples: 39995
+  test_samples: 9999
+  notes: "Stratified sampling ensures class balance; slight variance from theoretical split"
 
 # Preparation
 preparation:

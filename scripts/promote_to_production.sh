@@ -319,10 +319,13 @@ main() {
             echo ""
             read -p "This will take 5-10x longer than base training. Continue? [y/N] " -n 1 -r
             echo ""
-            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-                log_info "Aborted. Use --skip-tuning to skip tuning, or --force-model to pick a different model."
-                exit 0
-            fi
+            case "$REPLY" in
+                [Yy]) ;;  # proceed
+                *)
+                    log_info "Aborted. Use --skip-tuning to skip tuning, or --force-model to pick a different model."
+                    exit 0
+                    ;;
+            esac
         fi
 
         tune_and_retrain_svm

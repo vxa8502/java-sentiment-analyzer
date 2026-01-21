@@ -86,13 +86,13 @@ Edge case testing reveals model brittleness that standard test accuracy can mask
 
 #### What is an Edge Case?
 
-An **edge case** is a **systematic model failure** - a text that multiple algorithms (3+ by default) fail to classify correctly. Single-model failures are excluded as they represent model-specific quirks, not generalizable difficulty.
+An **edge case** is a **systematic model failure** - a text that all 4 algorithms fail to classify correctly. Single-model failures are excluded as they represent model-specific quirks, not generalizable difficulty.
 
 This threshold is configurable in `config/edge-case-evaluation.json`:
 ```json
 "edge_case_definition": {
-  "min_models_failed": 3,
-  "rationale": "Errors where 3+ algorithms failed indicate systematic difficulty"
+  "min_models_failed": 4,
+  "rationale": "Unanimous failure across all algorithms provides strongest signal of systematic difficulty"
 }
 ```
 
@@ -103,51 +103,30 @@ This threshold is configurable in `config/edge-case-evaluation.json`:
 
 Runs `ErrorAnalyzer` on all 12 models, extracting misclassifications from test sets.
 
-#### Step 2: Data quality audit
-
-Raw error files contain label noise from source datasets. We audit a sample to estimate label error rates and filter accordingly.
-
+#### Step 2: Prepare edge cases
 ```bash
-# Deduplicate and create stratified audit sample
-python scripts/prepare_edge_case_audit.py
-
-# Interactive audit (classify each as label_error/true_error/ambiguous)
-python scripts/audit_edge_cases.py
+python scripts/prepare_edge_cases.py
 ```
 
-Audit results are saved to `data/raw/edge_cases/audit_results.json` and used by downstream scripts to exclude label errors.
+Deduplicates errors, filters to systematic failures (4+ models), creates stratified sample.
 
-#### Step 3: Prepare edge case sample
-
-Filter to systematic failures (3+ models) and create a stratified sample for categorization:
-
-```bash
-python scripts/prepare_categorization_sample.py --target-size 200
-```
-
-This excludes single-model failures, keeping only texts that multiple algorithms found difficult.
-
-#### Step 4: Categorize edge cases
+#### Step 3: Categorize edge cases
 
 Manually categorize the sample into edge case types:
+- `label_error.csv` - Ground truth label is wrong
 - `sarcasm.csv` - Surface sentiment contradicts true intent
 - `mixed_sentiment.csv` - Contains both positive and negative aspects
 - `negation_heavy.csv` - Complex negation patterns
 - `domain_jargon.csv` - Domain-specific terminology
 
 ```bash
-python scripts/categorize_errors.py --sample
+python scripts/categorize_errors.py
 ```
 
 **Output CSV format:**
 ```csv
 text,sentiment,num_models_failed,failed_models,notes
 "Review text...",NEGATIVE,4,svm-amazon;nb-amazon;lr-amazon;rf-amazon,"..."
-```
-
-#### Step 5: Evaluate models on edge cases
-```bash
-./scripts/evaluate_edge_cases.sh all --persist
 ```
 
 ### Phase 4: Promote to Production
@@ -306,3 +285,11 @@ SENTIMENT_DATA_AMAZON=/data/custom/amazon.csv ./scripts/promote_to_production.sh
 
 **Ignored:**
 - `models/<algo>/*.ser` - Training model binaries
+
+---
+
+## Related Documentation
+
+- [DEPLOYMENT.md](DEPLOYMENT.md) - Docker deployment and production configuration
+- [ARCHITECTURE.md](ARCHITECTURE.md) - System design, patterns, and technical decisions
+- [Data Cards](data_cards/) - Dataset provenance and quality documentation

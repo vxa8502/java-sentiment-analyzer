@@ -55,7 +55,7 @@ run_error_analysis() {
     # Validate test file exists
     if [ ! -f "$test_file" ]; then
         echo "[ERROR] Test file not found: $test_file"
-        echo "        Run train_all_models.sh first to generate test splits."
+        echo "        Run ./scripts/prepare_data.sh first to generate test splits."
         return 1
     fi
 
@@ -109,11 +109,8 @@ if [ "$1" = "all" ]; then
     fi
 
     echo "Next steps:"
-    echo "1. Review CSVs in: $OUTPUT_DIR"
-    echo "2. Identify high-confidence errors (confidence > 0.7)"
-    echo "3. Categorize into: sarcasm, mixed_sentiment, negation_heavy, domain_jargon"
-    echo "4. Add categorized examples to data/raw/edge_cases/<category>.csv"
-    echo "5. Run ./scripts/evaluate_edge_cases.sh all to measure improvement"
+    echo "1. python scripts/prepare_edge_cases.py"
+    echo "2. python scripts/categorize_errors.py"
     echo "==============================================================="
 else
     if [ $# -lt 2 ]; then

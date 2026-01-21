@@ -3,9 +3,9 @@
 # Cross-Domain Evaluation Script
 # Tests all models (SVM, Naive Bayes, Random Forest, Logistic Regression) across all datasets
 #
-# Usage:
-#   ./scripts/evaluate_cross_domain.sh           # Evaluate only, output to JSON
-#   ./scripts/evaluate_cross_domain.sh --persist # Also update model metadata files
+# Usage: ./scripts/evaluate_cross_domain.sh
+#
+# Results are always persisted to model metadata files.
 
 set -e
 
@@ -14,16 +14,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 cd "$PROJECT_ROOT"
 
-# Parse arguments
-PERSIST_FLAG=""
-for arg in "$@"; do
-    case $arg in
-        --persist)
-            PERSIST_FLAG="--persist"
-            ;;
-    esac
-done
-
 echo "---------------------------------------------------------------"
 echo "  Cross-Domain Evaluation"
 echo "---------------------------------------------------------------"
@@ -31,6 +21,8 @@ echo ""
 
 # Configuration
 MODELS_DIR="$PROJECT_ROOT/models"
+# NOTE: Java evaluator prefers data/processed/{domain}/test.csv (prepared splits)
+# This fallback path is only used if processed data doesn't exist
 TEST_DATA_DIR="$PROJECT_ROOT/data/raw"
 OUTPUT_FILE="$PROJECT_ROOT/results/cross_domain_matrix.json"
 RESULTS_DIR="$PROJECT_ROOT/results"
@@ -50,6 +42,33 @@ echo "Evaluation configuration:"
 echo "  Models directory: $MODELS_DIR"
 echo "  Test data directory: $TEST_DATA_DIR"
 echo "  Output file: $OUTPUT_FILE"
+echo ""
+
+# Verify prepared splits exist for all datasets
+DATASETS=("imdb_50k" "amazon_polarity" "yelp")
+echo "Verifying prepared data splits..."
+missing_splits=false
+for dataset in "${DATASETS[@]}"; do
+    manifest_path="$PROJECT_ROOT/data/processed/$dataset/splits.manifest.json"
+    if [ ! -f "$manifest_path" ]; then
+        echo "[ERROR] No prepared splits for $dataset"
+        echo "        Missing: $manifest_path"
+        missing_splits=true
+    else
+        echo "[OK] Found splits for $dataset"
+    fi
+done
+
+if [ "$missing_splits" = true ]; then
+    echo ""
+    echo "ERROR: Missing prepared splits. Evaluation requires immutable data splits."
+    echo ""
+    echo "Run the following to prepare splits:"
+    echo "  ./scripts/prepare_data.sh"
+    echo ""
+    echo "This ensures reproducible cross-domain evaluation."
+    exit 1
+fi
 echo ""
 
 # Check if models exist
@@ -87,8 +106,7 @@ java -Xmx8g -cp "$CLASSPATH" \
     "$MODELS_DIR" \
     "$TEST_DATA_DIR" \
     "$OUTPUT_FILE" \
-    "$MAX_SAMPLES_PER_DOMAIN" \
-    $PERSIST_FLAG
+    "$MAX_SAMPLES_PER_DOMAIN"
 
 if [ $? -eq 0 ]; then
     echo ""
@@ -97,12 +115,7 @@ if [ $? -eq 0 ]; then
     echo "---------------------------------------------------------------"
     echo ""
     echo "Results saved to: $OUTPUT_FILE"
-    if [ -n "$PERSIST_FLAG" ]; then
-        echo "Model metadata files updated with cross_domain_performance"
-    else
-        echo ""
-        echo "Tip: Use --persist to update model metadata files"
-    fi
+    echo "Model metadata files updated with cross_domain_performance"
     echo ""
     echo "Key Insight:"
     echo "  The best model is the one with highest CROSS-DOMAIN average,"

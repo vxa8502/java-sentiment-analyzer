@@ -85,7 +85,8 @@ get_production_info() {
     PROD_DATASET=$(jq -r '.training_data.dataset' "$prod_meta")
     PROD_SAMPLES=$(jq -r '.training_data.num_samples' "$prod_meta")
     PROD_SIZE_MB=$(jq -r '.model_size_bytes' "$prod_meta" | awk '{printf "%.1f", $1/1048576}')
-    PROD_CROSS_DOMAIN_AVG=$(jq -r '[.cross_domain_performance | to_entries[] | select(.key != "cross_domain_average") | .value.accuracy] | add / length' "$prod_meta" 2>/dev/null || echo "N/A")
+    PROD_CROSS_DOMAIN_AVG=$(jq -r '.cross_domain_performance.cross_domain_average // empty' "$prod_meta" 2>/dev/null | awk '{printf "%.1f%%", $1*100}')
+    if [ -z "$PROD_CROSS_DOMAIN_AVG" ]; then PROD_CROSS_DOMAIN_AVG="N/A"; fi
 }
 
 # Build cross-domain performance tables
@@ -113,7 +114,14 @@ build_cross_domain_tables() {
                 yelp) yelp="${yelp} *" ;;
             esac
 
-            local domain_display=$(echo "$domain" | sed 's/_/ /g' | sed 's/\b\(.\)/\u\1/g')
+            # Map domain to display name (portable across BSD/GNU sed)
+            local domain_display
+            case $domain in
+                imdb_50k) domain_display="imdb 50k" ;;
+                amazon_polarity) domain_display="amazon polarity" ;;
+                yelp) domain_display="yelp" ;;
+                *) domain_display="$domain" ;;
+            esac
             echo "| $domain_display | $imdb | $amazon | $yelp | $avg |"
         done
         echo ""
@@ -289,14 +297,14 @@ EOF
 All results can be reproduced via:
 
 ```bash
-# Train all models
+# Phase 1: Prepare immutable data splits (run once)
+./scripts/prepare_data.sh
+
+# Phase 2: Train all models
 ./scripts/train_all_models.sh
 
-# Cross-domain evaluation
+# Phase 3: Cross-domain evaluation
 ./scripts/evaluate_cross_domain.sh
-
-# Edge case evaluation
-./scripts/evaluate_edge_cases.sh all
 
 # Regenerate this report
 ./scripts/generate_report.sh

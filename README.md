@@ -151,7 +151,7 @@ Deep dive: [Architecture Documentation](docs/ARCHITECTURE.md)
 ./scripts/train_all_models.sh
 
 # 3. Evaluate cross-domain generalization
-./scripts/evaluate_cross_domain.sh --persist
+./scripts/evaluate_cross_domain.sh
 
 # 4. Select and deploy best model
 ./scripts/promote_to_production.sh

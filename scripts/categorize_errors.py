@@ -5,13 +5,10 @@ Edge Case Categorization Tool
 Interactive tool to categorize EDGE CASES (systematic model failures) into types.
 Categories loaded from config/edge-case-evaluation.json.
 
-IMPORTANT: Use --sample mode with the output of prepare_categorization_sample.py.
-That script filters to only include edge cases (3+ models failed by default),
-ensuring you categorize systematic failures, not one-off model quirks.
+Requires: Run prepare_edge_cases.py first to create categorization_sample.json
 
 Usage:
-    python scripts/categorize_errors.py --sample    # Recommended: use stratified sample
-    python scripts/categorize_errors.py             # Full set (if needed)
+    python scripts/categorize_errors.py
 
 Controls:
     1-N = Select category (numbered by config order)
@@ -19,8 +16,7 @@ Controls:
     q = Quit and save progress
 
 Inputs:
-    data/raw/edge_cases/categorization_sample.json - Stratified edge case sample (--sample)
-    data/raw/edge_cases/deduplicated_errors.json - All unique errors (default, not recommended)
+    data/raw/edge_cases/categorization_sample.json - From prepare_edge_cases.py
 
 Outputs:
     data/raw/edge_cases/<category>.csv - One CSV per category with columns:
@@ -210,8 +206,6 @@ def print_summary(progress, categories, confidence_level=0.95):
 
 def main():
     parser = argparse.ArgumentParser(description='Categorize edge case errors')
-    parser.add_argument('--sample', action='store_true',
-                        help='Use stratified sample instead of full set')
     parser.add_argument('--config', type=str, default=None,
                         help='Path to config file (default: config/edge-case-evaluation.json)')
     args = parser.parse_args()
@@ -231,8 +225,7 @@ def main():
 
     # Get paths from config
     edge_cases_dir = config.directories.edge_cases_dir
-    dedup_errors_file = os.path.join(edge_cases_dir, 'deduplicated_errors.json')
-    sample_errors_file = os.path.join(edge_cases_dir, 'categorization_sample.json')
+    input_file = os.path.join(edge_cases_dir, 'categorization_sample.json')
     progress_file = os.path.join(edge_cases_dir, 'categorization_progress.json')
     confidence_level = config.evaluation.confidence_level
 
@@ -242,22 +235,10 @@ def main():
     print(f"Config version: {config.version}")
     print()
 
-    # Determine input file
-    if args.sample:
-        input_file = sample_errors_file
-        if not os.path.exists(input_file):
-            print(f"[ERROR] Sample file not found: {input_file}")
-            print("Create it first with the stratified sampling script.")
-            return 1
-        print("MODE: Stratified sample")
-    else:
-        input_file = dedup_errors_file
-        if not os.path.exists(input_file):
-            print(f"[ERROR] Deduplicated errors not found: {input_file}")
-            print("Run 'python scripts/prepare_edge_case_audit.py' first.")
-            return 1
-        print("MODE: Full deduplicated set")
-    print()
+    if not os.path.exists(input_file):
+        print(f"[ERROR] Sample file not found: {input_file}")
+        print("Run 'python scripts/prepare_edge_cases.py' first.")
+        return 1
 
     # Load data
     all_errors = load_json(input_file)
@@ -319,7 +300,7 @@ def main():
     print_summary(progress, categories, confidence_level)
 
     print("\nNext step: Run edge case evaluation")
-    print("  ./scripts/evaluate_edge_cases.sh all --persist")
+    print("  ./scripts/evaluate_edge_cases.sh all")
     print()
 
     return 0

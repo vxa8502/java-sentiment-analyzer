@@ -83,15 +83,6 @@ docker run -d \
 | `SENTIMENT_PREPROCESSING_USE_BIGRAMS` | `true` | Include bigrams |
 | `SENTIMENT_MI_THRESHOLD` | `50000` | MI feature selection threshold |
 
-### Training Configuration
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `SENTIMENT_RANDOM_SEED` | `42` | Random seed for reproducibility |
-| `SENTIMENT_DATA_IMDB` | `data/raw/imdb_50k/IMDB Dataset.csv` | IMDB dataset path |
-| `SENTIMENT_DATA_AMAZON` | `data/raw/amazon_polarity/train.csv` | Amazon dataset path |
-| `SENTIMENT_DATA_YELP` | `data/raw/yelp/yelp_reviews.csv` | Yelp dataset path |
-
 ### API Configuration
 
 | Variable | Default | Description |
@@ -142,15 +133,28 @@ docker logs sentiment-analyzer
 - Model file not found: Ensure `models/production/sentiment_model.ser` exists
 - Out of memory: Increase with `-e MAX_HEAP=1g`
 
-### Model Not Found
+### Model Not Found (Startup Failure)
 
+**Behavior:** The application **fails fast** if no pre-trained model exists. This is intentional - there is no automatic fallback training in production to prevent unexpected resource consumption and slow startup.
+
+**Error message:**
+```
+Pre-trained model not found at: ./models/production/sentiment_model.ser
+Run ./scripts/promote_to_production.sh to create the production model.
+```
+
+**Resolution:**
 ```bash
 # Verify model exists
 ls -la models/production/
 
-# If missing, promote a trained model
-./scripts/promote_to_production.sh
+# If missing, train and promote a model (requires training data)
+./scripts/train_all_models.sh        # Train all algorithms
+./scripts/evaluate_cross_domain.sh   # Evaluate cross-domain performance
+./scripts/promote_to_production.sh   # Promote best model to production
 ```
+
+**Why no fallback?** Training takes 1-3 hours and requires ~1GB+ RAM. Automatic training in production would cause unpredictable startup times and resource spikes. The fail-fast approach ensures deployment issues are caught immediately.
 
 ### Slow Response Times
 
@@ -224,4 +228,8 @@ deploy:
 
 ---
 
-For model training, see [TRAINING.md](TRAINING.md).
+## Related Documentation
+
+- [TRAINING.md](TRAINING.md) - Model training pipeline
+- [ARCHITECTURE.md](ARCHITECTURE.md) - System design, patterns, and technical decisions
+- [Data Cards](data_cards/) - Dataset provenance and quality documentation

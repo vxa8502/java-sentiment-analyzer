@@ -22,17 +22,24 @@ raw:
     test: 400000
   sampling: "Random with seed=42"
 
-# Training Split (80/20 from MAX_SAMPLES=100K)
+# Training Split
 training:
-  method: "80K from train.csv, 20K from test.csv (uses official test split)"
-  train_samples: 80000
-  test_samples: 20000
+  method: "Stratified 80/20 split from capped sample"
+  max_samples: 50000  # Cap applied before splitting (not full 100K)
+  train_samples: 40000
+  test_samples: 10000
   cross_validation: "5-fold CV used internally for hyperparameter tuning"
+  note: "Raw dataset has 100K samples, but training uses 50K cap for consistency across datasets"
 
 # Processed Test Set (saved for cross-domain evaluation)
 processed:
   file: data/processed/amazon_polarity/test.csv
-  samples: 20000
+  samples: 10000
+
+# Actual Training Run (January 2026)
+actual_training_run:
+  train_samples: 40000
+  test_samples: 10000
 
 # Preparation
 preparation:

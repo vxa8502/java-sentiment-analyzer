@@ -20,13 +20,10 @@ DATASETS=("yelp" "imdb_50k" "amazon_polarity")
 ALGORITHMS=("naive_bayes" "svm" "random_forest" "logistic_regression")
 RANDOM_SEED=42
 
-# Consistent sample sizes across all datasets:
-#   - 50K total with STRATIFIED SAMPLING (preserves class distribution)
-#   - After 80/20 split: ~40K train, ~10K test
-#   - After class balancing: varies by dataset imbalance
-#   - IMDB: 50K (all available) -> 40K train balanced
-#   - Amazon: 50K (from 300K) -> 40K train balanced
-#   - Yelp: 50K (from 90K binary) -> ~20K train after 75/25 balancing
+# NOTE: Data splits are created by prepare_data.sh (Phase 1).
+# Training loads from data/processed/{domain}/train.csv and test.csv.
+# MAX_SAMPLES is passed for backward compatibility but is ignored when
+# prepared splits exist (the splits already have the configured sample count).
 MAX_SAMPLES=50000
 
 # Counters for progress tracking
@@ -51,6 +48,32 @@ echo "  Random seed: ${RANDOM_SEED}"
 echo "  Total models to check: ${total_models}"
 echo ""
 
+# Verify prepared splits exist for all datasets
+echo "Verifying prepared data splits..."
+missing_splits=false
+for dataset in "${DATASETS[@]}"; do
+    manifest_path="$PROJECT_ROOT/data/processed/$dataset/splits.manifest.json"
+    if [ ! -f "$manifest_path" ]; then
+        echo "[ERROR] No prepared splits for $dataset"
+        echo "        Missing: $manifest_path"
+        missing_splits=true
+    else
+        echo "[OK] Found splits for $dataset"
+    fi
+done
+
+if [ "$missing_splits" = true ]; then
+    echo ""
+    echo "ERROR: Missing prepared splits. Training requires immutable data splits."
+    echo ""
+    echo "Run the following to prepare splits:"
+    echo "  ./scripts/prepare_data.sh"
+    echo ""
+    echo "This ensures reproducible cross-domain evaluation."
+    exit 1
+fi
+echo ""
+
 # Train each algorithm on each dataset
 for dataset in "${DATASETS[@]}"; do
     for algo in "${ALGORITHMS[@]}"; do
@@ -59,8 +82,8 @@ for dataset in "${DATASETS[@]}"; do
         echo "-----------------------------------------------------------------"
 
         # Prepare paths
-        # All datasets use MAX_SAMPLES (50K) with unified 80/20 stratified split
-        # No separate test files - we create our own splits for consistency
+        # Raw path is used to infer dataset name; actual data is loaded from
+        # prepared splits in data/processed/{domain}/ (created by prepare_data.sh)
         case "$dataset" in
             imdb_50k)
                 dataset_path="$PROJECT_ROOT/data/raw/imdb_50k/IMDB Dataset.csv"
