@@ -34,7 +34,7 @@ management:
 # Main sentiment analyzer configuration
 sentiment:
   # Model configuration
-  model-type: logistic_regression  # Best model: Logistic Regression (Amazon)
+  model-type: svm  # Production model: SVM (Amazon) - 88.4% accuracy, best cross-domain
   confidence-threshold: 0.7
 
   # Data paths - Docker-friendly defaults (use environment variables to override)
@@ -49,7 +49,7 @@ sentiment:
     production-model-path: "${SENTIMENT_PRODUCTION_MODEL:/app/models/production/sentiment_model.ser}"
 
     # Path to pre-trained SVM model (default model used by the application)
-    svm-model-path: "${SENTIMENT_SVM_MODEL:/app/models/svm-model.ser}"
+    svm-model-path: "${SENTIMENT_SVM_MODEL:/app/models/production/sentiment_model.ser}"
 
     # Paths to other pre-trained models (for model comparison endpoint)
     naive-bayes-model-path: "${SENTIMENT_NB_MODEL:/app/models/naive_bayes-model.ser}"
