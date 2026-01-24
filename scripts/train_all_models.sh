@@ -20,7 +20,7 @@ DATASETS=("yelp" "imdb_50k" "amazon_polarity")
 ALGORITHMS=("naive_bayes" "svm" "random_forest" "logistic_regression")
 RANDOM_SEED=42
 
-# NOTE: Data splits are created by prepare_data.sh (Phase 1).
+# NOTE: Data splits are created by prepare_data.sh.
 # Training loads from data/processed/{domain}/train.csv and test.csv.
 # MAX_SAMPLES is passed for backward compatibility but is ignored when
 # prepared splits exist (the splits already have the configured sample count).
@@ -163,6 +163,5 @@ if [ ${models_failed} -gt 0 ]; then
 fi
 
 echo "Next steps:"
-echo "  1. Run quality assessment: ./scripts/run_quality_reports.sh"
-echo "  2. Run cross-domain evaluation: ./scripts/evaluate_cross_domain.sh"
-echo "  3. Start API server: docker-compose up"
+echo "  1. Run cross-domain evaluation: ./scripts/evaluate_cross_domain.sh"
+echo "  2. Generate report: ./scripts/generate_report.sh"

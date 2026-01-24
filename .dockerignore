@@ -3,6 +3,9 @@
 .gitignore
 .gitattributes
 
+# GitHub CI/CD
+.github/
+
 # Build artifacts
 target/
 
@@ -10,6 +13,9 @@ target/
 .idea/
 .vscode/
 *.iml
+.classpath
+.project
+.settings/
 
 # Local data
 /data/
@@ -26,11 +32,24 @@ Thumbs.db
 # Documentation (not needed in image)
 docs/
 *.md
-!README.md
+LICENSE
 
 # Scripts (not needed in image)
 scripts/
 cleanup.sh
+
+# Examples and demos (not needed in image)
+demo/
+examples/
+
+# Results (training artifacts, not needed at runtime)
+results/
+
+# Python artifacts
+**/__pycache__/
+*.pyc
+*.pyo
+*.ipynb
 
 # Training models (only production model needed)
 models/svm/

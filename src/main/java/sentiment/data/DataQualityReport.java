@@ -13,7 +13,7 @@ import java.util.stream.Collectors;
 
 /**
  * Comprehensive data quality analysis tool.
- * Detects biases, measures label quality, identifies edge cases, and generates detailed reports.
+ * Detects biases, measures label quality, and generates detailed reports.
  *
  * @author Victoria Alabi
  */
@@ -23,7 +23,6 @@ public class DataQualityReport {
     private final DatasetStatistics statistics;
     private final BiasDetectionResults biases;
     private final LabelQualityMetrics labelQuality;
-    private final EdgeCaseAnalysis edgeCases;
     private final LocalDateTime generatedAt;
 
     private DataQualityReport(Builder builder) {
@@ -31,7 +30,6 @@ public class DataQualityReport {
         this.statistics = builder.statistics;
         this.biases = builder.biases;
         this.labelQuality = builder.labelQuality;
-        this.edgeCases = builder.edgeCases;
         this.generatedAt = LocalDateTime.now();
     }
 
@@ -55,10 +53,6 @@ public class DataQualityReport {
         // Analyze label quality
         builder.labelQuality = analyzeLabelQuality(data);
         System.out.println("✓ Label quality analysis complete");
-
-        // Identify edge cases
-        builder.edgeCases = identifyEdgeCases(data);
-        System.out.println("✓ Edge case identification complete");
 
         return builder.build();
     }
@@ -159,44 +153,6 @@ public class DataQualityReport {
         return metrics;
     }
 
-    /**
-     * Identify edge cases: sarcasm, mixed sentiment, negation
-     */
-    private static EdgeCaseAnalysis identifyEdgeCases(List<Dataset> data) {
-        EdgeCaseAnalysis analysis = new EdgeCaseAnalysis();
-
-        for (Dataset d : data) {
-            String text = d.getText().toLowerCase();
-
-            // Sarcasm detection (basic heuristics)
-            if (containsSarcasmMarkers(text)) {
-                analysis.sarcasmCandidates++;
-                if (analysis.sarcasmExamples.size() < 5) {
-                    analysis.sarcasmExamples.add(truncate(d.getText(), 100));
-                }
-            }
-
-            // Mixed sentiment (has both positive and negative words)
-            if (containsPositiveWords(text) && containsNegativeWords(text)) {
-                analysis.mixedSentimentCandidates++;
-                if (analysis.mixedSentimentExamples.size() < 5) {
-                    analysis.mixedSentimentExamples.add(truncate(d.getText(), 100));
-                }
-            }
-
-            // Heavy negation
-            if (containsHeavyNegation(text)) {
-                analysis.negationHeavyCandidates++;
-                if (analysis.negationExamples.size() < 5) {
-                    analysis.negationExamples.add(truncate(d.getText(), 100));
-                }
-            }
-        }
-
-        analysis.totalSamples = data.size();
-        return analysis;
-    }
-
     // Helper methods for sentiment word detection
     private static boolean containsPositiveWords(String text) {
         String[] positiveWords = {"great", "excellent", "amazing", "wonderful", "fantastic",
@@ -208,19 +164,6 @@ public class DataQualityReport {
         String[] negativeWords = {"terrible", "awful", "horrible", "worst", "bad", "hate",
                                    "hated", "disappointing", "poor", "waste", "broken"};
         return Arrays.stream(negativeWords).anyMatch(text::contains);
-    }
-
-    private static boolean containsSarcasmMarkers(String text) {
-        String[] sarcasmMarkers = {"oh great", "sure", "yeah right", "so good", "obviously",
-                                    "totally", "definitely not", "just what i needed"};
-        return Arrays.stream(sarcasmMarkers).anyMatch(text::contains);
-    }
-
-    private static boolean containsHeavyNegation(String text) {
-        long negationCount = Arrays.stream(new String[]{"not ", "n't ", "never ", "no ", "nothing"})
-            .filter(text::contains)
-            .count();
-        return negationCount >= 2;
     }
 
     private static String truncate(String text, int maxLength) {
@@ -265,19 +208,7 @@ public class DataQualityReport {
         }
         sb.append("\n");
 
-        // Edge Cases
-        sb.append("[>] EDGE CASE ANALYSIS\n");
-        sb.append(String.format("   Sarcasm Candidates: %,d (%.1f%%)\n",
-            edgeCases.sarcasmCandidates,
-            (edgeCases.sarcasmCandidates * 100.0) / edgeCases.totalSamples));
-        sb.append(String.format("   Mixed Sentiment: %,d (%.1f%%)\n",
-            edgeCases.mixedSentimentCandidates,
-            (edgeCases.mixedSentimentCandidates * 100.0) / edgeCases.totalSamples));
-        sb.append(String.format("   Heavy Negation: %,d (%.1f%%)\n",
-            edgeCases.negationHeavyCandidates,
-            (edgeCases.negationHeavyCandidates * 100.0) / edgeCases.totalSamples));
-
-        sb.append("\n══════════════════════════════════════════════════════════════\n");
+        sb.append("══════════════════════════════════════════════════════════════\n");
         sb.append("Generated: " + generatedAt + "\n");
 
         return sb.toString();
@@ -323,14 +254,6 @@ public class DataQualityReport {
         qualityMap.put("suspicious_examples", labelQuality.suspiciousExamples);
         report.put("label_quality", qualityMap);
 
-        // Edge Cases
-        Map<String, Object> edgeMap = new LinkedHashMap<>();
-        edgeMap.put("sarcasm_candidates", edgeCases.sarcasmCandidates);
-        edgeMap.put("mixed_sentiment_candidates", edgeCases.mixedSentimentCandidates);
-        edgeMap.put("negation_heavy_candidates", edgeCases.negationHeavyCandidates);
-        edgeMap.put("total_samples", edgeCases.totalSamples);
-        report.put("edge_cases", edgeMap);
-
         mapper.writeValue(outputPath.toFile(), report);
         System.out.println("✓ Quality report exported to: " + outputPath);
     }
@@ -349,22 +272,11 @@ public class DataQualityReport {
         List<String> suspiciousExamples = new ArrayList<>();
     }
 
-    private static class EdgeCaseAnalysis {
-        int sarcasmCandidates = 0;
-        int mixedSentimentCandidates = 0;
-        int negationHeavyCandidates = 0;
-        int totalSamples = 0;
-        List<String> sarcasmExamples = new ArrayList<>();
-        List<String> mixedSentimentExamples = new ArrayList<>();
-        List<String> negationExamples = new ArrayList<>();
-    }
-
     private static class Builder {
         private String datasetName;
         private DatasetStatistics statistics;
         private BiasDetectionResults biases;
         private LabelQualityMetrics labelQuality;
-        private EdgeCaseAnalysis edgeCases;
 
         public DataQualityReport build() {
             return new DataQualityReport(this);

@@ -18,7 +18,7 @@ if ! command -v jq &> /dev/null; then
 fi
 
 # Base URL (modify if deployed elsewhere)
-BASE_URL="${SENTIMENT_API_URL:-http://localhost:8080/api/v1}"
+BASE_URL="${SENTIMENT_API_URL:-https://java-sentiment-api.onrender.com/api/v1}"
 
 echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}Java Sentiment Analyzer - API Examples${NC}"

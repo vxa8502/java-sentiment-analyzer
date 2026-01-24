@@ -179,65 +179,6 @@ get_best_model_accuracy() {
     jq -r '.best_generalizing_model.cross_domain_avg_accuracy' "$matrix" | awk '{printf "%.1f%%", $1*100}'
 }
 
-# Count edge cases (handles multi-line CSV fields correctly)
-count_edge_cases() {
-    local edge_dir="$PROJECT_ROOT/data/raw/edge_cases"
-    python3 -c "
-import csv, os
-total = 0
-edge_dir = '$edge_dir'
-for f in os.listdir(edge_dir):
-    if f.endswith('.csv'):
-        with open(os.path.join(edge_dir, f)) as csvfile:
-            total += sum(1 for _ in csv.reader(csvfile)) - 1  # subtract header
-print(total)
-"
-}
-
-# Count edge cases included in metrics (n >= 30)
-count_included_edge_cases() {
-    local edge_dir="$PROJECT_ROOT/data/raw/edge_cases"
-    python3 -c "
-import csv, os
-total = 0
-edge_dir = '$edge_dir'
-for f in os.listdir(edge_dir):
-    if f.endswith('.csv'):
-        with open(os.path.join(edge_dir, f)) as csvfile:
-            count = sum(1 for _ in csv.reader(csvfile)) - 1
-            if count >= 30:
-                total += count
-print(total)
-"
-}
-
-# Build edge case breakdown table
-build_edge_case_table() {
-    local edge_dir="$PROJECT_ROOT/data/raw/edge_cases"
-    python3 -c "
-import csv, os
-
-edge_dir = '$edge_dir'
-categories = []
-
-for f in sorted(os.listdir(edge_dir)):
-    if f.endswith('.csv'):
-        name = f.replace('.csv', '').replace('_', ' ').title()
-        with open(os.path.join(edge_dir, f)) as csvfile:
-            count = sum(1 for _ in csv.reader(csvfile)) - 1
-        included = 'Yes' if count >= 30 else 'No (n < 30)'
-        categories.append((name, count, included))
-
-# Sort by count descending
-categories.sort(key=lambda x: -x[1])
-
-print('| Category | Samples | Included |')
-print('|----------|---------|----------|')
-for name, count, included in categories:
-    print(f'| {name} | {count} | {included} |')
-"
-}
-
 # Generate the report
 generate_report() {
     log_info "Generating report..."
@@ -250,7 +191,7 @@ generate_report() {
 HEADER
 
     cat >> "$OUTPUT_FILE" << EOF
-**Project**: Cross-Domain Sentiment Classification with Edge Case Analysis
+**Project**: Cross-Domain Sentiment Classification
 **Date**: $(get_date)
 **Author**: Victoria Alabi
 **Generated**: Auto-generated from model metadata (do not edit manually)
@@ -301,55 +242,23 @@ $(build_cross_domain_tables)
 
 **Legend**: * = in-domain evaluation
 
----
-
-## Part 3: Edge Case Evaluation
-
-**Total Edge Cases**: $(count_edge_cases) samples across 5 categories ($(count_included_edge_cases) included in metrics)
-
-$(build_edge_case_table)
-
-Categories with fewer than 30 samples are excluded from aggregate metrics (confidence intervals too wide for meaningful analysis).
-
 EOF
-
-    # Add edge case results if available in metadata
-    if jq -e '.edge_case_performance' "$MODELS_DIR/production/sentiment_model.metadata.json" &>/dev/null; then
-        cat >> "$OUTPUT_FILE" << 'EOF'
-### Production Model Edge Case Performance
-
-EOF
-        local prod_meta="$MODELS_DIR/production/sentiment_model.metadata.json"
-
-        echo "| Category | Accuracy |" >> "$OUTPUT_FILE"
-        echo "|----------|----------|" >> "$OUTPUT_FILE"
-
-        for category in sarcasm mixed_sentiment negation_heavy domain_jargon; do
-            local acc=$(jq -r ".edge_case_performance.${category}.accuracy // \"N/A\"" "$prod_meta")
-            if [ "$acc" != "N/A" ] && [ "$acc" != "null" ]; then
-                acc=$(echo "$acc" | awk '{printf "%.1f%%", $1*100}')
-            fi
-            local cat_display=$(echo "$category" | sed 's/_/ /g' | sed 's/\b\(.\)/\u\1/g')
-            echo "| $cat_display | $acc |" >> "$OUTPUT_FILE"
-        done
-        echo "" >> "$OUTPUT_FILE"
-    fi
 
     cat >> "$OUTPUT_FILE" << 'EOF'
 ---
 
-## Part 4: Reproducibility
+## Part 3: Reproducibility
 
 All results can be reproduced via:
 
 ```bash
-# Phase 1: Prepare immutable data splits (run once)
+# Prepare immutable data splits (run once)
 ./scripts/prepare_data.sh
 
-# Phase 2: Train all models
+# Train all models
 ./scripts/train_all_models.sh
 
-# Phase 3: Cross-domain evaluation
+# Cross-domain evaluation
 ./scripts/evaluate_cross_domain.sh
 
 # Regenerate this report

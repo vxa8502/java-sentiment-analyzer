@@ -41,6 +41,11 @@ public abstract class ClassifierTrainingTemplate<T> extends TrainingTemplate<T> 
      */
     protected WekaInstancesConverter converter;
 
+    /**
+     * Lock for thread-safe classifier operations (Weka classifiers are not thread-safe internally).
+     */
+    private final Object classifierLock = new Object();
+
     // TEMPLATE METHOD: TRAINING PHASE
 
     /**
@@ -473,7 +478,11 @@ public abstract class ClassifierTrainingTemplate<T> extends TrainingTemplate<T> 
             Instance instance = converter.transform(text, "unknown");
             instance.setDataset(trainingDataStructure);
 
-            double classIndex = getWekaClassifierInstance().classifyInstance(instance);
+            // Synchronize classifier call - Weka classifiers are not thread-safe internally
+            double classIndex;
+            synchronized (classifierLock) {
+                classIndex = getWekaClassifierInstance().classifyInstance(instance);
+            }
             String predicted = supportedClasses[(int) classIndex];
 
             getLogger().debug("Classification result: {}", predicted);
@@ -482,12 +491,18 @@ public abstract class ClassifierTrainingTemplate<T> extends TrainingTemplate<T> 
     }
 
     /**
-     * Returns classification probabilities for all classes.
+     * Returns RAW classification probabilities for all classes.
      * This method provides thread-safe inference via read lock protection.
+     * <p>
+     * <b>Note:</b> Returns unsmoothed probabilities directly from the classifier.
+     * Use this for evaluation and calibration analysis where exact values matter.
+     * For user-facing applications, use {@link #classifyWithProbabilities(String)}
+     * which applies probability smoothing to prevent exact 0/1 values.
      *
      * @param text input text to classify
-     * @return probability distribution over all classes
+     * @return raw probability distribution over all classes (may contain exact 0.0 or 1.0)
      * @throws Exception if classification fails or classifier is not trained
+     * @see #classifyWithProbabilities(String) for smoothed probabilities
      */
     public double[] getClassificationProbabilities(String text) throws Exception {
         requireTrained();
@@ -500,10 +515,20 @@ public abstract class ClassifierTrainingTemplate<T> extends TrainingTemplate<T> 
             Instance instance = converter.transform(text, "unknown");
             instance.setDataset(trainingDataStructure);
 
-            double[] probs = getWekaClassifierInstance().distributionForInstance(instance);
+            // Synchronize classifier call - Weka classifiers are not thread-safe internally
+            double[] probs;
+            synchronized (classifierLock) {
+                probs = getWekaClassifierInstance().distributionForInstance(instance);
+            }
             return logProbabilityDistribution(probs);
         });
     }
+
+    /**
+     * Minimum probability bound to prevent exact 0.0/1.0 values.
+     * This improves calibration and allows confidence thresholding to work properly.
+     */
+    private static final double PROB_EPSILON = 0.001;
 
     /**
      * Classifies text and returns both label and probabilities in a single atomic operation.
@@ -527,8 +552,15 @@ public abstract class ClassifierTrainingTemplate<T> extends TrainingTemplate<T> 
             Instance instance = converter.transform(text, "unknown");
             instance.setDataset(trainingDataStructure);
 
-            // Get both classification and probabilities from the same instance
-            double[] probs = getWekaClassifierInstance().distributionForInstance(instance);
+            // Synchronize classifier call - Weka classifiers are not thread-safe internally
+            double[] rawProbs;
+            synchronized (classifierLock) {
+                rawProbs = getWekaClassifierInstance().distributionForInstance(instance);
+            }
+
+            // Apply probability smoothing to prevent exact 0/1 values
+            // This ensures confidence thresholding works and expresses inherent uncertainty
+            double[] probs = smoothProbabilities(rawProbs);
 
             // Find the predicted class (highest probability)
             int predictedIndex = 0;
@@ -541,10 +573,38 @@ public abstract class ClassifierTrainingTemplate<T> extends TrainingTemplate<T> 
             }
 
             String predicted = supportedClasses[predictedIndex];
-            getLogger().debug("Classification result: {} (confidence: {})", predicted, maxProb);
+            getLogger().debug("Classification result: {} (confidence: {}, raw: {})",
+                    predicted, maxProb, rawProbs[predictedIndex]);
 
             return new SentimentClassifier.ClassificationResult(predicted, probs, supportedClasses.clone());
         });
+    }
+
+    /**
+     * Applies probability smoothing to prevent exact 0/1 values.
+     * Clips probabilities to [epsilon, 1-epsilon] and renormalizes.
+     *
+     * @param probs raw probability distribution
+     * @return smoothed probabilities that sum to 1.0
+     */
+    private double[] smoothProbabilities(double[] probs) {
+        double[] smoothed = new double[probs.length];
+        double sum = 0.0;
+
+        for (int i = 0; i < probs.length; i++) {
+            // Clip to [epsilon, 1-epsilon] range
+            smoothed[i] = Math.max(PROB_EPSILON, Math.min(1.0 - PROB_EPSILON, probs[i]));
+            sum += smoothed[i];
+        }
+
+        // Renormalize to ensure probabilities sum to 1
+        if (sum > 0) {
+            for (int i = 0; i < smoothed.length; i++) {
+                smoothed[i] /= sum;
+            }
+        }
+
+        return smoothed;
     }
 
     /**

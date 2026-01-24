@@ -1,8 +1,6 @@
 # Build artifacts
 target/
-*.jar
 *.class
-*.war
 
 # IDE files
 .idea/
@@ -14,8 +12,8 @@ target/
 .project
 .settings/
 
-# Python cache
-__pycache__/
+# Python cache (scripts use Python)
+**/__pycache__/
 *.pyc
 *.pyo
 
@@ -28,48 +26,40 @@ Thumbs.db
 logs/
 training_log*.txt
 
-# Data directories (local only - not version controlled)
+# Data (large files - download via scripts/download_data.sh)
 /data/
-*.csv
-*.tsv
-*.parquet
 
-# Model files - ONLY production model is in git (via Git LFS)
-# Training models are generated locally via scripts/train_all_models.sh
-# Only .ser files ignored - metadata (.json) is tracked as proof of work
-models/svm/*.ser
-models/naive_bayes/*.ser
-models/random_forest/*.ser
-models/logistic_regression/*.ser
-# Production model is tracked via Git LFS (.gitattributes)
+# Model files
+# Training models ignored via nested .gitignore in each models/*/ subdirectory
+# Production model MUST be tracked (proof of work + deployment)
+!models/production/
+!models/production/*
 
-# Compressed model archives
+# Data cards MUST be tracked (dataset documentation)
+!docs/data_cards/
+!docs/data_cards/*
+
+# Archives
 *.tar.gz
 *.zip
 
-# Experiments (can be large)
-experiments/*/model_artifacts/
-
 # Environment files
 .env
+.env.*
+.env*.local
 application-local.properties
 
 # Personal notes
 personal/
 
-# Temporary files
+# Temporary and backup files
 *.tmp
 *.temp
+*.bak
+*~
 
-# Test scripts in root (move to scripts/ if needed)
+# Test scripts in root
 test_*.sh
 
-# Regeneratable results (run scripts to regenerate)
-results/error_analysis/
-docs/data_cards/*_quality_report.json
-
-# Old/superseded reports
-results/REPORT.md
-results/CROSS_DOMAIN_FINAL_REPORT.md
-DATA_QUALITY_FINDINGS.md
-personal_notes/
+# Demo (WIP)
+demo/

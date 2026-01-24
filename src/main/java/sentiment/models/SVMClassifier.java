@@ -45,6 +45,9 @@ public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluati
         this.preprocessor = preprocessor;
         this.converter = converter;
         this.smo = new SMO();
+        // Enable Platt scaling for calibrated probability outputs
+        // Without this, SMO returns hard 0/1 confidence values
+        this.smo.setBuildCalibrationModels(true);
 
         logger.info("Created SVMClassifier - manages full training pipeline");
     }
@@ -312,11 +315,14 @@ public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluati
         String options = config.toOptionsString();
         smo.setOptions(weka.core.Utils.splitOptions(options));
 
+        // Ensure calibration models are enabled for probability outputs
+        smo.setBuildCalibrationModels(true);
+
         // Log configuration (handle null kernel for mocked SMO)
         Kernel kernel = smo.getKernel();
         String kernelName = (kernel != null) ? kernel.getClass().getSimpleName() : "null";
-        logger.debug("SMO configured: C={}, Epsilon={}, Kernel={}",
-                smo.getC(), smo.getEpsilon(), kernelName);
+        logger.debug("SMO configured: C={}, Epsilon={}, Kernel={}, Calibration={}",
+                smo.getC(), smo.getEpsilon(), kernelName, smo.getBuildCalibrationModels());
     }
 
     @Override

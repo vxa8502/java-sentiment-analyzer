@@ -104,7 +104,7 @@ measurement_issues:
   - star_to_sentiment: "3-star reviews labeled neutral but often contain mixed sentiment"
   - temporal_drift: "Reviews span 2004-2023, language patterns evolved"
 
-edge_cases:
+known_challenges:
   - service_vs_product: "Good food, bad service (mixed sentiment)"
   - business_jargon: "Industry-specific terminology (HVAC, legal, medical)"
   - location_context: "References to local landmarks or competitors"

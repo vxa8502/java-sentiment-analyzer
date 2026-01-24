@@ -21,7 +21,7 @@ import requests
 class SentimentAnalyzerClient:
     """Client for Java Sentiment Analyzer API"""
 
-    def __init__(self, base_url: str = "http://localhost:8080/api/v1"):
+    def __init__(self, base_url: str = "https://java-sentiment-api.onrender.com/api/v1"):
         """
         Initialize the client.
 
@@ -118,7 +118,7 @@ def print_result(result: Dict[str, Any], indent: str = "") -> None:
 def main():
     """Main function demonstrating API usage"""
 
-    base_url = os.getenv("SENTIMENT_API_URL", "http://localhost:8080/api/v1")
+    base_url = os.getenv("SENTIMENT_API_URL", "https://java-sentiment-api.onrender.com/api/v1")
     client = SentimentAnalyzerClient(base_url=base_url)
 
     print("=" * 60)

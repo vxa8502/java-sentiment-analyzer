@@ -4,7 +4,7 @@ Training, evaluating, and deploying sentiment analysis models.
 
 ## Prerequisites
 
-- Java 21 (JDK)
+- Java 24 (JDK)
 - Maven 3.9+
 - Datasets in `data/raw/` (see Datasets section)
 
@@ -80,56 +80,7 @@ Tests each model on all 3 datasets to measure generalization. Results saved to:
 - `results/cross_domain_matrix.json`
 - Each model's `metadata.json` updated with `cross_domain_performance`
 
-### Phase 3: Edge Case Evaluation
-
-Edge case testing reveals model brittleness that standard test accuracy can mask. A model scoring 90% on clean test data may score 60% on edge cases.
-
-#### What is an Edge Case?
-
-An **edge case** is a **systematic model failure** - a text that all 4 algorithms fail to classify correctly. Single-model failures are excluded as they represent model-specific quirks, not generalizable difficulty.
-
-This threshold is configurable in `config/edge-case-evaluation.json`:
-```json
-"edge_case_definition": {
-  "min_models_failed": 4,
-  "rationale": "Unanimous failure across all algorithms provides strongest signal of systematic difficulty"
-}
-```
-
-#### Step 1: Extract prediction errors
-```bash
-./scripts/generate_edge_cases.sh all
-```
-
-Runs `ErrorAnalyzer` on all 12 models, extracting misclassifications from test sets.
-
-#### Step 2: Prepare edge cases
-```bash
-python scripts/prepare_edge_cases.py
-```
-
-Deduplicates errors, filters to systematic failures (4+ models), creates stratified sample.
-
-#### Step 3: Categorize edge cases
-
-Manually categorize the sample into edge case types:
-- `label_error.csv` - Ground truth label is wrong
-- `sarcasm.csv` - Surface sentiment contradicts true intent
-- `mixed_sentiment.csv` - Contains both positive and negative aspects
-- `negation_heavy.csv` - Complex negation patterns
-- `domain_jargon.csv` - Domain-specific terminology
-
-```bash
-python scripts/categorize_errors.py
-```
-
-**Output CSV format:**
-```csv
-text,sentiment,num_models_failed,failed_models,notes
-"Review text...",NEGATIVE,4,svm-amazon;nb-amazon;lr-amazon;rf-amazon,"..."
-```
-
-### Phase 4: Promote to Production
+### Phase 3: Promote to Production
 
 ```bash
 ./scripts/promote_to_production.sh
@@ -139,14 +90,10 @@ Selects the best-generalizing model based on `cross_domain_matrix.json`, runs hy
 
 **Options:**
 - `--skip-tuning` - Skip SVM hyperparameter tuning (faster, uses default C=0.1)
-- `--force-model=<model>` - Override winner (e.g., `svm-amazon_polarity`)
 
 ```bash
 # Fast promotion without hyperparameter tuning
 ./scripts/promote_to_production.sh --skip-tuning
-
-# Force a specific model
-./scripts/promote_to_production.sh --force-model=naive_bayes-imdb_50k
 ```
 
 **Output:**

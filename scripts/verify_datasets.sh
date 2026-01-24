@@ -45,7 +45,7 @@ check_dataset() {
 
     # Check row count (using Python for accurate CSV parsing)
     local rows
-    rows=$(python3 -c "import csv; print(sum(1 for _ in csv.reader(open('$path')))-1)" 2>/dev/null)
+    rows=$(python3 -c "import csv; import sys; print(sum(1 for _ in csv.reader(open(sys.argv[1])))-1)" "$path" 2>/dev/null)
     if [ -z "$rows" ]; then
         echo -e "${YELLOW}[WARN]${NC} Could not count rows (Python error)"
     elif [ "$rows" -lt "$min_rows" ]; then

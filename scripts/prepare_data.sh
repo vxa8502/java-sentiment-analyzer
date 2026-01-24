@@ -20,7 +20,7 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 cd "$PROJECT_ROOT"
 
 echo "==============================================================="
-echo "  Data Preparation (Phase 1: One-Time Split Creation)"
+echo "  Data Preparation (One-Time Split Creation)"
 echo "==============================================================="
 echo ""
 
@@ -123,6 +123,7 @@ for dataset in "${DATASETS[@]}"; do
     # Check if raw data exists
     if [ ! -f "$PROJECT_ROOT/$raw_path" ]; then
         echo "[FAIL] Raw data not found: $raw_path"
+        echo "       See docs/data_cards/${dataset}.yaml for download instructions"
         failed=$((failed + 1))
         continue
     fi

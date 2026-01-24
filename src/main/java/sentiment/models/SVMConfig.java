@@ -114,6 +114,7 @@ public class SVMConfig {
                " -P " + epsilon +
                " -N 0" +  // Filter type
                " -V -1" + // Number of folds for cross-validation calibration
+               " -M" +    // Fit calibration models (Platt scaling) for probability outputs
                " -W 1";   // Kernel cache size
     }
 

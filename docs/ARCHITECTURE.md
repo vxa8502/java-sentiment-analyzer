@@ -13,7 +13,7 @@ This document details the technical architecture, design patterns, and implement
 | **Preprocessing** | TF-IDF + MI selection | Thread-safe with ReadWriteLock |
 | **Deployment** | Docker | Non-root container, health checks |
 
-**Production model**: SVM trained on Amazon reviews, 88% cross-domain accuracy.
+**Production model**: SVM trained on Amazon reviews, 87.9% cross-domain accuracy.
 
 **Quick links**: [Training Guide](TRAINING.md) | [Deployment Guide](DEPLOYMENT.md) | [Data Cards](data_cards/)
 
@@ -325,8 +325,6 @@ public interface SentimentClassifier {
 - `StratifiedDataSplitter`: Maintain class distribution in splits
 - `FeatureImportanceAnalyzer`: Interpretability metrics via permutation importance
 - `CrossDomainEvaluator`: Tests model generalization across domains (IMDB, Amazon, Yelp)
-- `EdgeCaseEvaluator`: Validates robustness on sarcasm, negation, mixed sentiment
-- `ErrorAnalyzer`: Categorizes prediction failures for model improvement
 
 **Metrics Provided:**
 
@@ -377,27 +375,6 @@ The evaluation package includes specialized tools to assess model generalization
 - Measures domain transfer performance to detect overfitting to specific datasets
 - Evaluates whether sentiment patterns learned generalize beyond training domain
 - Critical for production deployment across diverse use cases
-
-**EdgeCaseEvaluator:**
-- Validates model behavior on challenging linguistic patterns:
-  - **Sarcasm**: "Oh great, another broken product" (positive words, negative meaning)
-  - **Negation**: "Not bad at all" (negative word, positive sentiment)
-  - **Mixed Sentiment**: "Great camera, terrible battery" (conflicting opinions)
-  - **Domain Jargon**: Technical terms and industry-specific language
-- Identifies model weaknesses before production deployment
-- Provides targeted test cases for model improvement
-
-**ErrorAnalyzer:**
-- Categorizes prediction failures by error type
-- Identifies systematic patterns in misclassifications
-- Generates actionable insights for feature engineering and data augmentation
-- Supports iterative model refinement
-
-**Why These Components Matter:**
-- Production models face diverse, unpredictable inputs
-- Domain-specific training data may not represent real-world variety
-- Systematic testing reveals blind spots and edge cases
-- Enables confident deployment with known limitations documented
 
 ---
 
@@ -973,5 +950,5 @@ List<SentimentResponse> results = futures.stream()
 
 ---
 
-**Last Updated**: 2026-01-18
+**Last Updated**: 2026-01-24
 **Author**: Victoria Alabi

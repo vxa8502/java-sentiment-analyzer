@@ -96,7 +96,8 @@ echo ""
 
 # Build classpath from Maven dependencies
 CLASSPATH=$(mvn -q dependency:build-classpath -Dmdep.outputFile=/dev/stdout)
-CLASSPATH="target/classes:target/sentiment-analyzer-1.0.0.jar.original:$CLASSPATH"
+JAR_ORIGINAL=$(ls target/sentiment-analyzer-*.jar.original 2>/dev/null | head -1)
+CLASSPATH="target/classes:${JAR_ORIGINAL:-target/sentiment-analyzer-1.0.0.jar.original}:$CLASSPATH"
 
 # Use full saved test sets (up to 25K per domain, more than any test set has)
 MAX_SAMPLES_PER_DOMAIN=25000

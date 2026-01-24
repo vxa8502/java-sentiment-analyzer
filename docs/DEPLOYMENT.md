@@ -2,19 +2,23 @@
 
 Production deployment and configuration for the Java Sentiment Analyzer.
 
-## Quick Start (Docker Compose)
+## Quick Start
 
+**Live API:** https://java-sentiment-api.onrender.com
+
+**Or run locally:**
 ```bash
-docker-compose up
+docker build -t sentiment-api .
+docker run -p 8080:8080 sentiment-api
 ```
 
-API available at http://localhost:8080.
+Local API available at http://localhost:8080.
 
 ## Local Development
 
 ### Prerequisites
 
-- Java 21
+- Java 24
 - Maven 3.9+
 - Production model in `models/production/` (run `./scripts/promote_to_production.sh` first)
 
@@ -167,12 +171,7 @@ ls -la models/production/
 
 ```bash
 # Increase heap
-docker run -e MAX_HEAP=1g -e MIN_HEAP=512m ...
-
-# Or in docker-compose.yml
-environment:
-  - MAX_HEAP=1g
-  - MIN_HEAP=512m
+docker run -p 8080:8080 -e MAX_HEAP=1g -e MIN_HEAP=512m sentiment-api
 ```
 
 ## Security
@@ -184,12 +183,8 @@ The Dockerfile runs as non-root user (UID 1001) by default.
 ### Network Isolation
 
 ```bash
-# Use docker-compose network (automatic)
-docker-compose up
-
-# Or create isolated network manually
 docker network create sentiment-net
-docker run --network sentiment-net sentiment-analyzer
+docker run --network sentiment-net sentiment-api
 ```
 
 ## Performance
@@ -206,16 +201,8 @@ docker run --network sentiment-net sentiment-analyzer
 
 ### Resource Limits
 
-Set in `docker-compose.yml`:
-```yaml
-deploy:
-  resources:
-    limits:
-      cpus: '2'
-      memory: 1G
-    reservations:
-      cpus: '1'
-      memory: 512M
+```bash
+docker run -p 8080:8080 --cpus 2 --memory 1g sentiment-api
 ```
 
 ## Production Checklist

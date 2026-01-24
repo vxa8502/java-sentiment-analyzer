@@ -32,27 +32,36 @@ public interface SentimentClassifier {
     String classify(String text) throws Exception;
 
     /**
-     * Provides confidence scores for each sentiment category, enabling
-     * threshold-based filtering and uncertainty quantification.
+     * Returns RAW confidence scores for each sentiment category.
+     * Use for evaluation and calibration analysis where exact values matter.
+     * <p>
+     * <b>Note:</b> Returns unsmoothed probabilities that may include exact 0.0 or 1.0.
+     * For user-facing applications, use {@link #classifyWithProbabilities(String)}
+     * which applies probability smoothing to ensure confidence thresholds work properly.
      *
      * @param text Raw text to analyze (will be preprocessed automatically)
-     * @return Array of probabilities, one per class, in the order returned by {@code getSupportedClasses()}
+     * @return Array of raw probabilities, one per class, in the order returned by {@code getSupportedClasses()}
      * @throws Exception if classification fails or preprocessing errors occur
      * @throws IllegalStateException if classifier hasn't been trained
      * @throws IllegalArgumentException if text is null or empty
+     * @see #classifyWithProbabilities(String) for smoothed probabilities (recommended for APIs)
      */
     double[] getClassificationProbabilities(String text) throws Exception;
 
     /**
-     * Classifies text and returns both the predicted label and probability distribution
+     * Classifies text and returns both the predicted label and SMOOTHED probability distribution
      * in a single atomic operation. This is thread-safe and more efficient than calling
      * classify() and getClassificationProbabilities() separately.
+     * <p>
+     * <b>Note:</b> Probabilities are smoothed to prevent exact 0.0/1.0 values, ensuring
+     * confidence thresholds work properly. Use this for user-facing APIs.
      *
      * @param text Raw text to classify (will be preprocessed automatically)
-     * @return ClassificationResult containing label, probabilities, and class names
+     * @return ClassificationResult containing label, smoothed probabilities, and class names
      * @throws Exception if classification fails or preprocessing errors occur
      * @throws IllegalStateException if classifier hasn't been trained
      * @throws IllegalArgumentException if text is null or empty
+     * @see #getClassificationProbabilities(String) for raw probabilities (evaluation/calibration)
      */
     ClassificationResult classifyWithProbabilities(String text) throws Exception;
 

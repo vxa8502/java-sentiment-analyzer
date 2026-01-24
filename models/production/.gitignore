@@ -1,3 +1,0 @@
-# Keep model files for deployment
-# Note: sentiment_model.ser (~14MB) is tracked for Render deployment
-!.gitignore

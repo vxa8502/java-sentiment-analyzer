@@ -112,17 +112,15 @@ public class SentimentConfiguration {
         if (!Files.exists(path)) {
             String errorMsg = String.format(
                     "Pre-trained model not found at: %s\n\n" +
-                    "To train a model:\n" +
-                    "1. Use the admin API endpoint:\n" +
-                    "   curl -X POST http://localhost:8080/admin/train \\\n" +
-                    "     -H 'Content-Type: application/json' \\\n" +
-                    "     -d '{\"dataPath\":\"./data/datasets/Reviews.csv\",\"outputPath\":\"%s\",\"algorithm\":\"%s\",\"maxSamples\":10000}'\n\n" +
-                    "2. Or set the appropriate environment variable:\n" +
-                    "   - SVM: SENTIMENT_SVM_MODEL\n" +
-                    "   - Naive Bayes: SENTIMENT_NB_MODEL\n" +
-                    "   - Random Forest: SENTIMENT_RF_MODEL\n" +
-                    "   - Logistic Regression: SENTIMENT_LR_MODEL\n",
-                    modelPath, modelPath, algorithm.name());
+                    "To train models, run from project root:\n" +
+                    "  ./scripts/train_all_models.sh\n\n" +
+                    "Or set the appropriate environment variable:\n" +
+                    "  - SVM: SENTIMENT_SVM_MODEL\n" +
+                    "  - Naive Bayes: SENTIMENT_NB_MODEL\n" +
+                    "  - Random Forest: SENTIMENT_RF_MODEL\n" +
+                    "  - Logistic Regression: SENTIMENT_LR_MODEL\n\n" +
+                    "See docs/TRAINING.md for details.\n",
+                    modelPath);
 
             logger.error(errorMsg);
             throw new IllegalStateException(errorMsg);

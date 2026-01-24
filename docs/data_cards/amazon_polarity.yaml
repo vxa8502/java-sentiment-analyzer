@@ -79,7 +79,7 @@ measurement_issues:
   - star_rating_mismatch: "Some 5-star reviews have negative text"
   - length_bias: "Negative reviews avg longer than positive"
 
-edge_cases:
+known_challenges:
   - sarcasm: "Oh great, another broken product!"
   - mixed_sentiment: "Love design, hate battery life"
   - product_comparisons: "May contain comparative sentiment"

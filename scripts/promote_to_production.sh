@@ -8,8 +8,7 @@
 #
 # Usage:
 #   ./scripts/promote_to_production.sh
-#   ./scripts/promote_to_production.sh --skip-feature-importance
-#   ./scripts/promote_to_production.sh --force-model svm-amazon_polarity
+#   ./scripts/promote_to_production.sh --skip-tuning
 #
 
 set -e
@@ -53,15 +52,11 @@ log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 log_step() { echo -e "${BLUE}[STEP]${NC} ${BOLD}$1${NC}"; }
 
-FORCE_MODEL=""
 SKIP_TUNING=false
 
 # Parse arguments
 for arg in "$@"; do
     case $arg in
-        --force-model=*)
-            FORCE_MODEL="${arg#*=}"
-            ;;
         --skip-tuning)
             SKIP_TUNING=true
             ;;
@@ -69,13 +64,11 @@ for arg in "$@"; do
             echo "Usage: $0 [OPTIONS]"
             echo ""
             echo "Options:"
-            echo "  --force-model=<model>  Override winner (e.g., svm-amazon_polarity)"
-            echo "  --skip-tuning          Skip hyperparameter tuning for SVM (use default C)"
+            echo "  --skip-tuning  Skip hyperparameter tuning for SVM (use default C)"
             echo ""
             echo "Examples:"
-            echo "  $0                                # Auto-detect winner, full pipeline"
-            echo "  $0 --skip-tuning                 # Skip SVM tuning, faster"
-            echo "  $0 --force-model=svm-imdb_50k    # Force specific model"
+            echo "  $0               # Auto-detect winner, full pipeline"
+            echo "  $0 --skip-tuning # Skip SVM tuning, faster"
             echo ""
             exit 0
             ;;
@@ -98,11 +91,7 @@ check_dependencies() {
 
 # Get winning model from cross_domain_matrix.json
 get_winner() {
-    if [ -n "$FORCE_MODEL" ]; then
-        echo "$FORCE_MODEL"
-    else
-        jq -r '.best_generalizing_model.model' "$CROSS_DOMAIN_JSON"
-    fi
+    jq -r '.best_generalizing_model.model' "$CROSS_DOMAIN_JSON"
 }
 
 # Parse model string into algorithm and dataset
@@ -200,7 +189,7 @@ retrain_with_feature_importance() {
     log_info "$ALGO_ENUM retrained with feature importance"
 }
 
-# Copy cross_domain_performance and edge_case_performance from source model
+# Copy cross_domain_performance from source model
 copy_source_metadata() {
     local source_meta=$(get_source_metadata_path)
     local prod_meta="$PRODUCTION_DIR/sentiment_model.metadata.json"
@@ -217,24 +206,19 @@ copy_source_metadata() {
 
     log_step "Copying evaluation metadata from source model..."
 
-    # Extract cross_domain_performance and edge_case_performance from source
+    # Extract cross_domain_performance from source
     local cross_domain=$(jq '.cross_domain_performance' "$source_meta")
-    local edge_case=$(jq '.edge_case_performance' "$source_meta")
 
     # Merge into production metadata
     local updated=$(jq \
         --argjson cross_domain "$cross_domain" \
-        --argjson edge_case "$edge_case" \
-        '.cross_domain_performance = $cross_domain | .edge_case_performance = $edge_case' \
+        '.cross_domain_performance = $cross_domain' \
         "$prod_meta")
 
     echo "$updated" > "$prod_meta"
 
     if [ "$cross_domain" != "null" ]; then
         log_info "Copied cross_domain_performance from source model"
-    fi
-    if [ "$edge_case" != "null" ]; then
-        log_info "Copied edge_case_performance from source model"
     fi
 }
 
@@ -295,11 +279,7 @@ main() {
     local winner=$(get_winner)
     local winner_acc=$(jq -r '.best_generalizing_model.cross_domain_avg_accuracy' "$CROSS_DOMAIN_JSON" | awk '{printf "%.1f%%", $1*100}')
 
-    if [ -n "$FORCE_MODEL" ]; then
-        log_warn "Forcing model: $FORCE_MODEL (ignoring cross-domain winner)"
-    else
-        log_info "Best generalizing model: $winner ($winner_acc cross-domain avg)"
-    fi
+    log_info "Best generalizing model: $winner ($winner_acc cross-domain avg)"
 
     parse_model "$winner"
 
@@ -322,7 +302,7 @@ main() {
             case "$REPLY" in
                 [Yy]) ;;  # proceed
                 *)
-                    log_info "Aborted. Use --skip-tuning to skip tuning, or --force-model to pick a different model."
+                    log_info "Aborted. Use --skip-tuning to skip hyperparameter tuning."
                     exit 0
                     ;;
             esac

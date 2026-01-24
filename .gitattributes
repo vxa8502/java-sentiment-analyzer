@@ -1,12 +1,28 @@
 # Git LFS configuration for production model ONLY
 # Other models are gitignored and regenerated via scripts/train_all_models.sh
 models/production/*.ser filter=lfs diff=lfs merge=lfs -text
-models/production/*.model filter=lfs diff=lfs merge=lfs -text
 
-# Ensure shell scripts have correct line endings
+# Text files - normalize line endings (LF in repo, native on checkout)
+*.java text
+*.xml text
+*.md text
+*.properties text
+*.csv text
+*.txt text
+
+# Shell scripts - always LF (required for Unix execution)
 *.sh text eol=lf
 
-# Ensure JSON and YAML files are treated as text
+# Config files
 *.json text
 *.yaml text
 *.yml text
+
+# Binaries - never normalize
+*.ser binary
+*.jar binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.zip binary

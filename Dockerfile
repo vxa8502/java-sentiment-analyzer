@@ -44,7 +44,7 @@ EXPOSE 8080
 
 # Health check (uses PORT env var at runtime)
 HEALTHCHECK --interval=30s --timeout=3s --start-period=60s --retries=3 \
-  CMD curl -f http://localhost:${PORT:-8080}/api/v1/health || exit 1
+  CMD curl -f http://localhost:${PORT:-8080}/actuator/health || exit 1
 
 # Default memory limits optimized for Render free tier (512MB container)
 # SerialGC uses less memory overhead than G1GC

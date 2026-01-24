@@ -6,11 +6,21 @@ Goal: Understand engineering rigor of production ML Systems (type safety, circui
 
 | Metric | Value |
 |--------|-------|
-| Cross-domain accuracy | **88%** (tested on 3 different text domains) |
+| Cross-domain accuracy | **87.9%** (tested on 3 different text domains) |
 | Latency | **10-50ms** per request |
 | Throughput | **1,000+ req/min** |
 
-<!-- TODO: Add live demo link once deployed -->
+**[Try the Live API](https://java-sentiment-api.onrender.com/api/v1/health)**
+
+```bash
+curl -X POST https://java-sentiment-api.onrender.com/api/v1/sentiment/analyze \
+  -H "Content-Type: application/json" \
+  -d '{"text":"This product is amazing and I love it"}'
+```
+
+```json
+{"sentiment":"positive","confidence":0.95,"processingTimeMs":12}
+```
 
 ---
 
@@ -33,19 +43,19 @@ The result: a sentiment classifier that runs anywhere Docker runs, handles real 
 
 | Metric | Value |
 |--------|-------|
-| **Test Accuracy** | 88.4% |
-| **Cross-Domain Average** | 88.2% |
-| **F1 Score** | 0.884 |
+| **Test Accuracy** | 88.5% |
+| **Cross-Domain Average** | 87.9% |
+| **F1 Score** | 0.885 |
 | **Latency** | 10-50ms |
 | **Throughput** | ~1,000 req/min |
 
-The production model (SVM trained on Amazon product reviews) was selected for **best generalization**—it maintains 84-91% accuracy when applied to completely different domains:
+The production model (SVM trained on Amazon product reviews) was selected for **best generalization**—it maintains 85-91% accuracy when applied to completely different domains:
 
 | Test Domain | Accuracy |
 |-------------|----------|
-| Amazon (in-domain) | 88.4% |
-| IMDB movies | 84.8% |
-| Yelp restaurants | 91.5% |
+| Amazon (in-domain) | 88.5% |
+| IMDB movies | 84.9% |
+| Yelp restaurants | 91.0% |
 
 ### Model Comparison (12 experiments)
 
@@ -53,10 +63,10 @@ Trained 4 algorithms across 3 domains to find the best trade-off between accurac
 
 | Algorithm | Best In-Domain | Cross-Domain Avg | Notes |
 |-----------|----------------|------------------|-------|
-| **SVM** | 94.5% (Yelp) | **88.2%** | Best generalizing |
-| Random Forest | 92.5% (Yelp) | 85.3% | Largest model files |
-| Logistic Regression | 92.3% (Yelp) | 83.4% | Fastest training |
-| Naive Bayes | 83.9% (IMDB) | 76.2% | Fastest inference |
+| **SVM** | 93.7% (Yelp) | **87.9%** | Best generalizing |
+| Random Forest | 91.2% (Yelp) | 85.5% | Largest model files |
+| Logistic Regression | 92.2% (Yelp) | 82.8% | Fastest training |
+| Naive Bayes | 84.0% (IMDB) | 76.3% | Fastest inference |
 
 Full results: [Model Comparison Report](results/FINAL_COMPREHENSIVE_REPORT.md)
 
@@ -66,11 +76,11 @@ Top features by SVM weight show the model captures negation patterns and domain-
 
 | Positive Indicators | Weight | Negative Indicators | Weight |
 |---------------------|--------|---------------------|--------|
-| not disappointed | +1.31 | not worth | -1.52 |
-| excellent | +0.94 | disappointing | -1.28 |
-| awesome | +0.92 | not recommend | -1.25 |
-| fantastic | +0.90 | worst | -1.22 |
-| four stars | +0.89 | two stars | -1.02 |
+| not disappointed | +1.32 | not worth | -1.50 |
+| excellent | +0.94 | disappointing | -1.26 |
+| awesome | +0.92 | not recommend | -1.27 |
+| fantastic | +0.91 | worst | -1.23 |
+| four stars | +0.88 | two stars | -1.03 |
 
 The bigram "not disappointed" ranking as the top positive indicator demonstrates that TF-IDF bigrams successfully capture negation—a common failure mode for bag-of-words models.
 
@@ -80,8 +90,17 @@ Full feature analysis: [Feature Importance API endpoint](#feature-importance) or
 
 ## Quick Start
 
+**Try the live API:**
 ```bash
-docker-compose up
+curl -X POST https://java-sentiment-api.onrender.com/api/v1/sentiment/analyze \
+  -H "Content-Type: application/json" \
+  -d '{"text":"This product exceeded my expectations!"}'
+```
+
+**Or run locally with Docker:**
+```bash
+docker build -t sentiment-api .
+docker run -p 8080:8080 sentiment-api
 ```
 
 The API starts at http://localhost:8080. Test it:
@@ -134,7 +153,7 @@ See [examples/](examples/) for Python client and more curl examples.
 
 ## Architecture Highlights
 
-This isn't a notebook experiment—it's a deployable system with production patterns:
+Attempt at a deployable system with production patterns:
 
 | Concern | Solution |
 |---------|----------|
@@ -216,7 +235,7 @@ Data quality documentation: [Data Cards](docs/data_cards/)
 | **Resilience** | Resilience4j | Circuit breaker, rate limiting |
 | **Build** | Maven | Standard Java dependency management |
 | **Deploy** | Docker | Consistent environments, easy scaling |
-| **Runtime** | Java 21 | Latest LTS with virtual threads support |
+| **Runtime** | Java 24 | Latest with virtual threads support |
 
 ---
 
@@ -229,7 +248,7 @@ java-sentiment-analyzer/
 │   ├── models/               # SVM, NaiveBayes, RandomForest, LogisticRegression
 │   ├── preprocessing/        # Text cleaning, tokenization, TF-IDF
 │   ├── training/             # Training orchestration, metadata persistence
-│   ├── evaluation/           # Cross-domain testing, edge case analysis
+│   ├── evaluation/           # Cross-domain testing, metrics
 │   └── config/               # Spring configuration, model loading
 ├── scripts/                  # Training and evaluation automation
 ├── models/production/        # Deployed model + feature importance
@@ -245,10 +264,10 @@ java-sentiment-analyzer/
 | Document | Contents |
 |----------|----------|
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | System design, ML decisions, thread safety |
-| [TRAINING.md](docs/TRAINING.md) | Training pipeline, edge cases, troubleshooting |
+| [TRAINING.md](docs/TRAINING.md) | Training pipeline, troubleshooting |
 | [DEPLOYMENT.md](docs/DEPLOYMENT.md) | Docker, monitoring, production checklist |
 | [Data Cards](docs/data_cards/) | Dataset provenance, biases, limitations |
-| [Results Report](results/FINAL_COMPREHENSIVE_REPORT.md) | Full model comparison (auto-generated) |
+| [Results Report](results/FINAL_COMPREHENSIVE_REPORT.md) | Full 12-model comparison (auto-generated) |
 
 ---
 

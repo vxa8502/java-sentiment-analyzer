@@ -44,8 +44,8 @@ sentiment:
   # Pre-trained model paths (set to load specific models at startup)
   # Models can be generated using sentiment.training.ModelTrainingMain
   models:
-    # Production model (Logistic Regression trained on Amazon - best cross-domain + edge case performance)
-    # Cross-domain avg: 83.0%, Edge case accuracy: 62.5%
+    # Production model (SVM trained on Amazon - best cross-domain performance)
+    # Cross-domain avg: 87.9%
     production-model-path: "${SENTIMENT_PRODUCTION_MODEL:/app/models/production/sentiment_model.ser}"
 
     # Path to pre-trained SVM model (default model used by the application)
@@ -200,11 +200,6 @@ sentiment:
 
   # Data loading configuration
   data:
-    # Training data configuration - Docker-friendly path
-    # NOTE: Training data is now externalized. Place Reviews.csv in /app/data/datasets/ directory
-    training-file: "${SENTIMENT_TRAINING_FILE:/app/data/datasets/Reviews.csv}"
-    max-training-samples: 10000  # Limit training data for faster startup
-
     # Supported file formats
     supported-formats:
       - csv
