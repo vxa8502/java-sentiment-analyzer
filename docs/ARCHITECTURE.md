@@ -943,7 +943,7 @@ List<SentimentResponse> results = futures.stream()
 
 ## References
 
-- **Weka Documentation**: https://www.cs.waikato.ac.nz/ml/weka/documentation.html
+- **Weka Documentation**: https://waikato.github.io/weka-wiki/
 - **Spring Boot Reference**: https://docs.spring.io/spring-boot/docs/current/reference/html/
 - **Mutual Information**: Cover, T. M., & Thomas, J. A. (2006). *Elements of Information Theory*
 - **Platt Scaling**: Platt, J. (1999). "Probabilistic Outputs for Support Vector Machines"
