@@ -19,7 +19,7 @@ curl -X POST https://java-sentiment-api.onrender.com/api/v1/sentiment/analyze \
 ```
 
 ```json
-{"sentiment":"positive","confidence":0.95,"processingTimeMs":12}
+{"sentiment":"positive","confidence":0.95,"text":"This product is amazing and I love it","processingTimeMs":12}
 ```
 
 ---
@@ -115,6 +115,7 @@ curl -X POST http://localhost:8080/api/v1/sentiment/analyze \
 {
   "sentiment": "positive",
   "confidence": 0.92,
+  "text": "This product exceeded my expectations!",
   "processingTimeMs": 15
 }
 ```
@@ -139,7 +140,7 @@ curl -X POST http://localhost:8080/api/v1/sentiment/batch \
 
 ### Feature Importance
 ```bash
-curl http://localhost:8080/api/v1/sentiment/feature-importance
+curl http://localhost:8080/api/v1/model/feature-importance
 ```
 
 ### Health Check
@@ -147,7 +148,7 @@ curl http://localhost:8080/api/v1/sentiment/feature-importance
 curl http://localhost:8080/api/v1/health
 ```
 
-See [examples/](examples/) for Python client and more curl examples.
+See [demo/](demo/) for Python client and more curl examples.
 
 ---
 
@@ -278,7 +279,9 @@ java-sentiment-analyzer/
 | `SENTIMENT_RANDOM_SEED` | 42 | Reproducibility seed |
 | `SENTIMENT_MI_THRESHOLD` | 50000 | Feature selection threshold |
 
-Rate limits (per minute): 100 single / 20 batch / 2 model-compare
+Rate limits (per minute, default profile): 100 single / 20 batch / 2 model-compare
+
+Note: Production profile uses stricter limits (60 single / 10 batch / 5 per 10min).
 
 See [DEPLOYMENT.md](docs/DEPLOYMENT.md) for full configuration reference.
 

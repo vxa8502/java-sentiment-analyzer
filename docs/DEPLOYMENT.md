@@ -71,7 +71,7 @@ docker run -d \
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `SPRING_PROFILES_ACTIVE` | `production` | Application profile |
-| `SENTIMENT_MODEL_PATH` | `/app/models/production/sentiment_model.ser` | Path to model file |
+| `SENTIMENT_SVM_MODEL` | `/app/models/production/sentiment_model.ser` | Path to model file |
 | `SENTIMENT_CONFIDENCE_THRESHOLD` | `0.7` | Minimum confidence for predictions |
 | `MAX_HEAP` | `512m` | JVM max heap size |
 | `MIN_HEAP` | `256m` | JVM initial heap size |
@@ -95,9 +95,16 @@ docker run -d \
 | `SENTIMENT_API_VALIDATION_MAX_TEXT_LENGTH` | `10000` | Max characters per text |
 
 **Rate Limits (configured in `application.yml`):**
+
+Default profile:
 - Single analysis: 100 requests/min
 - Batch analysis: 20 requests/min
 - Model comparison: 2 requests/5min
+
+Production profile (stricter):
+- Single analysis: 60 requests/min
+- Batch analysis: 10 requests/min
+- Model comparison: 5 requests/10min
 
 ## Health Check & Monitoring
 
