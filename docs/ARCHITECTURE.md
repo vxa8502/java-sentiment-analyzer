@@ -416,7 +416,7 @@ resilience4j:
 **2. Validation (Bean Validation):**
 ```java
 @NotBlank(message = "Text cannot be blank")
-@Size(min = 1, max = 10000, message = "Text cannot exceed 10000 characters")
+@Size(max = 10000, message = "Text cannot exceed 10000 characters")
 String text;
 
 @DecimalMin(value = "0.0", message = "Confidence threshold must be between 0.0 and 1.0")

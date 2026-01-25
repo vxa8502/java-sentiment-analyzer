@@ -12,7 +12,7 @@ import static sentiment.api.ValidationConstants.*;
  */
 public record SentimentRequest(
     @NotBlank(message = TEXT_BLANK_MESSAGE)
-    @Size(min = MIN_TEXT_LENGTH, max = MAX_TEXT_LENGTH, message = TEXT_TOO_LONG_MESSAGE)
+    @Size(max = MAX_TEXT_LENGTH, message = TEXT_TOO_LONG_MESSAGE)
     String text,
 
     @DecimalMin(value = "0.0", message = CONFIDENCE_THRESHOLD_RANGE_MESSAGE)

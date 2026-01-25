@@ -15,7 +15,7 @@ import static sentiment.api.ValidationConstants.*;
  */
 public record BatchRequest(
     @NotEmpty(message = BATCH_TOO_SMALL_MESSAGE)
-    @Size(min = MIN_BATCH_SIZE, max = MAX_BATCH_SIZE, message = BATCH_TOO_LARGE_MESSAGE)
+    @Size(max = MAX_BATCH_SIZE, message = BATCH_TOO_LARGE_MESSAGE)
     List<@NotBlank(message = TEXT_BLANK_MESSAGE)
         @Size(max = MAX_TEXT_LENGTH, message = TEXT_TOO_LONG_MESSAGE) String> texts,
 

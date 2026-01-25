@@ -12,11 +12,6 @@ public final class ValidationConstants {
     public static final int MAX_TEXT_LENGTH = 10000;
 
     /**
-     * Minimum length for a single text input.
-     */
-    public static final int MIN_TEXT_LENGTH = 1;
-
-    /**
      * Maximum number of texts in a batch request.
      */
     public static final int MAX_BATCH_SIZE = 100;
