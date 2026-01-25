@@ -1,5 +1,7 @@
 package sentiment.config;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -20,11 +22,21 @@ import java.nio.file.Paths;
  * Spring configuration for sentiment analysis components.
  */
 @Configuration
-@org.springframework.boot.context.properties.EnableConfigurationProperties(FeatureExtractionProperties.class)
+@org.springframework.boot.context.properties.EnableConfigurationProperties({
+    FeatureExtractionProperties.class,
+    ModelPathProperties.class
+})
 @org.springframework.context.annotation.Profile("!training")
 public class SentimentConfiguration {
 
     private static final Logger logger = LoggerFactory.getLogger(SentimentConfiguration.class);
+
+    /**
+     * Default algorithm used when metadata is unavailable or unreadable.
+     */
+    private static final AlgorithmType DEFAULT_ALGORITHM = AlgorithmType.SVM;
+
+    private static final ObjectMapper objectMapper = new ObjectMapper();
 
     @Autowired
     private ObjectProvider<TextPreprocessor> textPreprocessorProvider;
@@ -32,23 +44,11 @@ public class SentimentConfiguration {
     @Autowired
     private ObjectProvider<WekaInstancesConverter> wekaInstancesConverterProvider;
 
+    @Autowired
+    private ModelPathProperties modelPaths;
+
     @Value("${sentiment.model-type}")
     private String modelType;
-
-    @Value("${sentiment.models.svm-model-path:./models/svm-model.ser}")
-    private String svmModelPath;
-
-    @Value("${sentiment.models.naive-bayes-model-path:./models/naive_bayes-model.ser}")
-    private String naiveBayesModelPath;
-
-    @Value("${sentiment.models.random-forest-model-path:./models/random_forest-model.ser}")
-    private String randomForestModelPath;
-
-    @Value("${sentiment.models.logistic-model-path:./models/logistic_regression-model.ser}")
-    private String logisticModelPath;
-
-    @Value("${sentiment.models.production-model-path:./models/production/sentiment_model.ser}")
-    private String productionModelPath;
 
 
     /**
@@ -68,7 +68,7 @@ public class SentimentConfiguration {
     @Bean
     public String loadedModelPath() {
         if ("PRODUCTION".equalsIgnoreCase(modelType)) {
-            return productionModelPath;
+            return modelPaths.getProductionModelPath();
         }
         AlgorithmType algorithm = AlgorithmType.fromString(modelType);
         return getModelPath(algorithm);
@@ -165,6 +165,7 @@ public class SentimentConfiguration {
      * Reads metadata to determine the algorithm type dynamically.
      */
     private SentimentClassifier loadProductionModel() {
+        String productionModelPath = modelPaths.getProductionModelPath();
         logger.info("Loading PRODUCTION model from: {}", productionModelPath);
         Path modelPath = Paths.get(productionModelPath);
 
@@ -203,29 +204,30 @@ public class SentimentConfiguration {
 
     /**
      * Reads the algorithm type from model metadata JSON file.
+     *
+     * @param metadataPath path to the metadata JSON file
+     * @return the algorithm type from metadata, or {@link #DEFAULT_ALGORITHM} if unavailable
      */
     private AlgorithmType readAlgorithmFromMetadata(Path metadataPath) {
         if (!Files.exists(metadataPath)) {
-            logger.warn("Metadata file not found at: {}. Defaulting to SVM.", metadataPath);
-            return AlgorithmType.SVM;
+            logger.warn("Metadata file not found at: {}. Using default: {}", metadataPath, DEFAULT_ALGORITHM);
+            return DEFAULT_ALGORITHM;
         }
 
         try {
             String content = Files.readString(metadataPath);
-            // Simple parsing - look for "algorithm": "value"
-            if (content.contains("\"algorithm\"")) {
-                int start = content.indexOf("\"algorithm\"");
-                int colonPos = content.indexOf(":", start);
-                int quoteStart = content.indexOf("\"", colonPos + 1);
-                int quoteEnd = content.indexOf("\"", quoteStart + 1);
-                String algorithmStr = content.substring(quoteStart + 1, quoteEnd);
+            JsonNode root = objectMapper.readTree(content);
+            String algorithmStr = root.path("algorithm").asText(null);
+
+            if (algorithmStr != null && !algorithmStr.isEmpty()) {
                 return AlgorithmType.fromString(algorithmStr);
             }
-            logger.warn("Algorithm not found in metadata. Defaulting to SVM.");
-            return AlgorithmType.SVM;
+
+            logger.warn("Algorithm not found in metadata. Using default: {}", DEFAULT_ALGORITHM);
+            return DEFAULT_ALGORITHM;
         } catch (IOException e) {
-            logger.warn("Failed to read metadata: {}. Defaulting to SVM.", e.getMessage());
-            return AlgorithmType.SVM;
+            logger.warn("Failed to read metadata: {}. Using default: {}", e.getMessage(), DEFAULT_ALGORITHM);
+            return DEFAULT_ALGORITHM;
         }
     }
 
@@ -254,10 +256,10 @@ public class SentimentConfiguration {
      */
     private String getModelPath(AlgorithmType algorithm) {
         return switch (algorithm) {
-            case SVM -> svmModelPath;
-            case NAIVE_BAYES -> naiveBayesModelPath;
-            case RANDOM_FOREST -> randomForestModelPath;
-            case LOGISTIC_REGRESSION -> logisticModelPath;
+            case SVM -> modelPaths.getSvmModelPath();
+            case NAIVE_BAYES -> modelPaths.getNaiveBayesModelPath();
+            case RANDOM_FOREST -> modelPaths.getRandomForestModelPath();
+            case LOGISTIC_REGRESSION -> modelPaths.getLogisticModelPath();
             default -> throw new IllegalArgumentException("No model path configured for algorithm: " + algorithm);
         };
     }
