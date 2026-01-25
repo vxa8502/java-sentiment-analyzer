@@ -145,18 +145,7 @@ public class SentimentController {
                 if (cachedFeatureImportance != null &&
                     cachedFeatureImportance.topFeatures().size() >= topFeatures) {
                     logger.info("Returning cached feature importance");
-                    List<FeatureImportanceResponse.FeatureInfo> subset =
-                            cachedFeatureImportance.topFeatures().subList(0,
-                                    Math.min(topFeatures, cachedFeatureImportance.topFeatures().size()));
-
-                    return ResponseEntity.ok(new FeatureImportanceResponse(
-                            cachedFeatureImportance.modelType(),
-                            cachedFeatureImportance.totalFeatures(),
-                            subset,
-                            cachedFeatureImportance.statistics(),
-                            cachedFeatureImportance.analysisTimeMs(),
-                            cachedFeatureImportance.note()
-                    ));
+                    return ResponseEntity.ok(cachedFeatureImportance.withTopFeatures(topFeatures));
                 }
 
                 long startTime = System.currentTimeMillis();
@@ -212,21 +201,10 @@ public class SentimentController {
                                     "Positive weights indicate positive sentiment, negative weights indicate negative sentiment."
                             );
 
-                            List<FeatureImportanceResponse.FeatureInfo> subset = allFeatures.stream()
-                                    .limit(topFeatures)
-                                    .collect(Collectors.toList());
-
                             logger.info("Extracted {} features with {} non-zero weights in {}ms",
                                     weights.size(), nonZero, duration);
 
-                            return ResponseEntity.ok(new FeatureImportanceResponse(
-                                    classifier.getAlgorithmName(),
-                                    weights.size(),
-                                    subset,
-                                    stats,
-                                    duration,
-                                    cachedFeatureImportance.note()
-                            ));
+                            return ResponseEntity.ok(cachedFeatureImportance.withTopFeatures(topFeatures));
                         }
                     }
                     logger.warn("SVM coefficient extraction returned no non-zero weights, falling back to file");
@@ -264,18 +242,7 @@ public class SentimentController {
                             data.analysisTimeMs()
                     );
 
-                    List<FeatureImportanceResponse.FeatureInfo> subset = allFeatures.stream()
-                            .limit(topFeatures)
-                            .collect(Collectors.toList());
-
-                    return ResponseEntity.ok(new FeatureImportanceResponse(
-                            classifier.getAlgorithmName(),
-                            data.statistics().totalFeatures(),
-                            subset,
-                            stats,
-                            data.analysisTimeMs(),
-                            cachedFeatureImportance.note()
-                    ));
+                    return ResponseEntity.ok(cachedFeatureImportance.withTopFeatures(topFeatures));
 
                 } catch (Exception e) {
                     logger.error("Failed to load feature importance: {}", e.getMessage(), e);

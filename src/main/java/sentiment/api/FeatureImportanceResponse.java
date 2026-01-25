@@ -41,6 +41,10 @@ public record FeatureImportanceResponse(
             @JsonProperty("median") double median,
             @JsonProperty("percentile95") double percentile95
     ) {
+        public static Statistics empty() {
+            return new Statistics(0, 0, 0, 0);
+        }
+
         public static Statistics fromDomain(FeatureStatistics stats) {
             return new Statistics(stats.mean(), stats.stdDev(), stats.median(), stats.percentile95());
         }
@@ -67,30 +71,41 @@ public record FeatureImportanceResponse(
     }
 
     /**
+     * Creates an empty response with the given model type and message.
+     */
+    public static FeatureImportanceResponse empty(String modelType, String message) {
+        return new FeatureImportanceResponse(modelType, 0, List.of(), Statistics.empty(), 0, message);
+    }
+
+    /**
      * Creates an error response when feature importance cannot be computed.
      */
     public static FeatureImportanceResponse error(String message) {
-        return new FeatureImportanceResponse(
-                "unknown",
-                0,
-                List.of(),
-                new Statistics(0, 0, 0, 0),
-                0,
-                message
-        );
+        return empty("unknown", message);
     }
 
     /**
      * Creates a response when feature importance analysis is unavailable.
      */
     public static FeatureImportanceResponse unavailable(String modelType, String reason) {
+        return empty(modelType, reason);
+    }
+
+    /**
+     * Returns a new response with features limited to the specified count.
+     * If limit >= current size, returns this instance unchanged.
+     */
+    public FeatureImportanceResponse withTopFeatures(int limit) {
+        if (limit >= topFeatures.size()) {
+            return this;
+        }
         return new FeatureImportanceResponse(
                 modelType,
-                0,
-                List.of(),
-                new Statistics(0, 0, 0, 0),
-                0,
-                reason
+                totalFeatures,
+                List.copyOf(topFeatures.subList(0, limit)),
+                statistics,
+                analysisTimeMs,
+                note
         );
     }
 }

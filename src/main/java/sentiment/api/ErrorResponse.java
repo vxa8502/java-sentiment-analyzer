@@ -15,14 +15,13 @@ public class ErrorResponse {
     private String error;
     private String message;
     private Integer status;
-    private Long timestamp;
+    private Long timestamp = System.currentTimeMillis();
     private Map<String, String> details;
 
     /**
-     * Default constructor - sets timestamp automatically.
+     * Default constructor.
      */
     public ErrorResponse() {
-        this.timestamp = System.currentTimeMillis();
     }
 
     /**
@@ -32,7 +31,6 @@ public class ErrorResponse {
      */
     public ErrorResponse(String error) {
         this.error = error;
-        this.timestamp = System.currentTimeMillis();
     }
 
     /**
@@ -44,7 +42,6 @@ public class ErrorResponse {
     public ErrorResponse(String error, int status) {
         this.error = error;
         this.status = status;
-        this.timestamp = System.currentTimeMillis();
     }
 
     /**
@@ -58,7 +55,6 @@ public class ErrorResponse {
         this.error = error;
         this.message = message;
         this.status = status;
-        this.timestamp = System.currentTimeMillis();
     }
 
     /**
@@ -72,7 +68,6 @@ public class ErrorResponse {
         this.error = error;
         this.details = details;
         this.status = status;
-        this.timestamp = System.currentTimeMillis();
     }
 
     // Getters and setters
