@@ -41,6 +41,9 @@ public final class ValidationConstants {
     public static final String TEXT_BLANK_MESSAGE =
         "Text cannot be blank";
 
+    public static final String CONFIDENCE_THRESHOLD_RANGE_MESSAGE =
+        "Confidence threshold must be between 0.0 and 1.0";
+
     // Private constructor to prevent instantiation
     private ValidationConstants() {
         throw new UnsupportedOperationException("Utility class cannot be instantiated");

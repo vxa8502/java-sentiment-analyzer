@@ -178,26 +178,6 @@ sentiment:
     # Rate limiting (requests per minute)
     rate-limit: 1000
 
-    # Input validation settings
-    # NOTE: These values are defined in sentiment.api.ValidationConstants
-    # To customize, modify the constants in code or override via environment variables
-    validation:
-      # Maximum text length for single and batch requests (characters)
-      # Default: 10000 (prevents memory exhaustion and excessive processing)
-      max-text-length: 10000
-
-      # Minimum text length (characters)
-      # Default: 1 (allows short but valid inputs like "Good" or "Bad")
-      min-text-length: 1
-
-      # Maximum number of texts in batch requests
-      # Default: 1000 (balances throughput and resource usage)
-      max-batch-size: 1000
-
-      # Minimum number of texts in batch requests
-      # Default: 1
-      min-batch-size: 1
-
   # Data loading configuration
   data:
     # Supported file formats

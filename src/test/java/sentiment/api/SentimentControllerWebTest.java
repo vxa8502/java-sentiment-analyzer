@@ -11,6 +11,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import sentiment.models.SentimentClassifier;
 
 import static org.hamcrest.Matchers.*;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -20,7 +21,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /**
  * Web layer tests for SentimentController using @WebMvcTest.
  * <p>Tests REST API contracts without loading the full Spring context or ML models.
- * <p>Uses mocked SentimentClassifier to keep tests fast and memory-efficient.
+ * <p>Uses mocked SentimentService to keep tests fast and memory-efficient.
  */
 @WebMvcTest(SentimentController.class)
 @DisplayName("SentimentController Web Layer Tests")
@@ -28,6 +29,9 @@ public class SentimentControllerWebTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @MockitoBean
+    private SentimentService sentimentService;
 
     @MockitoBean
     private SentimentClassifier classifier;
@@ -56,9 +60,21 @@ public class SentimentControllerWebTest {
         // Mock metrics snapshot for health endpoint
         sentiment.api.metrics.PredictionMetrics.MetricsSnapshot mockSnapshot =
             new sentiment.api.metrics.PredictionMetrics.MetricsSnapshot(
-                100L, 60.0, 30.0, 10.0, 0.85, 5.0, 100L, 50.0, 100.0, 150.0
+                100L, 60.0, 30.0, 10.0, 5.0, 0.85, 5.0, 100L, 50.0, 100.0, 150.0
             );
         when(metrics.getSnapshot()).thenReturn(mockSnapshot);
+
+        // Wire up service to return classifier and metrics
+        when(sentimentService.getClassifier()).thenReturn(classifier);
+        when(sentimentService.getMetrics()).thenReturn(metrics);
+
+        // Default service behavior - delegate to mock response
+        when(sentimentService.classifyText(anyString(), any())).thenAnswer(invocation -> {
+            String text = invocation.getArgument(0);
+            return org.springframework.http.ResponseEntity.ok(
+                SentimentResponse.success("positive", 0.85, text, 10L)
+            );
+        });
     }
 
     // ==================== HEALTH ENDPOINT TESTS ====================
@@ -101,11 +117,12 @@ public class SentimentControllerWebTest {
     @Test
     @DisplayName("Analyze positive text should return positive sentiment")
     public void testAnalyzeSentiment_PositiveSentiment() throws Exception {
-        when(classifier.classifyWithProbabilities(anyString())).thenReturn(
-            new SentimentClassifier.ClassificationResult(
-                "positive", new double[]{0.92, 0.08}, new String[]{"positive", "negative"}
-            )
-        );
+        when(sentimentService.classifyText(anyString(), any())).thenAnswer(invocation -> {
+            String text = invocation.getArgument(0);
+            return org.springframework.http.ResponseEntity.ok(
+                SentimentResponse.success("positive", 0.92, text, 10L)
+            );
+        });
 
         String requestJson = """
                 {
@@ -124,11 +141,12 @@ public class SentimentControllerWebTest {
     @Test
     @DisplayName("Analyze negative text should return negative sentiment")
     public void testAnalyzeSentiment_NegativeSentiment() throws Exception {
-        when(classifier.classifyWithProbabilities(anyString())).thenReturn(
-            new SentimentClassifier.ClassificationResult(
-                "negative", new double[]{0.12, 0.88}, new String[]{"positive", "negative"}
-            )
-        );
+        when(sentimentService.classifyText(anyString(), any())).thenAnswer(invocation -> {
+            String text = invocation.getArgument(0);
+            return org.springframework.http.ResponseEntity.ok(
+                SentimentResponse.success("negative", 0.88, text, 10L)
+            );
+        });
 
         String requestJson = """
                 {
@@ -147,11 +165,13 @@ public class SentimentControllerWebTest {
     @Test
     @DisplayName("Analyze sentiment with confidence threshold below threshold returns uncertain")
     public void testAnalyzeSentiment_BelowThreshold_ReturnsUncertain() throws Exception {
-        when(classifier.classifyWithProbabilities(anyString())).thenReturn(
-            new SentimentClassifier.ClassificationResult(
-                "positive", new double[]{0.65, 0.35}, new String[]{"positive", "negative"}
-            )
-        );  // Below 0.9 threshold
+        when(sentimentService.classifyText(anyString(), any())).thenAnswer(invocation -> {
+            String text = invocation.getArgument(0);
+            // Service applies threshold logic and returns "uncertain"
+            return org.springframework.http.ResponseEntity.ok(
+                SentimentResponse.success("uncertain", 0.65, text, 10L)
+            );
+        });
 
         String requestJson = """
                 {
@@ -171,11 +191,12 @@ public class SentimentControllerWebTest {
     @Test
     @DisplayName("Analyze sentiment with confidence above threshold returns sentiment")
     public void testAnalyzeSentiment_AboveThreshold_ReturnsSentiment() throws Exception {
-        when(classifier.classifyWithProbabilities(anyString())).thenReturn(
-            new SentimentClassifier.ClassificationResult(
-                "positive", new double[]{0.95, 0.05}, new String[]{"positive", "negative"}
-            )
-        );  // Above 0.7 threshold
+        when(sentimentService.classifyText(anyString(), any())).thenAnswer(invocation -> {
+            String text = invocation.getArgument(0);
+            return org.springframework.http.ResponseEntity.ok(
+                SentimentResponse.success("positive", 0.95, text, 10L)
+            );
+        });
 
         String requestJson = """
                 {
@@ -257,20 +278,24 @@ public class SentimentControllerWebTest {
     }
 
     @Test
-    @DisplayName("Analyze sentiment with malformed JSON should return error")
+    @DisplayName("Analyze sentiment with malformed JSON should return 400 Bad Request")
     public void testAnalyzeSentiment_MalformedJson() throws Exception {
         String malformedJson = "{ text: 'missing quotes' }";
 
         mockMvc.perform(post("/api/v1/sentiment/analyze")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(malformedJson))
-                .andExpect(status().is5xxServerError());  // Jackson parsing fails with 500
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("Invalid request body"));
     }
 
     @Test
     @DisplayName("Analyze sentiment when model not trained should return 503")
     public void testAnalyzeSentiment_ModelNotTrained() throws Exception {
-        when(classifier.isTrained()).thenReturn(false);
+        when(sentimentService.classifyText(anyString(), any())).thenReturn(
+            org.springframework.http.ResponseEntity.status(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE)
+                .body(SentimentResponse.error("Model initialization in progress.", "Test text"))
+        );
 
         String requestJson = """
                 {
@@ -332,11 +357,12 @@ public class SentimentControllerWebTest {
     @Test
     @DisplayName("Batch analysis with confidence threshold should apply to all texts")
     public void testBatchAnalysis_WithConfidenceThreshold() throws Exception {
-        when(classifier.classifyWithProbabilities(anyString())).thenReturn(
-            new SentimentClassifier.ClassificationResult(
-                "positive", new double[]{0.75, 0.25}, new String[]{"positive", "negative"}
-            )
-        );
+        when(sentimentService.classifyText(anyString(), any())).thenAnswer(invocation -> {
+            String text = invocation.getArgument(0);
+            return org.springframework.http.ResponseEntity.ok(
+                SentimentResponse.success("positive", 0.75, text, 10L)
+            );
+        });
 
         String requestJson = """
                 {
@@ -420,6 +446,60 @@ public class SentimentControllerWebTest {
                 .andExpect(status().is4xxClientError());
     }
 
+    // ==================== CONFIDENCE THRESHOLD VALIDATION TESTS ====================
+
+    @Test
+    @DisplayName("Analyze sentiment with confidence threshold above 1.0 should return validation error")
+    public void testAnalyzeSentiment_ConfidenceThresholdTooHigh() throws Exception {
+        String requestJson = """
+                {
+                    "text": "This is a test",
+                    "confidenceThreshold": 1.5
+                }
+                """;
+
+        mockMvc.perform(post("/api/v1/sentiment/analyze")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestJson))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("Validation failed"))
+                .andExpect(jsonPath("$.details.confidenceThreshold").exists());
+    }
+
+    @Test
+    @DisplayName("Analyze sentiment with negative confidence threshold should return validation error")
+    public void testAnalyzeSentiment_ConfidenceThresholdNegative() throws Exception {
+        String requestJson = """
+                {
+                    "text": "This is a test",
+                    "confidenceThreshold": -0.5
+                }
+                """;
+
+        mockMvc.perform(post("/api/v1/sentiment/analyze")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestJson))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("Validation failed"));
+    }
+
+    @Test
+    @DisplayName("Batch analysis with invalid confidence threshold should return validation error")
+    public void testBatchAnalysis_ConfidenceThresholdInvalid() throws Exception {
+        String requestJson = """
+                {
+                    "texts": ["Test 1", "Test 2"],
+                    "confidenceThreshold": 2.0
+                }
+                """;
+
+        mockMvc.perform(post("/api/v1/sentiment/batch")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestJson))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("Validation failed"));
+    }
+
     // ==================== EDGE CASE TESTS ====================
 
     @Test
@@ -470,7 +550,7 @@ public class SentimentControllerWebTest {
     }
 
     @Test
-    @DisplayName("Analyze sentiment without Content-Type header should fail")
+    @DisplayName("Analyze sentiment without Content-Type header should return 415")
     public void testAnalyzeSentiment_MissingContentType() throws Exception {
         String requestJson = """
                 {
@@ -480,7 +560,7 @@ public class SentimentControllerWebTest {
 
         mockMvc.perform(post("/api/v1/sentiment/analyze")
                         .content(requestJson))
-                .andExpect(status().is5xxServerError());  // Missing Content-Type causes 500
+                .andExpect(status().isUnsupportedMediaType());
     }
 
     @Test

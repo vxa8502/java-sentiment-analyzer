@@ -4,7 +4,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -77,6 +79,53 @@ public class RestApiExceptionHandler {
     }
 
     // EXCEPTION HANDLERS
+
+    /**
+     * Handles malformed JSON in request body.
+     * Returns 400 Bad Request instead of 500 Internal Server Error.
+     */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ResponseEntity<ErrorResponse> handleMalformedJson(
+            HttpMessageNotReadableException ex) {
+
+        String message = "Malformed JSON request";
+        Throwable cause = ex.getCause();
+        if (cause != null) {
+            String causeMessage = cause.getMessage();
+            if (causeMessage != null && causeMessage.length() < 200) {
+                message = "Invalid JSON: " + causeMessage.split("\n")[0];
+            }
+        }
+
+        logger.info("Malformed JSON request: {}", ex.getMessage());
+
+        ErrorResponse response = buildErrorResponse(
+                "Invalid request body",
+                message,
+                HttpStatus.BAD_REQUEST
+        );
+        return ResponseEntity.badRequest().body(response);
+    }
+
+    /**
+     * Handles missing or unsupported Content-Type header.
+     * Returns 415 Unsupported Media Type.
+     */
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    @ResponseStatus(HttpStatus.UNSUPPORTED_MEDIA_TYPE)
+    public ResponseEntity<ErrorResponse> handleUnsupportedMediaType(
+            HttpMediaTypeNotSupportedException ex) {
+
+        logger.info("Unsupported media type: {}", ex.getMessage());
+
+        ErrorResponse response = buildErrorResponse(
+                "Unsupported media type",
+                "Content-Type must be application/json",
+                HttpStatus.UNSUPPORTED_MEDIA_TYPE
+        );
+        return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE).body(response);
+    }
 
     /**
      * Handles validation errors from @Valid annotations.

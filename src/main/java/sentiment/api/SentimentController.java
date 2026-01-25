@@ -1,6 +1,5 @@
 package sentiment.api;
 
-import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -14,12 +13,9 @@ import sentiment.api.metrics.PredictionMetrics;
 import sentiment.evaluation.FeatureImportancePersistence;
 import sentiment.models.SentimentClassifier;
 
-import java.util.List;
-
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.time.Duration;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -32,23 +28,22 @@ import java.util.stream.Collectors;
 public class SentimentController {
 
     private static final Logger logger = LoggerFactory.getLogger(SentimentController.class);
-    private final SentimentClassifier classifier;
-    private final PredictionMetrics metrics;
+    private final SentimentService sentimentService;
     private final String loadedModelPath;
     private final long startTime;
 
     private FeatureImportanceResponse cachedFeatureImportance;
     private final Object featureImportanceLock = new Object();
 
-    public SentimentController(SentimentClassifier classifier,
-                               PredictionMetrics metrics,
+    public SentimentController(SentimentService sentimentService,
                                @Value("${sentiment.models.production-path:models/production/sentiment_model.ser}") String loadedModelPath) {
-        this.classifier = classifier;
-        this.metrics = metrics;
+        this.sentimentService = sentimentService;
         this.loadedModelPath = loadedModelPath;
         this.startTime = System.currentTimeMillis();
+        SentimentClassifier classifier = sentimentService.getClassifier();
+        String algorithmName = classifier != null ? classifier.getAlgorithmName() : "unknown";
         logger.info("SentimentController initialized with {} classifier (model: {}) and production metrics",
-                   classifier.getAlgorithmName(), loadedModelPath);
+                   algorithmName, loadedModelPath);
     }
 
     /**
@@ -63,7 +58,7 @@ public class SentimentController {
         String clientIp = extractClientIp(httpRequest);
         logger.info("REQUEST: client={}, textLength={}", clientIp, request.text().length());
 
-        ResponseEntity<SentimentResponse> response = classifyText(
+        ResponseEntity<SentimentResponse> response = sentimentService.classifyText(
             request.text(), request.confidenceThreshold());
 
         SentimentResponse body = response.getBody();
@@ -92,7 +87,7 @@ public class SentimentController {
             .parallel()
             .mapToObj(i -> {
                 String text = request.texts().get(i);
-                ResponseEntity<SentimentResponse> result = classifyText(text, request.confidenceThreshold());
+                ResponseEntity<SentimentResponse> result = sentimentService.classifyText(text, request.confidenceThreshold());
                 return new IndexedResult(i, result.getBody());
             })
             .sorted(java.util.Comparator.comparingInt(IndexedResult::getIndex))
@@ -135,6 +130,8 @@ public class SentimentController {
                     .body(FeatureImportanceResponse.error(
                             "Invalid topFeatures value: must be at least 1"));
         }
+
+        SentimentClassifier classifier = sentimentService.getClassifier();
 
         try {
             if (!classifier.isTrained()) {
@@ -303,6 +300,9 @@ public class SentimentController {
     public ResponseEntity<HealthResponse> health() {
         long uptime = System.currentTimeMillis() - startTime;
 
+        SentimentClassifier classifier = sentimentService.getClassifier();
+        PredictionMetrics metrics = sentimentService.getMetrics();
+
         // Get production metrics snapshot
         PredictionMetrics.MetricsSnapshot snapshot = metrics.getSnapshot();
 
@@ -343,82 +343,6 @@ public class SentimentController {
     }
 
     /**
-     * Classifies text and applies optional confidence thresholding.
-     * Protected by circuit breaker to prevent cascading failures when model fails.
-     */
-    @CircuitBreaker(name = "modelInference", fallbackMethod = "classifyTextFallback")
-    private ResponseEntity<SentimentResponse> classifyText(String text, Double confidenceThreshold) {
-        long startTime = System.currentTimeMillis();
-
-        try {
-            if (!classifier.isTrained()) {
-                logger.error("Attempted classification with untrained model");
-                return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
-                        .body(SentimentResponse.error(
-                            "Model initialization in progress. Please retry in 30 seconds. " +
-                            "Check /api/v1/health for status.", text));
-            }
-
-            // Use atomic classification to avoid race conditions in concurrent batch processing
-            SentimentClassifier.ClassificationResult result = classifier.classifyWithProbabilities(text);
-            String sentiment = result.label();
-            double confidence = result.confidence();
-
-            String warning = null;
-
-            if (confidenceThreshold != null && confidence < confidenceThreshold) {
-                logger.debug("Confidence {} below threshold {}, marking uncertain",
-                           confidence, confidenceThreshold);
-                sentiment = "uncertain";
-            }
-
-            // Warn if confidence is low - may indicate neutral text misclassified
-            // Production model is binary (positive/negative only)
-            if (confidence < 0.75) {
-                warning = "Low confidence prediction. This model only supports 'positive' and 'negative' labels. " +
-                         "Neutral or ambiguous text may be misclassified. Check /api/v1/health for supportedLabels.";
-            }
-
-            long processingTime = System.currentTimeMillis() - startTime;
-            logger.debug("Classification: '{}' (confidence: {}) in {}ms",
-                       sentiment, confidence, processingTime);
-
-            // Record production metrics
-            metrics.recordPrediction(sentiment, confidence, Duration.ofMillis(processingTime));
-
-            if (warning != null) {
-                return ResponseEntity.ok(
-                    SentimentResponse.successWithWarning(sentiment, confidence, text, processingTime, warning)
-                );
-            } else {
-                return ResponseEntity.ok(
-                    SentimentResponse.success(sentiment, confidence, text, processingTime)
-                );
-            }
-
-        } catch (Exception e) {
-            logger.error("Classification failed for text: {}",
-                        sanitizeForLogging(text), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(SentimentResponse.error(e.getMessage(), text));
-        }
-    }
-
-    /**
-     * Fallback method for classifyText when circuit breaker is OPEN.
-     * Returns a graceful error response instead of cascading failures.
-     */
-    private ResponseEntity<SentimentResponse> classifyTextFallback(String text, Double confidenceThreshold, Exception e) {
-        logger.warn("Circuit breaker OPEN - model inference unavailable. Cause: {}", e.getMessage());
-
-        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
-                .body(SentimentResponse.error(
-                    "Sentiment analysis temporarily unavailable. The model is experiencing issues " +
-                    "and is recovering. Please retry in 30 seconds. Check /actuator/health for " +
-                    "circuit breaker status.", text));
-    }
-
-    /**
      * Extracts client IP from request, checking proxy headers first.
      */
     private String extractClientIp(HttpServletRequest request) {
@@ -435,23 +359,4 @@ public class SentimentController {
         return ip != null ? ip : "unknown";
     }
 
-    /**
-     * Sanitizes text for logging to prevent log injection attacks.
-     * Removes newlines, carriage returns, and non-printable characters.
-     *
-     * @param text the text to sanitize
-     * @return sanitized text truncated to 50 characters
-     */
-    private String sanitizeForLogging(String text) {
-        if (text == null) {
-            return "null";
-        }
-
-        String truncated = text.substring(0, Math.min(50, text.length()));
-        // Remove newlines and carriage returns to prevent log injection
-        // Replace non-printable characters with '?'
-        return truncated
-                .replaceAll("[\n\r]", " ")
-                .replaceAll("[^\\x20-\\x7E]", "?");
-    }
 }

@@ -20,6 +20,7 @@ public class PredictionMetrics {
     private final Counter positiveCounter;
     private final Counter negativeCounter;
     private final Counter neutralCounter;
+    private final Counter uncertainCounter;
 
     // Counter for low-confidence predictions
     private final Counter lowConfidenceCounter;
@@ -55,6 +56,11 @@ public class PredictionMetrics {
         this.neutralCounter = Counter.builder("sentiment.predictions.total")
                 .tag("label", "neutral")
                 .description("Total neutral sentiment predictions")
+                .register(meterRegistry);
+
+        this.uncertainCounter = Counter.builder("sentiment.predictions.total")
+                .tag("label", "uncertain")
+                .description("Total uncertain sentiment predictions (below confidence threshold)")
                 .register(meterRegistry);
 
         // Low confidence counter
@@ -97,6 +103,7 @@ public class PredictionMetrics {
             case "positive" -> positiveCounter.increment();
             case "negative" -> negativeCounter.increment();
             case "neutral" -> neutralCounter.increment();
+            case "uncertain" -> uncertainCounter.increment();
         }
 
         // Record confidence
@@ -155,6 +162,7 @@ public class PredictionMetrics {
                 positiveCounter.count(),
                 negativeCounter.count(),
                 neutralCounter.count(),
+                uncertainCounter.count(),
                 getAverageConfidence(),
                 getLowConfidenceRate(),
                 inferenceTimer.count(),
@@ -176,6 +184,7 @@ public class PredictionMetrics {
             double positivePredictions,
             double negativePredictions,
             double neutralPredictions,
+            double uncertainPredictions,
             double averageConfidence,
             double lowConfidenceRatePercent,
             long inferenceCount,
