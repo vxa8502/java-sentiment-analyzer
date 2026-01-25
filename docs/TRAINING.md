@@ -4,7 +4,7 @@ Training, evaluating, and deploying sentiment analysis models.
 
 ## Prerequisites
 
-- Java 24 (JDK)
+- Java 21 (JDK)
 - Maven 3.9+
 - Datasets in `data/raw/` (see Datasets section)
 

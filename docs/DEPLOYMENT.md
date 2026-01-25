@@ -18,7 +18,7 @@ Local API available at http://localhost:8080.
 
 ### Prerequisites
 
-- Java 24
+- Java 21
 - Maven 3.9+
 - Production model in `models/production/` (run `./scripts/promote_to_production.sh` first)
 

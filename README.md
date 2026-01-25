@@ -148,7 +148,7 @@ curl http://localhost:8080/api/v1/model/feature-importance
 curl http://localhost:8080/api/v1/health
 ```
 
-See [demo/](demo/) for Python client and more curl examples.
+See [examples/](examples/) for Python client and curl examples.
 
 ---
 
@@ -236,7 +236,7 @@ Data quality documentation: [Data Cards](docs/data_cards/)
 | **Resilience** | Resilience4j | Circuit breaker, rate limiting |
 | **Build** | Maven | Standard Java dependency management |
 | **Deploy** | Docker | Consistent environments, easy scaling |
-| **Runtime** | Java 24 | Latest with virtual threads support |
+| **Runtime** | Java 21 | LTS with virtual threads support |
 
 ---
 
@@ -246,15 +246,17 @@ Data quality documentation: [Data Cards](docs/data_cards/)
 java-sentiment-analyzer/
 ├── src/main/java/sentiment/
 │   ├── api/                  # REST controllers, request/response models
+│   ├── config/               # Spring configuration, model loading
+│   ├── data/                 # Dataset loading and quality validation
+│   ├── evaluation/           # Cross-domain testing, metrics
 │   ├── models/               # SVM, NaiveBayes, RandomForest, LogisticRegression
 │   ├── preprocessing/        # Text cleaning, tokenization, TF-IDF
-│   ├── training/             # Training orchestration, metadata persistence
-│   ├── evaluation/           # Cross-domain testing, metrics
-│   └── config/               # Spring configuration, model loading
+│   └── training/             # Training orchestration, metadata persistence
 ├── scripts/                  # Training and evaluation automation
 ├── models/production/        # Deployed model + feature importance
 ├── data/processed/           # Locked train/test splits with manifests
 ├── results/                  # Auto-generated evaluation reports
+├── examples/                 # Python client and curl examples
 └── docs/                     # Architecture, deployment, training guides
 ```
 
