@@ -295,9 +295,90 @@ public class TextPreprocessor {
 
         String cleaned = cleanText(rawText);
         List<String> tokens = tokenize(cleaned);
-        List<String> filtered = removeStopwords(tokens);
+        List<String> negationTagged = applyNegationScope(tokens);
+        List<String> filtered = removeStopwords(negationTagged);
 
         return String.join(" ", filtered);
+    }
+
+    // Negation words that trigger scope tagging
+    private static final Set<String> NEGATION_SCOPE_TRIGGERS = Set.of(
+            "not", "no", "never", "neither", "nobody", "nothing",
+            "nowhere", "none", "cannot", "without", "lack", "lacking"
+    );
+
+    // Words/punctuation that end negation scope
+    private static final Set<String> CLAUSE_BOUNDARIES = Set.of(
+            "but", "however", "although", "though", "yet", "except"
+    );
+
+    // Maximum words affected by negation scope (prevents runaway tagging)
+    private static final int MAX_NEGATION_SCOPE = 4;
+
+    /**
+     * Applies negation scope tagging to tokens.
+     * Words following negation words are prefixed with "NOT_" until a clause boundary
+     * or maximum scope is reached.
+     * <p>
+     * Example: ["i", "do", "not", "like", "this", "movie"]
+     *       → ["i", "do", "not", "NOT_like", "NOT_this", "NOT_movie"]
+     * <p>
+     * This technique (Pang et al., 2002) creates distinct features for negated words,
+     * preventing "not bad" from being dominated by the unigram "bad".
+     *
+     * @param tokens list of tokens from tokenization
+     * @return tokens with negation scope tagging applied
+     */
+    private List<String> applyNegationScope(List<String> tokens) {
+        if (tokens == null || tokens.isEmpty()) {
+            return tokens;
+        }
+
+        List<String> result = new ArrayList<>(tokens.size());
+        int negationScopeRemaining = 0;
+
+        for (String token : tokens) {
+            String lower = token.toLowerCase();
+
+            // Check for clause boundaries that end negation scope
+            if (isClauseBoundary(lower)) {
+                negationScopeRemaining = 0;
+                result.add(token);
+                continue;
+            }
+
+            // Check if this token starts a negation scope
+            if (NEGATION_SCOPE_TRIGGERS.contains(lower)) {
+                negationScopeRemaining = MAX_NEGATION_SCOPE;
+                result.add(token);  // Keep the negation word itself unchanged
+                continue;
+            }
+
+            // Apply negation prefix if in scope
+            if (negationScopeRemaining > 0) {
+                result.add("NOT_" + token);
+                negationScopeRemaining--;
+            } else {
+                result.add(token);
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * Checks if a token represents a clause boundary that ends negation scope.
+     *
+     * @param token lowercase token to check
+     * @return true if this token ends negation scope
+     */
+    private boolean isClauseBoundary(String token) {
+        // Punctuation that typically ends a clause
+        if (token.matches("[.!?,;:]")) {
+            return true;
+        }
+        // Conjunctions that introduce contrast
+        return CLAUSE_BOUNDARIES.contains(token);
     }
 
     /**

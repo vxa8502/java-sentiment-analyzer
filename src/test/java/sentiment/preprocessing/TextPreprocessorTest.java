@@ -544,6 +544,93 @@ class TextPreprocessorTest {
         verify(mockStopwordRemover, atLeastOnce()).removeStopwords(any());
     }
 
+    // ==================== NEGATION SCOPE TESTS ====================
+
+    private TextPreprocessor createRealPreprocessor(String stopwordStrategy) {
+        return new TextPreprocessor(
+            new ContractionExpander(),
+            new AdvancedTokenizer(false, 1, true),  // preserveNumbers=false, minTokenLength=1, preserveHyphenated=true
+            new IntelligentStopwordRemover(stopwordStrategy, true, true),
+            TestFeatureConfig.createDefault()
+        );
+    }
+
+    @Test
+    @DisplayName("Negation scope tagging should prefix words after 'not'")
+    void testNegationScope_BasicNot() {
+        TextPreprocessor realPreprocessor = createRealPreprocessor("SENTIMENT_AWARE");
+
+        List<Dataset> trainingData = createMockTrainingData(10);
+        realPreprocessor.fit(trainingData);
+
+        String result = realPreprocessor.transform("not bad");
+
+        assertTrue(result.contains("NOT_bad"),
+            "Words after 'not' should be prefixed with NOT_. Got: " + result);
+    }
+
+    @Test
+    @DisplayName("Negation scope tagging should handle 'never'")
+    void testNegationScope_Never() {
+        TextPreprocessor realPreprocessor = createRealPreprocessor("SENTIMENT_AWARE");
+
+        List<Dataset> trainingData = createMockTrainingData(10);
+        realPreprocessor.fit(trainingData);
+
+        String result = realPreprocessor.transform("never again");
+
+        assertTrue(result.contains("NOT_again"),
+            "Words after 'never' should be prefixed with NOT_. Got: " + result);
+    }
+
+    @Test
+    @DisplayName("Negation scope should end at clause boundaries")
+    void testNegationScope_ClauseBoundary() {
+        TextPreprocessor realPreprocessor = createRealPreprocessor("SENTIMENT_AWARE");
+
+        List<Dataset> trainingData = createMockTrainingData(10);
+        realPreprocessor.fit(trainingData);
+
+        String result = realPreprocessor.transform("not bad but good");
+
+        assertTrue(result.contains("NOT_bad"),
+            "Words after 'not' should be tagged. Got: " + result);
+        assertFalse(result.contains("NOT_good"),
+            "Words after 'but' should NOT be tagged (clause boundary). Got: " + result);
+    }
+
+    @Test
+    @DisplayName("Negation scope should be limited to max scope")
+    void testNegationScope_MaxScope() {
+        TextPreprocessor realPreprocessor = createRealPreprocessor("MINIMAL");
+
+        List<Dataset> trainingData = createMockTrainingData(10);
+        realPreprocessor.fit(trainingData);
+
+        // MAX_NEGATION_SCOPE is 4, so only first 4 words after "not" should be tagged
+        String result = realPreprocessor.transform("not one two three four five six");
+
+        assertTrue(result.contains("NOT_one"), "First word should be tagged. Got: " + result);
+        assertTrue(result.contains("NOT_four"), "Fourth word should be tagged. Got: " + result);
+        assertFalse(result.contains("NOT_five"), "Fifth word should NOT be tagged (exceeds max scope). Got: " + result);
+        assertFalse(result.contains("NOT_six"), "Sixth word should NOT be tagged. Got: " + result);
+    }
+
+    @Test
+    @DisplayName("Negation scope should handle contractions expanded to 'not'")
+    void testNegationScope_ExpandedContractions() {
+        TextPreprocessor realPreprocessor = createRealPreprocessor("SENTIMENT_AWARE");
+
+        List<Dataset> trainingData = createMockTrainingData(10);
+        realPreprocessor.fit(trainingData);
+
+        // "don't" expands to "do not" via ContractionExpander
+        String result = realPreprocessor.transform("don't like");
+
+        assertTrue(result.contains("NOT_like"),
+            "Words after expanded 'not' should be tagged. Got: " + result);
+    }
+
     // ==================== HELPER METHODS ====================
 
     /**

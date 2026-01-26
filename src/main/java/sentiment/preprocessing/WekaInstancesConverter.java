@@ -57,16 +57,17 @@ public class WekaInstancesConverter extends sentiment.TrainingTemplate<Instances
 
     /**
      * Sanitizes preprocessed text for Weka's NGramTokenizer.
-     * Removes all non-alphanumeric characters that can cause filter exceptions.
-     * Weka's StringToWordVector expects only alphanumeric tokens.
+     * Removes special characters that can cause filter exceptions while preserving
+     * underscores (used for negation scope tagging, e.g., NOT_bad).
+     * Weka's StringToWordVector expects alphanumeric tokens.
      */
     private static String sanitizeForWeka(String preprocessed) {
         if (preprocessed == null || preprocessed.trim().isEmpty()) {
             return "empty_content_placeholder";
         }
         String sanitized = preprocessed
-                .replaceAll("[^a-zA-Z0-9\\s]+", " ")  // Remove all non-alphanumeric (keep spaces)
-                .replaceAll("\\s+", " ")              // Normalize whitespace
+                .replaceAll("[^a-zA-Z0-9_\\s]+", " ")  // Remove non-alphanumeric except underscore
+                .replaceAll("\\s+", " ")               // Normalize whitespace
                 .trim();
         return sanitized.isEmpty() ? "empty_content_placeholder" : sanitized;
     }
