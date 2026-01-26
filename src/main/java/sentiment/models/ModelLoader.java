@@ -78,8 +78,10 @@ public class ModelLoader {
         };
     }
 
-    private static SVMClassifier loadSVM(Path modelPath) throws IOException, ClassNotFoundException {
-        // Create preprocessing pipeline with default configs
+    /**
+     * Creates the preprocessing pipeline components used by all classifier types.
+     */
+    private static PreprocessingPipeline createPreprocessingPipeline() {
         sentiment.config.FeatureExtractionProperties featureConfig =
             new sentiment.config.FeatureExtractionProperties();
         sentiment.preprocessing.ContractionExpander expander =
@@ -93,69 +95,38 @@ public class ModelLoader {
         sentiment.preprocessing.WekaInstancesConverter converter =
             new sentiment.preprocessing.WekaInstancesConverter(preprocessor, featureConfig);
 
-        SVMClassifier classifier = new SVMClassifier(preprocessor, converter);
-        WekaModelPersistence<SVMClassifier> persistence = new WekaModelPersistence<>();
-        return persistence.loadModel(classifier, modelPath);
+        return new PreprocessingPipeline(preprocessor, converter);
+    }
+
+    /**
+     * Container for preprocessing pipeline components.
+     */
+    private record PreprocessingPipeline(
+            sentiment.preprocessing.TextPreprocessor preprocessor,
+            sentiment.preprocessing.WekaInstancesConverter converter) {}
+
+    private static SVMClassifier loadSVM(Path modelPath) throws IOException, ClassNotFoundException {
+        PreprocessingPipeline pipeline = createPreprocessingPipeline();
+        SVMClassifier classifier = new SVMClassifier(pipeline.preprocessor(), pipeline.converter());
+        return new WekaModelPersistence<SVMClassifier>().loadModel(classifier, modelPath);
     }
 
     private static NaiveBayesClassifier loadNaiveBayes(Path modelPath) throws IOException, ClassNotFoundException {
-        // Create preprocessing pipeline with default configs
-        sentiment.config.FeatureExtractionProperties featureConfig =
-            new sentiment.config.FeatureExtractionProperties();
-        sentiment.preprocessing.ContractionExpander expander =
-            new sentiment.preprocessing.ContractionExpander();
-        sentiment.preprocessing.AdvancedTokenizer tokenizer =
-            new sentiment.preprocessing.AdvancedTokenizer(false, 1, true);
-        sentiment.preprocessing.IntelligentStopwordRemover stopwordRemover =
-            new sentiment.preprocessing.IntelligentStopwordRemover();
-        sentiment.preprocessing.TextPreprocessor preprocessor =
-            new sentiment.preprocessing.TextPreprocessor(expander, tokenizer, stopwordRemover, featureConfig);
-        sentiment.preprocessing.WekaInstancesConverter converter =
-            new sentiment.preprocessing.WekaInstancesConverter(preprocessor, featureConfig);
-
-        NaiveBayesClassifier classifier = new NaiveBayesClassifier(preprocessor, converter);
-        WekaModelPersistence<NaiveBayesClassifier> persistence = new WekaModelPersistence<>();
-        return persistence.loadModel(classifier, modelPath);
+        PreprocessingPipeline pipeline = createPreprocessingPipeline();
+        NaiveBayesClassifier classifier = new NaiveBayesClassifier(pipeline.preprocessor(), pipeline.converter());
+        return new WekaModelPersistence<NaiveBayesClassifier>().loadModel(classifier, modelPath);
     }
 
     private static RandomForestClassifier loadRandomForest(Path modelPath) throws IOException, ClassNotFoundException {
-        // Create preprocessing pipeline with default configs
-        sentiment.config.FeatureExtractionProperties featureConfig =
-            new sentiment.config.FeatureExtractionProperties();
-        sentiment.preprocessing.ContractionExpander expander =
-            new sentiment.preprocessing.ContractionExpander();
-        sentiment.preprocessing.AdvancedTokenizer tokenizer =
-            new sentiment.preprocessing.AdvancedTokenizer(false, 1, true);
-        sentiment.preprocessing.IntelligentStopwordRemover stopwordRemover =
-            new sentiment.preprocessing.IntelligentStopwordRemover();
-        sentiment.preprocessing.TextPreprocessor preprocessor =
-            new sentiment.preprocessing.TextPreprocessor(expander, tokenizer, stopwordRemover, featureConfig);
-        sentiment.preprocessing.WekaInstancesConverter converter =
-            new sentiment.preprocessing.WekaInstancesConverter(preprocessor, featureConfig);
-
-        RandomForestClassifier classifier = new RandomForestClassifier(preprocessor, converter);
-        WekaModelPersistence<RandomForestClassifier> persistence = new WekaModelPersistence<>();
-        return persistence.loadModel(classifier, modelPath);
+        PreprocessingPipeline pipeline = createPreprocessingPipeline();
+        RandomForestClassifier classifier = new RandomForestClassifier(pipeline.preprocessor(), pipeline.converter());
+        return new WekaModelPersistence<RandomForestClassifier>().loadModel(classifier, modelPath);
     }
 
     private static LogisticRegressionClassifier loadLogisticRegression(Path modelPath) throws IOException, ClassNotFoundException {
-        // Create preprocessing pipeline with default configs
-        sentiment.config.FeatureExtractionProperties featureConfig =
-            new sentiment.config.FeatureExtractionProperties();
-        sentiment.preprocessing.ContractionExpander expander =
-            new sentiment.preprocessing.ContractionExpander();
-        sentiment.preprocessing.AdvancedTokenizer tokenizer =
-            new sentiment.preprocessing.AdvancedTokenizer(false, 1, true);
-        sentiment.preprocessing.IntelligentStopwordRemover stopwordRemover =
-            new sentiment.preprocessing.IntelligentStopwordRemover();
-        sentiment.preprocessing.TextPreprocessor preprocessor =
-            new sentiment.preprocessing.TextPreprocessor(expander, tokenizer, stopwordRemover, featureConfig);
-        sentiment.preprocessing.WekaInstancesConverter converter =
-            new sentiment.preprocessing.WekaInstancesConverter(preprocessor, featureConfig);
-
-        LogisticRegressionClassifier classifier = new LogisticRegressionClassifier(preprocessor, converter);
-        WekaModelPersistence<LogisticRegressionClassifier> persistence = new WekaModelPersistence<>();
-        return persistence.loadModel(classifier, modelPath);
+        PreprocessingPipeline pipeline = createPreprocessingPipeline();
+        LogisticRegressionClassifier classifier = new LogisticRegressionClassifier(pipeline.preprocessor(), pipeline.converter());
+        return new WekaModelPersistence<LogisticRegressionClassifier>().loadModel(classifier, modelPath);
     }
 
     /**
