@@ -18,7 +18,7 @@ public record BatchResponse(
     public static BatchResponse fromResults(List<SentimentResponse> results, Long totalProcessingTimeMs) {
         int totalProcessed = results.size();
         int successCount = (int) results.stream().filter(r -> r.error() == null).count();
-        int errorCount = (int) results.stream().filter(r -> r.error() != null).count();
+        int errorCount = totalProcessed - successCount;
 
         return new BatchResponse(results, totalProcessed, successCount, errorCount, totalProcessingTimeMs);
     }

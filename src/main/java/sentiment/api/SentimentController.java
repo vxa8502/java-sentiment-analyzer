@@ -8,7 +8,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Qualifier;
 import sentiment.api.metrics.PredictionMetrics;
 import sentiment.evaluation.FeatureImportancePersistence;
 import sentiment.models.SentimentClassifier;
@@ -36,7 +36,7 @@ public class SentimentController {
     private final Object featureImportanceLock = new Object();
 
     public SentimentController(SentimentService sentimentService,
-                               @Value("${sentiment.models.production-path:models/production/sentiment_model.ser}") String loadedModelPath) {
+                               @Qualifier("loadedModelPath") String loadedModelPath) {
         this.sentimentService = sentimentService;
         this.loadedModelPath = loadedModelPath;
         this.startTime = System.currentTimeMillis();
@@ -90,8 +90,8 @@ public class SentimentController {
                 ResponseEntity<SentimentResponse> result = sentimentService.classifyText(text, request.confidenceThreshold());
                 return new IndexedResult(i, result.getBody());
             })
-            .sorted(java.util.Comparator.comparingInt(IndexedResult::getIndex))
-            .map(IndexedResult::getResult)
+            .sorted(java.util.Comparator.comparingInt(IndexedResult::index))
+            .map(IndexedResult::result)
             .toList();
 
         long totalProcessingTime = System.currentTimeMillis() - batchStartTime;
@@ -106,10 +106,7 @@ public class SentimentController {
     /**
      * Pairs result with original index for order-preserving parallel processing.
      */
-    private record IndexedResult(int index, SentimentResponse result) {
-        int getIndex() { return index; }
-        SentimentResponse getResult() { return result; }
-    }
+    private record IndexedResult(int index, SentimentResponse result) {}
 
     /**
      * Returns feature importance analysis.
