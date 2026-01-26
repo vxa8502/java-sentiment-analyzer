@@ -173,7 +173,16 @@ public class PredictionMetrics {
     }
 
     private double getPercentile(Timer timer, double percentile) {
-        return timer.takeSnapshot().percentileValues()[percentile == 0.95 ? 0 : 1].value(java.util.concurrent.TimeUnit.MILLISECONDS);
+        // percentileValues() array indices based on publishPercentiles(0.5, 0.95, 0.99):
+        // [0] = p50, [1] = p95, [2] = p99
+        int percentileInt = (int) Math.round(percentile * 100);
+        int index = switch (percentileInt) {
+            case 50 -> 0;
+            case 95 -> 1;
+            case 99 -> 2;
+            default -> throw new IllegalArgumentException("Unknown percentile: " + percentile);
+        };
+        return timer.takeSnapshot().percentileValues()[index].value(java.util.concurrent.TimeUnit.MILLISECONDS);
     }
 
     /**
