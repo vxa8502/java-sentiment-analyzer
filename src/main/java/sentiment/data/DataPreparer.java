@@ -48,7 +48,7 @@ public class DataPreparer {
     public SplitManifest prepare(String domain, String rawDataPath, int maxSamples, int seed)
             throws IOException, DataLoadingException {
 
-        Path processedDir = Paths.get(PROCESSED_DIR, domain).toAbsolutePath();
+        Path processedDir = getProcessedDir(domain);
         Path manifestPath = SplitManifest.getManifestPath(processedDir);
 
         // Check if splits already exist
@@ -73,7 +73,7 @@ public class DataPreparer {
     public SplitManifest forceReset(String domain, String rawDataPath, int maxSamples, int seed)
             throws IOException, DataLoadingException {
 
-        Path processedDir = Paths.get(PROCESSED_DIR, domain).toAbsolutePath();
+        Path processedDir = getProcessedDir(domain);
 
         if (SplitManifest.exists(processedDir)) {
             logger.warn("[FORCE] Regenerating splits for domain '{}' (existing will be overwritten)", domain);
@@ -86,7 +86,7 @@ public class DataPreparer {
      * Verify that existing splits match their manifest checksums.
      */
     public boolean verify(String domain) throws IOException {
-        Path processedDir = Paths.get(PROCESSED_DIR, domain).toAbsolutePath();
+        Path processedDir = getProcessedDir(domain);
         Path manifestPath = SplitManifest.getManifestPath(processedDir);
 
         if (!SplitManifest.exists(processedDir)) {
@@ -111,7 +111,7 @@ public class DataPreparer {
      * Load the manifest for a domain (if it exists).
      */
     public Optional<SplitManifest> loadManifest(String domain) {
-        Path processedDir = Paths.get(PROCESSED_DIR, domain).toAbsolutePath();
+        Path processedDir = getProcessedDir(domain);
 
         if (!SplitManifest.exists(processedDir)) {
             return Optional.empty();
@@ -129,11 +129,18 @@ public class DataPreparer {
      * Check if prepared splits exist for a domain.
      */
     public boolean splitsExist(String domain) {
-        Path processedDir = Paths.get(PROCESSED_DIR, domain).toAbsolutePath();
-        return SplitManifest.exists(processedDir);
+        return SplitManifest.exists(getProcessedDir(domain));
     }
 
     // ===== Private Implementation =====
+
+    /**
+     * Get the processed data directory for a domain.
+     * Centralizes path construction to ensure consistency across all methods.
+     */
+    private Path getProcessedDir(String domain) {
+        return Paths.get(PROCESSED_DIR, domain).toAbsolutePath();
+    }
 
     private SplitManifest createSplits(String domain, String rawDataPath, int maxSamples, int seed,
                                         Path processedDir) throws IOException, DataLoadingException {

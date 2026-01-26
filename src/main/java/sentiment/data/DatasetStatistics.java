@@ -85,18 +85,10 @@ public class DatasetStatistics {
             builder.labelPercentages.put(entry.getKey(), percentage);
         }
 
-        // Calculate balance ratio (for binary classification)
-        if (builder.labelCounts.size() == 2) {
-            List<Long> counts = new ArrayList<>(builder.labelCounts.values());
-            long max = Math.max(counts.get(0), counts.get(1));
-            long min = Math.min(counts.get(0), counts.get(1));
-            builder.labelBalanceRatio = (double) min / max;
-        } else {
-            // Multi-class: use min/max ratio across all classes
-            long max = Collections.max(builder.labelCounts.values());
-            long min = Collections.min(builder.labelCounts.values());
-            builder.labelBalanceRatio = (double) min / max;
-        }
+        // Calculate balance ratio: min/max across all classes (works for binary and multi-class)
+        long max = Collections.max(builder.labelCounts.values());
+        long min = Collections.min(builder.labelCounts.values());
+        builder.labelBalanceRatio = (double) min / max;
 
         // Text length statistics
         List<Integer> lengths = datasets.stream()

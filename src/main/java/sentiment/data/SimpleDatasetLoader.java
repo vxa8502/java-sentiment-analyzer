@@ -165,15 +165,7 @@ public class SimpleDatasetLoader {
 
         try (BufferedReader reader = new BufferedReader(new FileReader(filePath, StandardCharsets.UTF_8))) {
 
-            CSVFormat format = CSVFormat.Builder.create()
-                .setDelimiter(delimiter)
-                .setHeader()
-                .setSkipHeaderRecord(true)
-                .setIgnoreEmptyLines(true)
-                .setTrim(true)
-                .setQuote('"')
-                .setIgnoreHeaderCase(true)
-                .build();
+            CSVFormat format = createCsvFormat(delimiter);
 
             try (CSVParser parser = format.parse(reader)) {
                 List<String> headers = parser.getHeaderNames();
@@ -230,8 +222,8 @@ public class SimpleDatasetLoader {
                             continue;
                         }
 
-                        // Parse sentiment
-                        Dataset.SentimentLabel sentiment = parseSentiment(sentimentStr.trim());
+                        // Parse sentiment using centralized parser
+                        Dataset.SentimentLabel sentiment = Dataset.SentimentLabel.fromStringOrNull(sentimentStr.trim());
                         if (sentiment == null) {
                             skippedRows++;
                             logger.debug("Skipping row {} - invalid sentiment: {}", record.getRecordNumber(), sentimentStr);
@@ -330,15 +322,7 @@ public class SimpleDatasetLoader {
         distribution.put(Dataset.SentimentLabel.NEGATIVE, 0);
 
         try (BufferedReader reader = new BufferedReader(new FileReader(filePath, StandardCharsets.UTF_8))) {
-            CSVFormat format = CSVFormat.Builder.create()
-                .setDelimiter(delimiter)
-                .setHeader()
-                .setSkipHeaderRecord(true)
-                .setIgnoreEmptyLines(true)
-                .setTrim(true)
-                .setQuote('"')
-                .setIgnoreHeaderCase(true)
-                .build();
+            CSVFormat format = createCsvFormat(delimiter);
 
             try (CSVParser parser = format.parse(reader)) {
                 List<String> headers = parser.getHeaderNames();
@@ -355,7 +339,7 @@ public class SimpleDatasetLoader {
                         String sentimentStr = record.get(sentimentColumn);
                         if (ValidationUtils.isNullOrEmpty(sentimentStr)) continue;
 
-                        Dataset.SentimentLabel sentiment = parseSentiment(sentimentStr.trim());
+                        Dataset.SentimentLabel sentiment = Dataset.SentimentLabel.fromStringOrNull(sentimentStr.trim());
                         if (sentiment != null && sentiment != Dataset.SentimentLabel.NEUTRAL) {
                             distribution.merge(sentiment, 1, Integer::sum);
                         }
@@ -383,43 +367,6 @@ public class SimpleDatasetLoader {
             }
         }
         return null;
-    }
-
-    /**
-     * Parse sentiment string into SentimentLabel enum.
-     * Handles various formats: positive/negative/neutral, 1/0, pos/neg, etc.
-     */
-    private Dataset.SentimentLabel parseSentiment(String sentiment) {
-        String lower = sentiment.toLowerCase();
-
-        // Handle text labels
-        switch (lower) {
-            case "positive", "pos", "1", "4" -> {
-                return Dataset.SentimentLabel.POSITIVE;
-            }
-            case "negative", "neg", "0", "-1" -> {
-                return Dataset.SentimentLabel.NEGATIVE;
-            }
-            case "neutral", "2" -> {
-                return Dataset.SentimentLabel.NEUTRAL;
-            }
-        }
-
-        // Handle numeric ratings (1-5 stars)
-        try {
-            double rating = Double.parseDouble(sentiment);
-            if (rating <= 2.0) {
-                return Dataset.SentimentLabel.NEGATIVE;
-            } else if (rating >= 4.0) {
-                return Dataset.SentimentLabel.POSITIVE;
-            } else {
-                return Dataset.SentimentLabel.NEUTRAL;
-            }
-        } catch (NumberFormatException e) {
-            // Not a number, continue
-        }
-
-        return null; // Unknown format
     }
 
     // JSONL LOADING (STUB)
@@ -451,6 +398,22 @@ public class SimpleDatasetLoader {
     }
 
     //  UTILITIES
+
+    /**
+     * Create a CSVFormat with standard configuration for this loader.
+     * Centralized to ensure consistent parsing between loadCsv and scanClassDistribution.
+     */
+    private CSVFormat createCsvFormat(char delimiter) {
+        return CSVFormat.Builder.create()
+            .setDelimiter(delimiter)
+            .setHeader()
+            .setSkipHeaderRecord(true)
+            .setIgnoreEmptyLines(true)
+            .setTrim(true)
+            .setQuote('"')
+            .setIgnoreHeaderCase(true)
+            .build();
+    }
 
     private void validateFile(String filePath) throws DataLoadingException {
         try {

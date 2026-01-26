@@ -48,19 +48,53 @@ public class Dataset {
         }
 
         /**
-         * Parse sentiment from various string representations
+         * Parse sentiment from various string representations.
+         * Throws IllegalArgumentException if the label cannot be parsed.
+         * For lenient parsing that returns null on failure, use fromStringOrNull().
          */
         public static SentimentLabel fromString(String label) {
             ValidationUtils.requireNonEmpty(label, "Sentiment label");
+            SentimentLabel result = fromStringOrNull(label);
+            if (result == null) {
+                throw new IllegalArgumentException("Unknown sentiment label: " + label);
+            }
+            return result;
+        }
+
+        /**
+         * Parse sentiment from various string representations, returning null if unparseable.
+         * Handles: text labels (positive/negative/neutral, pos/neg, good/bad, liked/disliked),
+         * numeric labels (0/1/-1/2/4), and star ratings (1.0-5.0 scale).
+         */
+        public static SentimentLabel fromStringOrNull(String label) {
+            if (label == null || label.isBlank()) {
+                return null;
+            }
 
             String normalized = label.trim().toLowerCase();
 
+            // Direct string matches (includes common dataset conventions)
             return switch (normalized) {
-                case "positive", "pos", "1", "good", "liked" -> POSITIVE;
+                case "positive", "pos", "1", "4", "good", "liked" -> POSITIVE;
                 case "negative", "neg", "0", "-1", "bad", "disliked" -> NEGATIVE;
                 case "neutral", "neut", "2", "mixed" -> NEUTRAL;
-                default -> throw new IllegalArgumentException("Unknown sentiment label: " + label);
+                default -> parseNumericRating(normalized);
             };
+        }
+
+        /**
+         * Parse numeric ratings (e.g., 1-5 star ratings) into sentiment labels.
+         * Rating <= 2.0 -> NEGATIVE, >= 4.0 -> POSITIVE, else NEUTRAL.
+         */
+        private static SentimentLabel parseNumericRating(String value) {
+            try {
+                double rating = Double.parseDouble(value);
+                if (rating <= 2.0) return NEGATIVE;
+                if (rating >= 4.0) return POSITIVE;
+                return NEUTRAL;
+            } catch (NumberFormatException e) {
+                return null;
+            }
         }
     }
 
