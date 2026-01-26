@@ -24,6 +24,9 @@ import java.util.*;
  */
 public class CrossDomainEvaluator {
 
+    private static final ObjectMapper MAPPER = new ObjectMapper()
+            .enable(SerializationFeature.INDENT_OUTPUT);
+
     private static final String[] TRAIN_DOMAINS = {"imdb_50k", "amazon_polarity", "yelp"};
     private static final String[] TEST_DOMAINS = {"imdb_50k", "amazon_polarity", "yelp"};
     private static final String[] ALGORITHMS = {"svm", "naive_bayes", "random_forest", "logistic_regression"};
@@ -196,7 +199,7 @@ public class CrossDomainEvaluator {
             var best = getBestGeneralizingModel();
             if (best != null) {
                 sb.append("═══════════════════════════════════════════════════════════════\n");
-                sb.append("🏆 BEST GENERALIZING MODEL\n");
+                sb.append("BEST GENERALIZING MODEL\n");
                 sb.append("═══════════════════════════════════════════════════════════════\n");
                 sb.append(String.format("Model: %s%n", best.getKey()));
                 sb.append(String.format("Cross-Domain Avg Accuracy: %.3f%n", best.getValue()));
@@ -214,9 +217,6 @@ public class CrossDomainEvaluator {
          * Export to JSON
          */
         public void exportToJson(Path outputPath) throws IOException {
-            ObjectMapper mapper = new ObjectMapper();
-            mapper.enable(SerializationFeature.INDENT_OUTPUT);
-
             Map<String, Object> export = new LinkedHashMap<>();
             export.put("evaluated_at", evaluatedAt.toString());
             export.put("domains", Arrays.asList(TRAIN_DOMAINS));
@@ -261,8 +261,8 @@ public class CrossDomainEvaluator {
                 export.put("best_generalizing_model", bestModel);
             }
 
-            mapper.writeValue(outputPath.toFile(), export);
-            System.out.println("✓ Cross-domain evaluation exported to: " + outputPath);
+            MAPPER.writeValue(outputPath.toFile(), export);
+            System.out.println("Cross-domain evaluation exported to: " + outputPath);
         }
     }
 
@@ -285,25 +285,25 @@ public class CrossDomainEvaluator {
         for (String algo : ALGORITHMS) {
             Map<String, SentimentClassifier> algoModels = models.get(algo);
             if (algoModels == null) {
-                System.out.println("⚠ No models found for algorithm: " + algo);
+                System.out.println("No models found for algorithm: " + algo);
                 continue;
             }
 
             for (String trainDomain : TRAIN_DOMAINS) {
                 SentimentClassifier model = algoModels.get(trainDomain);
                 if (model == null) {
-                    System.out.println("⚠ No model found for " + algo + " trained on " + trainDomain);
+                    System.out.println("No model found for " + algo + " trained on " + trainDomain);
                     continue;
                 }
 
                 for (String testDomain : TEST_DOMAINS) {
                     currentEval++;
-                    System.out.printf("[%d/%d] Evaluating %s (trained on %s) → testing on %s%n",
+                    System.out.printf("[%d/%d] Evaluating %s (trained on %s) -> testing on %s%n",
                         currentEval, totalEvaluations, algo, trainDomain, testDomain);
 
                     List<Dataset> testData = testDatasets.get(testDomain);
                     if (testData == null) {
-                        System.out.println("  ⚠ No test data found for " + testDomain);
+                        System.out.println("  No test data found for " + testDomain);
                         continue;
                     }
 
@@ -372,7 +372,7 @@ public class CrossDomainEvaluator {
                     );
 
                     matrix.addResult(result);
-                    System.out.printf("  ✓ Accuracy: %.3f | Brier: %.3f%s%n",
+                    System.out.printf("  Accuracy: %.3f | Brier: %.3f%s%n",
                         result.accuracy, result.brierScore,
                         result.isInDomain ? " (in-domain)" : "");
                 }
@@ -388,9 +388,6 @@ public class CrossDomainEvaluator {
      * Uses TrainingMetadata class to ensure correct JSON structure.
      */
     private static void persistToModelMetadata(CrossDomainMatrix matrix, Path modelsDir) {
-        ObjectMapper mapper = new ObjectMapper();
-        mapper.enable(SerializationFeature.INDENT_OUTPUT);
-
         for (String algo : ALGORITHMS) {
             for (String trainDomain : TRAIN_DOMAINS) {
                 // Build metadata file path
@@ -487,14 +484,14 @@ public class CrossDomainEvaluator {
                     if (fullData.size() > maxSamplesPerDomain) {
                         Collections.shuffle(fullData, new Random(42)); // Reproducible sampling
                         sampledData = fullData.subList(0, maxSamplesPerDomain);
-                        System.out.println("✓ Loaded " + domain + ": " + sampledData.size() + " samples (sampled from " + fullData.size() + ") from " + testFile);
+                        System.out.println("Loaded " + domain + ": " + sampledData.size() + " samples (sampled from " + fullData.size() + ") from " + testFile);
                     } else {
-                        System.out.println("✓ Loaded " + domain + ": " + sampledData.size() + " samples from " + testFile);
+                        System.out.println("Loaded " + domain + ": " + sampledData.size() + " samples from " + testFile);
                     }
 
                     testDatasets.put(domain, sampledData);
                 } else {
-                    System.out.println("⚠ Test file not found in either:");
+                    System.out.println("Test file not found in either:");
                     System.out.println("    " + processedTestFile);
                     System.out.println("    " + rawTestFile);
                 }
@@ -509,15 +506,15 @@ public class CrossDomainEvaluator {
                 Map<String, SentimentClassifier> algoModels = sentiment.models.ModelLoader.loadAllForAlgorithm(algo);
 
                 if (algoModels.isEmpty()) {
-                    System.out.println("⚠ No models found for " + algo);
+                    System.out.println("No models found for " + algo);
                 } else {
                     models.put(algo, algoModels);
-                    System.out.println("✓ Loaded " + algoModels.size() + " " + algo + " model(s)");
+                    System.out.println("Loaded " + algoModels.size() + " " + algo + " model(s)");
                 }
             }
 
             if (models.isEmpty()) {
-                System.err.println("\n✗ No models found in " + modelsDir);
+                System.err.println("\nNo models found in " + modelsDir);
                 System.err.println("Train models first using: ./scripts/train_all_models.sh");
                 System.exit(1);
             }

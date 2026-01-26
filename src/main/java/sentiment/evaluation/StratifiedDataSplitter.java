@@ -195,6 +195,20 @@ public class StratifiedDataSplitter {
     }
 
     /**
+     * Counts the number of samples per class in the given dataset.
+     *
+     * @param data the dataset to count
+     * @return a map from sentiment label to count
+     */
+    private static Map<Dataset.SentimentLabel, Long> countByClass(List<Dataset> data) {
+        if (data.isEmpty()) {
+            return Map.of();
+        }
+        return data.stream()
+                .collect(Collectors.groupingBy(Dataset::getSentiment, Collectors.counting()));
+    }
+
+    /**
      * Verifies and logs that stratification preserved class distribution across splits.
      *
      * @param original the original dataset
@@ -208,17 +222,10 @@ public class StratifiedDataSplitter {
             List<Dataset> val,
             List<Dataset> test) {
 
-        Map<Dataset.SentimentLabel, Long> origDist = original.stream()
-                .collect(Collectors.groupingBy(Dataset::getSentiment, Collectors.counting()));
-
-        Map<Dataset.SentimentLabel, Long> trainDist = train.stream()
-                .collect(Collectors.groupingBy(Dataset::getSentiment, Collectors.counting()));
-
-        Map<Dataset.SentimentLabel, Long> valDist = val.isEmpty() ? Map.of() : val.stream()
-                .collect(Collectors.groupingBy(Dataset::getSentiment, Collectors.counting()));
-
-        Map<Dataset.SentimentLabel, Long> testDist = test.stream()
-                .collect(Collectors.groupingBy(Dataset::getSentiment, Collectors.counting()));
+        Map<Dataset.SentimentLabel, Long> origDist = countByClass(original);
+        Map<Dataset.SentimentLabel, Long> trainDist = countByClass(train);
+        Map<Dataset.SentimentLabel, Long> valDist = countByClass(val);
+        Map<Dataset.SentimentLabel, Long> testDist = countByClass(test);
 
         logger.info("=== Class Distribution Verification ===");
         for (Dataset.SentimentLabel label : origDist.keySet()) {

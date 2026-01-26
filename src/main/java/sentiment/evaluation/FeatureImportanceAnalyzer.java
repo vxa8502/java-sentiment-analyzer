@@ -94,6 +94,22 @@ public class FeatureImportanceAnalyzer {
     }
 
     /**
+     * Falls back to perturbation-based feature importance extraction.
+     * This method is called when direct coefficient extraction fails for linear SVMs.
+     *
+     * @param reason the reason for falling back (logged as a warning)
+     * @param trainedData the training instances
+     * @param classifier the classifier to analyze
+     * @return feature importance map from perturbation analysis
+     */
+    private Map<String, Double> fallbackToPerturbation(
+            String reason, Instances trainedData, Classifier classifier) {
+        logger.warn("{}", reason);
+        logger.warn("Falling back to perturbation method");
+        return extractFeatureImportance(trainedData, classifier);
+    }
+
+    /**
      * Detects if the classifier is a linear SVM (SMO with linear kernel or normalized poly kernel).
      *
      * @param classifier the classifier to check
@@ -160,15 +176,13 @@ public class FeatureImportanceAnalyzer {
             double[][][] sparseWeights = smo.sparseWeights();
 
             if (sparseIndices == null || sparseWeights == null) {
-                logger.warn("sparseIndices() or sparseWeights() returned null");
-                logger.warn("Falling back to perturbation method");
-                return extractFeatureImportance(trainedData, smo);
+                return fallbackToPerturbation(
+                        "sparseIndices() or sparseWeights() returned null", trainedData, smo);
             }
 
             if (sparseIndices.length == 0 || sparseWeights.length == 0) {
-                logger.warn("Empty sparse arrays - no classifiers found");
-                logger.warn("Falling back to perturbation method");
-                return extractFeatureImportance(trainedData, smo);
+                return fallbackToPerturbation(
+                        "Empty sparse arrays - no classifiers found", trainedData, smo);
             }
 
             logger.info("Found {} classifier(s) in SMO", sparseIndices.length);
@@ -186,9 +200,8 @@ public class FeatureImportanceAnalyzer {
             double[][] weightsForClassifier = sparseWeights[0];
 
             if (indicesForClassifier == null || weightsForClassifier == null) {
-                logger.warn("No sparse data for classifier 0");
-                logger.warn("Falling back to perturbation method");
-                return extractFeatureImportance(trainedData, smo);
+                return fallbackToPerturbation(
+                        "No sparse data for classifier 0", trainedData, smo);
             }
 
             logger.info("Classifier 0 has {} class weight vectors", indicesForClassifier.length);
@@ -214,9 +227,8 @@ public class FeatureImportanceAnalyzer {
             }
 
             if (featureIndices == null || featureWeights == null) {
-                logger.warn("No valid weight vectors found in any class");
-                logger.warn("Falling back to perturbation method");
-                return extractFeatureImportance(trainedData, smo);
+                return fallbackToPerturbation(
+                        "No valid weight vectors found in any class", trainedData, smo);
             }
 
             // Extract weights from the sparse representation
@@ -244,17 +256,17 @@ public class FeatureImportanceAnalyzer {
             logger.info("Non-zero feature weights: {} out of {}", nonZeroCount, numAttributes - 1);
 
             if (nonZeroCount == 0) {
-                logger.warn("All extracted weights are zero! This indicates a problem with coefficient extraction.");
-                logger.warn("Falling back to perturbation method");
-                return extractFeatureImportance(trainedData, smo);
+                return fallbackToPerturbation(
+                        "All extracted weights are zero! This indicates a problem with coefficient extraction.",
+                        trainedData, smo);
             }
 
             return weights;
 
         } catch (Exception e) {
             logger.error("Failed to extract linear SVM weights: {}", e.getMessage(), e);
-            logger.warn("Falling back to perturbation method");
-            return extractFeatureImportance(trainedData, smo);
+            return fallbackToPerturbation(
+                    "Exception during coefficient extraction", trainedData, smo);
         }
     }
 
