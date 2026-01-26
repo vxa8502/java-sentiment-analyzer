@@ -426,6 +426,7 @@ Double confidenceThreshold;
 
 **3. Error Handling:**
 - 400 Bad Request: Invalid input (validation failure)
+- 404 Not Found: Endpoint does not exist
 - 429 Too Many Requests: Rate limit exceeded
 - 500 Internal Server Error: Model inference failure
 - 503 Service Unavailable: Model not loaded

@@ -616,4 +616,24 @@ public class SentimentControllerWebTest {
                 .andExpect(jsonPath("$.results").exists())
                 .andExpect(jsonPath("$.totalProcessingTimeMs").exists());
     }
+
+    // ==================== 404 NOT FOUND TESTS ====================
+
+    @Test
+    @DisplayName("Request to non-existent endpoint should return 404 Not Found")
+    public void testNonExistentEndpoint_Returns404() throws Exception {
+        mockMvc.perform(get("/api/v1/nonexistent"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error").value("Not found"))
+                .andExpect(jsonPath("$.status").value(404));
+    }
+
+    @Test
+    @DisplayName("Request to non-existent model endpoint should return 404 Not Found")
+    public void testNonExistentModelEndpoint_Returns404() throws Exception {
+        mockMvc.perform(get("/api/v1/model/info"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error").value("Not found"))
+                .andExpect(jsonPath("$.status").value(404));
+    }
 }

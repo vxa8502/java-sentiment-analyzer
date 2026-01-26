@@ -11,6 +11,8 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.servlet.NoHandlerFoundException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -180,6 +182,38 @@ public class RestApiExceptionHandler {
                 ex,
                 "Service unavailable",
                 HttpStatus.SERVICE_UNAVAILABLE
+        );
+    }
+
+    /**
+     * Handles requests to non-existent static resources.
+     * Returns 404 Not Found instead of 500 Internal Server Error.
+     */
+    @ExceptionHandler(NoResourceFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public ResponseEntity<ErrorResponse> handleNoResourceFound(NoResourceFoundException ex) {
+        return logAndBuildResponse(
+                "Resource not found",
+                ex,
+                "Not found",
+                "The requested resource does not exist",
+                HttpStatus.NOT_FOUND
+        );
+    }
+
+    /**
+     * Handles requests to non-existent controller endpoints.
+     * Returns 404 Not Found instead of 500 Internal Server Error.
+     */
+    @ExceptionHandler(NoHandlerFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public ResponseEntity<ErrorResponse> handleNoHandlerFound(NoHandlerFoundException ex) {
+        return logAndBuildResponse(
+                "Endpoint not found",
+                ex,
+                "Not found",
+                "The requested endpoint does not exist: " + ex.getRequestURL(),
+                HttpStatus.NOT_FOUND
         );
     }
 
