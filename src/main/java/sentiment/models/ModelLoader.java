@@ -1,5 +1,7 @@
 package sentiment.models;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import sentiment.preprocessing.TextPreprocessor;
 import sentiment.preprocessing.WekaInstancesConverter;
 import sentiment.training.TrainingMetadata;
@@ -17,6 +19,8 @@ import java.util.function.BiFunction;
  * @author Victoria Alabi
  */
 public class ModelLoader {
+
+    private static final Logger logger = LoggerFactory.getLogger(ModelLoader.class);
 
     /**
      * Load model with metadata validation.
@@ -43,23 +47,22 @@ public class ModelLoader {
 
         // Load metadata first
         TrainingMetadata metadata = TrainingMetadata.load(metadataPath);
-        System.out.printf("✓ Loaded metadata: %s, trained on %s, accuracy=%.3f%n",
+        logger.info("Loaded metadata: {}, trained on {}, accuracy={}",
                 metadata.getModelId(),
                 metadata.getDataset().datasetName,
-                metadata.getMetrics().testAccuracy);
+                String.format("%.3f", metadata.getMetrics().testAccuracy));
 
         // Validate metadata points to correct model file
         if (metadata.getModelFile() != null &&
             !metadata.getModelFile().equals(path.getFileName().toString())) {
-            System.err.printf("⚠ Metadata model_file mismatch: expected %s, got %s%n",
+            logger.warn("Metadata model_file mismatch: expected {}, got {}",
                     metadata.getModelFile(), path.getFileName());
         }
 
         // Load the actual model based on algorithm type
         SentimentClassifier classifier = loadModelByType(path, metadata);
 
-        System.out.printf("✓ Loaded model: %s from %s%n",
-                path.getFileName(), path.getParent());
+        logger.info("Loaded model: {} from {}", path.getFileName(), path.getParent());
 
         return classifier;
     }
@@ -141,7 +144,7 @@ public class ModelLoader {
         Path algoDir = Paths.get("models", algorithm);
 
         if (!Files.exists(algoDir)) {
-            System.err.println("⚠ Model directory not found: " + algoDir);
+            logger.warn("Model directory not found: {}", algoDir);
             return models;
         }
 
@@ -157,10 +160,10 @@ public class ModelLoader {
                           SentimentClassifier classifier = loadWithMetadata(modelPath.toString());
                           models.put(domain, classifier);
 
-                          System.out.printf("✓ Loaded %s model trained on %s%n", algorithm, domain);
+                          logger.info("Loaded {} model trained on {}", algorithm, domain);
 
                       } catch (Exception e) {
-                          System.err.println("✗ Failed to load " + modelPath + ": " + e.getMessage());
+                          logger.error("Failed to load {}: {}", modelPath, e.getMessage());
                       }
                   });
         }

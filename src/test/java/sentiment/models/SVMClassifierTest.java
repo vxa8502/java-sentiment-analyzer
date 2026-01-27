@@ -148,7 +148,8 @@ class SVMClassifierTest {
         classifier.train(trainingData);
 
         // Assert
-        verify(mockPreprocessor, times(1)).fit(trainingData);
+        // WekaInstancesConverter now owns preprocessor fitting, so we only verify converter.fit()
+        // The preprocessor.fit() happens internally within converter.fit()
         verify(mockConverter, times(1)).fit(trainingData);
         assertTrue(classifier.isTrained(), "Classifier should be trained");
     }

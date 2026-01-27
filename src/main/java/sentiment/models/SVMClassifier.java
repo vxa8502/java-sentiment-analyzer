@@ -130,27 +130,22 @@ public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluati
 
         logger.info("Training SVM on {} raw datasets with full pipeline", rawDatasets.size());
 
-        // Step 1: Fit preprocessing pipeline
-        logger.info("Step 1/3: Fitting preprocessing pipeline");
-        preprocessor.fit(rawDatasets);
-        logger.info("Preprocessor fitted. Vocabulary: {}",
-                preprocessor.getPipelineState().vocabularySize);
-
-        // Step 2: Fit feature extraction (converter) and get Instances
-        logger.info("Step 2/3: Fitting feature extraction");
+        // Step 1: Fit vectorization pipeline (preprocessing + TF-IDF)
+        // Note: converter.fit() internally calls preprocessor.fit()
+        logger.info("Step 1/2: Fitting vectorization pipeline");
         Instances trainingInstances = converter.fit(rawDatasets);
-        logger.info("Converter fitted. Features: {}, Vocabulary: {}",
+        logger.info("Vectorization complete. Features: {}, Vocabulary: {}",
                 trainingInstances.numAttributes() - 1,
                 converter.getVocabulary().size());
 
-        // Step 3: Train SVM on converted Instances
-        logger.info("Step 3/3: Training SVM classifier");
+        // Step 2: Train SVM on converted Instances
+        logger.info("Step 2/2: Training SVM classifier");
         validateWekaTrainingData(trainingInstances);
         configureSMOForTraining(trainingInstances);
         performAlgorithmSpecificTraining(trainingInstances);
         finalizeTraining(trainingInstances);
 
-        // Step 4: Validate pipeline consistency (CRITICAL)
+        // Validate pipeline consistency
         validatePipelineConsistency();
 
         logger.info("SVM training complete. Pipeline ready for inference.");
