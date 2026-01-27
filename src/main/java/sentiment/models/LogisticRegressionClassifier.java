@@ -8,8 +8,8 @@ import weka.core.Instances;
 import sentiment.preprocessing.TextPreprocessor;
 import sentiment.preprocessing.WekaInstancesConverter;
 import sentiment.evaluation.ClassifierEvaluationResult;
+import sentiment.util.ValidationUtils;
 
-import jakarta.annotation.PreDestroy;
 import java.util.*;
 
 /**
@@ -19,14 +19,11 @@ import java.util.*;
  * Effective as a baseline model and for applications requiring feature interpretability.
  */
 public class LogisticRegressionClassifier extends ClassifierTrainingTemplate<ClassifierEvaluationResult>
-        implements ClassifierEvaluator, WekaClassifier {
+        implements ClassifierEvaluator {
 
     private static final Logger logger = LoggerFactory.getLogger(LogisticRegressionClassifier.class);
 
     private Logistic logistic;
-
-    private final TextPreprocessor preprocessor;
-    // NOTE: converter, trainingDataStructure, supportedClasses now inherited from base class
 
     /**
      * Creates a Logistic Regression classifier with default configuration.
@@ -36,11 +33,10 @@ public class LogisticRegressionClassifier extends ClassifierTrainingTemplate<Cla
      * @throws IllegalArgumentException if any parameter is null
      */
     public LogisticRegressionClassifier(TextPreprocessor preprocessor, WekaInstancesConverter converter) {
-        if (preprocessor == null || converter == null) {
-            throw new IllegalArgumentException("Preprocessor and converter cannot be null");
-        }
+        ValidationUtils.requireAllNonNull(
+                new Object[]{preprocessor, converter},
+                new String[]{"preprocessor", "converter"});
 
-        this.preprocessor = preprocessor;
         this.converter = converter;
         this.logistic = new Logistic();
 
@@ -67,11 +63,10 @@ public class LogisticRegressionClassifier extends ClassifierTrainingTemplate<Cla
      */
     public LogisticRegressionClassifier(TextPreprocessor preprocessor, WekaInstancesConverter converter,
                                          Logistic customLogistic) {
-        if (preprocessor == null || converter == null || customLogistic == null) {
-            throw new IllegalArgumentException("All dependencies must be non-null");
-        }
+        ValidationUtils.requireAllNonNull(
+                new Object[]{preprocessor, converter, customLogistic},
+                new String[]{"preprocessor", "converter", "customLogistic"});
 
-        this.preprocessor = preprocessor;
         this.converter = converter;
         this.logistic = customLogistic;
 
@@ -81,17 +76,6 @@ public class LogisticRegressionClassifier extends ClassifierTrainingTemplate<Cla
     @Override
     public AlgorithmType getAlgorithmType() {
         return AlgorithmType.LOGISTIC_REGRESSION;
-    }
-
-    @Override
-    public String getAlgorithmName() {
-        return AlgorithmType.LOGISTIC_REGRESSION.getDisplayName();
-    }
-
-    @Override
-    public String[] getSupportedClasses() {
-        requireTrained();
-        return supportedClasses != null ? supportedClasses.clone() : new String[0];
     }
 
     @Override
@@ -119,12 +103,6 @@ public class LogisticRegressionClassifier extends ClassifierTrainingTemplate<Cla
         logger.info("Training Logistic Regression model on {} instances", trainingData.numInstances());
         logistic.buildClassifier(trainingData);
         logger.info("Logistic Regression model training complete");
-    }
-
-    @PreDestroy
-    public void cleanup() {
-        logger.info("Cleaning up LogisticRegressionClassifier resources");
-        doClearResources();
     }
 
     @Override
@@ -204,21 +182,4 @@ public class LogisticRegressionClassifier extends ClassifierTrainingTemplate<Cla
     public Logistic getLogistic() {
         return logistic;
     }
-
-    // NOTE: setLogistic(), getTrainingStructure(), setTrainingMetadata() removed
-    // Persistence now uses abstract methods from ClassifierTrainingTemplate
-
-    // WEKA CLASSIFIER INTERFACE
-
-    /**
-     * Gets the underlying Weka classifier.
-     *
-     * @return the Logistic classifier as base Classifier type
-     */
-    @Override
-    public weka.classifiers.Classifier getWekaClassifier() {
-        return logistic;
-    }
-
-    // NOTE: executeInference(Callable) now inherited from base class
 }

@@ -94,4 +94,37 @@ public final class ValidationUtils {
     public static String orDefault(String text, String defaultValue) {
         return isNullOrEmpty(text) ? defaultValue : text.trim();
     }
+
+    /**
+     * Validates that all provided objects are non-null, throwing an exception if any is null.
+     *
+     * <p>This is the <b>strict validation</b> pattern for constructor dependencies.
+     *
+     * <p><b>Use case:</b> Validating constructor parameters in a single statement.
+     *
+     * <p><b>Usage Example:</b>
+     * <pre>
+     * public MyClass(Foo foo, Bar bar) {
+     *     ValidationUtils.requireAllNonNull(
+     *         new Object[]{foo, bar},
+     *         new String[]{"foo", "bar"}
+     *     );
+     * }
+     * </pre>
+     *
+     * @param objects Array of objects to validate
+     * @param names Array of parameter names (for error messages), must match objects length
+     * @throws IllegalArgumentException if any object is null or arrays have mismatched lengths
+     */
+    public static void requireAllNonNull(Object[] objects, String[] names) {
+        if (objects.length != names.length) {
+            throw new IllegalArgumentException("Objects and names arrays must have same length");
+        }
+
+        for (int i = 0; i < objects.length; i++) {
+            if (objects[i] == null) {
+                throw new IllegalArgumentException(names[i] + " cannot be null");
+            }
+        }
+    }
 }

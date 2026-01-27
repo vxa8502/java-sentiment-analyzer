@@ -18,7 +18,7 @@ import java.util.*;
  *
  * @param <T> type of training result (optional, can be {@link Void})
  */
-public abstract class ClassifierTrainingTemplate<T> extends TrainingTemplate<T> implements SentimentClassifier {
+public abstract class ClassifierTrainingTemplate<T> extends TrainingTemplate<T> implements WekaClassifier {
 
     // WEKA-SPECIFIC SHARED STATE
     // Subclasses that use Weka should populate these fields during training
@@ -108,6 +108,18 @@ public abstract class ClassifierTrainingTemplate<T> extends TrainingTemplate<T> 
      * @param classifier the Weka classifier to set
      */
     protected abstract void setWekaClassifierInstance(weka.classifiers.Classifier classifier);
+
+    /**
+     * Returns the underlying Weka classifier for external use (e.g., feature importance analysis).
+     * Implements {@link WekaClassifier#getWekaClassifier()} by delegating to the internal
+     * {@link #getWekaClassifierInstance()} method.
+     *
+     * @return the Weka classifier
+     */
+    @Override
+    public weka.classifiers.Classifier getWekaClassifier() {
+        return getWekaClassifierInstance();
+    }
 
     /**
      * Returns the component type for logging.
@@ -370,12 +382,25 @@ public abstract class ClassifierTrainingTemplate<T> extends TrainingTemplate<T> 
     }
 
     /**
-     * Returns the algorithm name for evaluation results.
+     * Returns the supported sentiment classes for this classifier.
      *
-     * @return algorithm name (default: class simple name)
+     * @return Array of class labels (e.g., ["negative", "neutral", "positive"])
+     * @throws IllegalStateException if classifier hasn't been trained
      */
-    public String getAlgorithmName() {
-        return this.getClass().getSimpleName();
+    @Override
+    public String[] getSupportedClasses() {
+        requireTrained();
+        return supportedClasses != null ? supportedClasses.clone() : new String[0];
+    }
+
+    /**
+     * Cleans up classifier resources on container shutdown.
+     * Subclasses can override to add custom cleanup, but must call super.cleanup().
+     */
+    @jakarta.annotation.PreDestroy
+    public void cleanup() {
+        getLogger().info("Cleaning up {} resources", getClass().getSimpleName());
+        doClearResources();
     }
 
     // CONSOLIDATED WEKA TRAINING HELPERS

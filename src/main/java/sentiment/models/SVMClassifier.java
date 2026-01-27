@@ -11,8 +11,8 @@ import sentiment.preprocessing.TextPreprocessor;
 import sentiment.preprocessing.WekaInstancesConverter;
 import sentiment.evaluation.ClassifierEvaluationResult;
 import sentiment.data.Dataset;
+import sentiment.util.ValidationUtils;
 
-import jakarta.annotation.PreDestroy;
 import java.util.*;
 
 /**
@@ -22,7 +22,7 @@ import java.util.*;
  * kernel type, complexity parameter (C), and kernel-specific parameters.
  */
 public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluationResult>
-        implements ClassifierEvaluator, WekaClassifier {
+        implements ClassifierEvaluator {
 
     private static final Logger logger = LoggerFactory.getLogger(SVMClassifier.class);
 
@@ -38,9 +38,9 @@ public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluati
      * Creates an SVM classifier with default configuration.
      */
     public SVMClassifier(TextPreprocessor preprocessor, WekaInstancesConverter converter) {
-        if (preprocessor == null || converter == null) {
-            throw new IllegalArgumentException("Preprocessor and converter cannot be null");
-        }
+        ValidationUtils.requireAllNonNull(
+                new Object[]{preprocessor, converter},
+                new String[]{"preprocessor", "converter"});
 
         this.preprocessor = preprocessor;
         this.converter = converter;
@@ -56,9 +56,9 @@ public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluati
      * Creates classifier with custom SMO configuration.
      */
     public SVMClassifier(TextPreprocessor preprocessor, WekaInstancesConverter converter, SMO customSMO) {
-        if (preprocessor == null || converter == null || customSMO == null) {
-            throw new IllegalArgumentException("All dependencies must be non-null");
-        }
+        ValidationUtils.requireAllNonNull(
+                new Object[]{preprocessor, converter, customSMO},
+                new String[]{"preprocessor", "converter", "customSMO"});
 
         this.preprocessor = preprocessor;
         this.converter = converter;
@@ -101,17 +101,6 @@ public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluati
     @Override
     public AlgorithmType getAlgorithmType() {
         return AlgorithmType.SVM;
-    }
-
-    @Override
-    public String getAlgorithmName() {
-        return AlgorithmType.SVM.getDisplayName();
-    }
-
-    @Override
-    public String[] getSupportedClasses() {
-        requireTrained();
-        return supportedClasses != null ? supportedClasses.clone() : new String[0];
     }
 
     @Override
@@ -168,12 +157,6 @@ public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluati
 
         // Return null - no evaluation during training
         return null;
-    }
-
-    @PreDestroy
-    public void cleanup() {
-        logger.info("Cleaning up SVMClassifier resources");
-        doClearResources();
     }
 
     /**
@@ -816,13 +799,5 @@ public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluati
      */
     public SVMConfig getOptimalConfig() {
         return optimalConfig;
-    }
-
-    /**
-     * Returns the underlying Weka classifier for batch operations.
-     */
-    @Override
-    public weka.classifiers.Classifier getWekaClassifier() {
-        return smo;
     }
 }

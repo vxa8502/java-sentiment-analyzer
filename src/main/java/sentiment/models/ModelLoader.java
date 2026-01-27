@@ -1,11 +1,14 @@
 package sentiment.models;
 
+import sentiment.preprocessing.TextPreprocessor;
+import sentiment.preprocessing.WekaInstancesConverter;
 import sentiment.training.TrainingMetadata;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.function.BiFunction;
 
 /**
  * Model loader with metadata validation.
@@ -70,10 +73,10 @@ public class ModelLoader {
         AlgorithmType algorithmType = AlgorithmType.valueOf(metadata.getAlgorithm().toUpperCase());
 
         return switch (algorithmType) {
-            case SVM -> loadSVM(modelPath);
-            case NAIVE_BAYES -> loadNaiveBayes(modelPath);
-            case RANDOM_FOREST -> loadRandomForest(modelPath);
-            case LOGISTIC_REGRESSION -> loadLogisticRegression(modelPath);
+            case SVM -> loadClassifier(modelPath, SVMClassifier::new);
+            case NAIVE_BAYES -> loadClassifier(modelPath, NaiveBayesClassifier::new);
+            case RANDOM_FOREST -> loadClassifier(modelPath, RandomForestClassifier::new);
+            case LOGISTIC_REGRESSION -> loadClassifier(modelPath, LogisticRegressionClassifier::new);
             default -> throw new IllegalArgumentException("Unsupported algorithm: " + algorithmType);
         };
     }
@@ -102,31 +105,27 @@ public class ModelLoader {
      * Container for preprocessing pipeline components.
      */
     private record PreprocessingPipeline(
-            sentiment.preprocessing.TextPreprocessor preprocessor,
-            sentiment.preprocessing.WekaInstancesConverter converter) {}
+            TextPreprocessor preprocessor,
+            WekaInstancesConverter converter) {}
 
-    private static SVMClassifier loadSVM(Path modelPath) throws IOException, ClassNotFoundException {
-        PreprocessingPipeline pipeline = createPreprocessingPipeline();
-        SVMClassifier classifier = new SVMClassifier(pipeline.preprocessor(), pipeline.converter());
-        return new WekaModelPersistence<SVMClassifier>().loadModel(classifier, modelPath);
-    }
+    /**
+     * Generic classifier loader using a factory function.
+     * Consolidates the common pattern of creating preprocessing pipeline,
+     * instantiating classifier, and loading persisted model state.
+     *
+     * @param modelPath path to the serialized model file
+     * @param factory constructor reference for the classifier (e.g., SVMClassifier::new)
+     * @param <T> classifier type extending ClassifierTrainingTemplate
+     * @return loaded and initialized classifier
+     */
+    private static <T extends ClassifierTrainingTemplate<?>> T loadClassifier(
+            Path modelPath,
+            BiFunction<TextPreprocessor, WekaInstancesConverter, T> factory)
+            throws IOException, ClassNotFoundException {
 
-    private static NaiveBayesClassifier loadNaiveBayes(Path modelPath) throws IOException, ClassNotFoundException {
         PreprocessingPipeline pipeline = createPreprocessingPipeline();
-        NaiveBayesClassifier classifier = new NaiveBayesClassifier(pipeline.preprocessor(), pipeline.converter());
-        return new WekaModelPersistence<NaiveBayesClassifier>().loadModel(classifier, modelPath);
-    }
-
-    private static RandomForestClassifier loadRandomForest(Path modelPath) throws IOException, ClassNotFoundException {
-        PreprocessingPipeline pipeline = createPreprocessingPipeline();
-        RandomForestClassifier classifier = new RandomForestClassifier(pipeline.preprocessor(), pipeline.converter());
-        return new WekaModelPersistence<RandomForestClassifier>().loadModel(classifier, modelPath);
-    }
-
-    private static LogisticRegressionClassifier loadLogisticRegression(Path modelPath) throws IOException, ClassNotFoundException {
-        PreprocessingPipeline pipeline = createPreprocessingPipeline();
-        LogisticRegressionClassifier classifier = new LogisticRegressionClassifier(pipeline.preprocessor(), pipeline.converter());
-        return new WekaModelPersistence<LogisticRegressionClassifier>().loadModel(classifier, modelPath);
+        T classifier = factory.apply(pipeline.preprocessor(), pipeline.converter());
+        return new WekaModelPersistence<T>().loadModel(classifier, modelPath);
     }
 
     /**

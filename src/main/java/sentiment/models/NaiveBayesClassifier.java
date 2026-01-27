@@ -8,9 +8,8 @@ import weka.core.Instances;
 import sentiment.preprocessing.TextPreprocessor;
 import sentiment.preprocessing.WekaInstancesConverter;
 import sentiment.evaluation.ClassifierEvaluationResult;
-import sentiment.data.Dataset;
+import sentiment.util.ValidationUtils;
 
-import jakarta.annotation.PreDestroy;
 import java.util.*;
 
 /**
@@ -20,13 +19,11 @@ import java.util.*;
  * therefore may underperform when feature interactions are critical.
  */
 public class NaiveBayesClassifier extends ClassifierTrainingTemplate<ClassifierEvaluationResult>
-        implements ClassifierEvaluator, WekaClassifier {
+        implements ClassifierEvaluator {
 
     private static final Logger logger = LoggerFactory.getLogger(NaiveBayesClassifier.class);
 
     private NaiveBayes naiveBayes;
-
-    private final TextPreprocessor preprocessor;
 
     /**
      * Creates a Naive Bayes classifier with default configuration.
@@ -36,11 +33,10 @@ public class NaiveBayesClassifier extends ClassifierTrainingTemplate<ClassifierE
      * @throws IllegalArgumentException if any parameter is null
      */
     public NaiveBayesClassifier(TextPreprocessor preprocessor, WekaInstancesConverter converter) {
-        if (preprocessor == null || converter == null) {
-            throw new IllegalArgumentException("Preprocessor and converter cannot be null");
-        }
+        ValidationUtils.requireAllNonNull(
+                new Object[]{preprocessor, converter},
+                new String[]{"preprocessor", "converter"});
 
-        this.preprocessor = preprocessor;
         this.converter = converter;
         this.naiveBayes = new NaiveBayes();
 
@@ -57,11 +53,10 @@ public class NaiveBayesClassifier extends ClassifierTrainingTemplate<ClassifierE
      */
     public NaiveBayesClassifier(TextPreprocessor preprocessor, WekaInstancesConverter converter,
                                  NaiveBayes customNaiveBayes) {
-        if (preprocessor == null || converter == null || customNaiveBayes == null) {
-            throw new IllegalArgumentException("All dependencies must be non-null");
-        }
+        ValidationUtils.requireAllNonNull(
+                new Object[]{preprocessor, converter, customNaiveBayes},
+                new String[]{"preprocessor", "converter", "customNaiveBayes"});
 
-        this.preprocessor = preprocessor;
         this.converter = converter;
         this.naiveBayes = customNaiveBayes;
 
@@ -71,17 +66,6 @@ public class NaiveBayesClassifier extends ClassifierTrainingTemplate<ClassifierE
     @Override
     public AlgorithmType getAlgorithmType() {
         return AlgorithmType.NAIVE_BAYES;
-    }
-
-    @Override
-    public String getAlgorithmName() {
-        return AlgorithmType.NAIVE_BAYES.getDisplayName();
-    }
-
-    @Override
-    public String[] getSupportedClasses() {
-        requireTrained();
-        return supportedClasses != null ? supportedClasses.clone() : new String[0];
     }
 
     @Override
@@ -108,12 +92,6 @@ public class NaiveBayesClassifier extends ClassifierTrainingTemplate<ClassifierE
         logger.info("Training Naive Bayes model on {} instances", trainingData.numInstances());
         naiveBayes.buildClassifier(trainingData);
         logger.info("Naive Bayes model training complete");
-    }
-
-    @PreDestroy
-    public void cleanup() {
-        logger.info("Cleaning up NaiveBayesClassifier resources");
-        doClearResources();
     }
 
     @Override
@@ -176,22 +154,6 @@ public class NaiveBayesClassifier extends ClassifierTrainingTemplate<ClassifierE
                 getFeatureCount(),
                 supportedClasses != null ? String.join(", ", supportedClasses) : "none"
         );
-    }
-
-    // ACCESSORS
-
-
-
-    // WEKA CLASSIFIER INTERFACE
-
-    /**
-     * Returns the underlying Weka classifier for batch operations.
-     *
-     * @return the NaiveBayes classifier as base Classifier type
-     */
-    @Override
-    public weka.classifiers.Classifier getWekaClassifier() {
-        return naiveBayes;
     }
 
 }

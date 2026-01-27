@@ -8,8 +8,8 @@ import weka.core.Instances;
 import sentiment.preprocessing.TextPreprocessor;
 import sentiment.preprocessing.WekaInstancesConverter;
 import sentiment.evaluation.ClassifierEvaluationResult;
+import sentiment.util.ValidationUtils;
 
-import jakarta.annotation.PreDestroy;
 import java.util.*;
 
 /**
@@ -20,7 +20,7 @@ import java.util.*;
  * interactions in text data.
  */
 public class RandomForestClassifier extends ClassifierTrainingTemplate<ClassifierEvaluationResult>
-        implements ClassifierEvaluator, WekaClassifier {
+        implements ClassifierEvaluator {
 
     private static final Logger logger = LoggerFactory.getLogger(RandomForestClassifier.class);
 
@@ -31,9 +31,6 @@ public class RandomForestClassifier extends ClassifierTrainingTemplate<Classifie
 
     private RandomForest randomForest;
 
-    private final TextPreprocessor preprocessor;
-    // NOTE: converter, trainingDataStructure, supportedClasses now inherited from base class
-
     /**
      * Creates Random Forest classifier with default configuration.
      * Uses 100 trees, unlimited depth, and sqrt(features) per split.
@@ -42,11 +39,10 @@ public class RandomForestClassifier extends ClassifierTrainingTemplate<Classifie
      * @param converter feature extraction and Weka conversion
      */
     public RandomForestClassifier(TextPreprocessor preprocessor, WekaInstancesConverter converter) {
-        if (preprocessor == null || converter == null) {
-            throw new IllegalArgumentException("Preprocessor and converter cannot be null");
-        }
+        ValidationUtils.requireAllNonNull(
+                new Object[]{preprocessor, converter},
+                new String[]{"preprocessor", "converter"});
 
-        this.preprocessor = preprocessor;
         this.converter = converter;
         this.randomForest = new RandomForest();
 
@@ -65,11 +61,10 @@ public class RandomForestClassifier extends ClassifierTrainingTemplate<Classifie
      */
     public RandomForestClassifier(TextPreprocessor preprocessor, WekaInstancesConverter converter,
                                    RandomForest customRandomForest) {
-        if (preprocessor == null || converter == null || customRandomForest == null) {
-            throw new IllegalArgumentException("All dependencies must be non-null");
-        }
+        ValidationUtils.requireAllNonNull(
+                new Object[]{preprocessor, converter, customRandomForest},
+                new String[]{"preprocessor", "converter", "customRandomForest"});
 
-        this.preprocessor = preprocessor;
         this.converter = converter;
         this.randomForest = customRandomForest;
 
@@ -85,17 +80,6 @@ public class RandomForestClassifier extends ClassifierTrainingTemplate<Classifie
     @Override
     public AlgorithmType getAlgorithmType() {
         return AlgorithmType.RANDOM_FOREST;
-    }
-
-    @Override
-    public String getAlgorithmName() {
-        return AlgorithmType.RANDOM_FOREST.getDisplayName();
-    }
-
-    @Override
-    public String[] getSupportedClasses() {
-        requireTrained();
-        return supportedClasses != null ? supportedClasses.clone() : new String[0];
     }
 
     @Override
@@ -125,14 +109,6 @@ public class RandomForestClassifier extends ClassifierTrainingTemplate<Classifie
         randomForest.buildClassifier(trainingData);
         logger.info("Random Forest model training complete");
     }
-
-    @PreDestroy
-    public void cleanup() {
-        logger.info("Cleaning up RandomForestClassifier resources");
-        doClearResources();
-    }
-
-    // NOTE: finalizeTraining(), classify(), getClassificationProbabilities(), evaluate() now inherited from base class
 
     @Override
     protected Map<String, Object> buildAdditionalStats(
@@ -201,22 +177,4 @@ public class RandomForestClassifier extends ClassifierTrainingTemplate<Classifie
         );
     }
 
-    // ACCESSORS
-
-    // NOTE: setRandomForest(), getTrainingStructure(), setTrainingMetadata() removed
-    // Persistence now uses abstract methods from ClassifierTrainingTemplate
-
-    // WEKA CLASSIFIER INTERFACE
-
-    /**
-     * Returns the underlying Weka classifier for batch operations.
-     *
-     * @return the Random Forest classifier as base Classifier type
-     */
-    @Override
-    public weka.classifiers.Classifier getWekaClassifier() {
-        return randomForest;
-    }
-
-    // NOTE: executeInference(Callable) now inherited from base class
 }
