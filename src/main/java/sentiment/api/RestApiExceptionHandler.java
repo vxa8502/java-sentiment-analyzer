@@ -7,6 +7,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -127,6 +128,30 @@ public class RestApiExceptionHandler {
                 HttpStatus.UNSUPPORTED_MEDIA_TYPE
         );
         return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE).body(response);
+    }
+
+    /**
+     * Handles wrong HTTP method (e.g., GET on a POST-only endpoint).
+     * Returns 405 Method Not Allowed.
+     */
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    @ResponseStatus(HttpStatus.METHOD_NOT_ALLOWED)
+    public ResponseEntity<ErrorResponse> handleMethodNotAllowed(
+            HttpRequestMethodNotSupportedException ex) {
+
+        String supportedMethods = ex.getSupportedHttpMethods() != null
+                ? ex.getSupportedHttpMethods().toString()
+                : "unknown";
+
+        logger.info("Method not allowed: {} (supported: {})", ex.getMethod(), supportedMethods);
+
+        ErrorResponse response = buildErrorResponse(
+                "Method not allowed",
+                String.format("HTTP method %s is not supported for this endpoint. Supported: %s",
+                        ex.getMethod(), supportedMethods),
+                HttpStatus.METHOD_NOT_ALLOWED
+        );
+        return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED).body(response);
     }
 
     /**

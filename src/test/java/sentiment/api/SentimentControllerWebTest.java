@@ -17,8 +17,8 @@ import static org.hamcrest.Matchers.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 /**
@@ -573,6 +573,33 @@ public class SentimentControllerWebTest {
         mockMvc.perform(post("/api/v1/sentiment/analyze")
                         .content(requestJson))
                 .andExpect(status().isUnsupportedMediaType());
+    }
+
+    @Test
+    @DisplayName("GET request to POST-only endpoint should return 405 Method Not Allowed")
+    public void testAnalyzeSentiment_WrongHttpMethod_GET() throws Exception {
+        mockMvc.perform(get("/api/v1/sentiment/analyze"))
+                .andExpect(status().isMethodNotAllowed())
+                .andExpect(jsonPath("$.error").value("Method not allowed"))
+                .andExpect(jsonPath("$.status").value(405));
+    }
+
+    @Test
+    @DisplayName("PUT request to POST-only endpoint should return 405 Method Not Allowed")
+    public void testAnalyzeSentiment_WrongHttpMethod_PUT() throws Exception {
+        mockMvc.perform(put("/api/v1/sentiment/analyze")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"text\":\"test\"}"))
+                .andExpect(status().isMethodNotAllowed())
+                .andExpect(jsonPath("$.error").value("Method not allowed"));
+    }
+
+    @Test
+    @DisplayName("DELETE request to POST-only endpoint should return 405 Method Not Allowed")
+    public void testAnalyzeSentiment_WrongHttpMethod_DELETE() throws Exception {
+        mockMvc.perform(delete("/api/v1/sentiment/analyze"))
+                .andExpect(status().isMethodNotAllowed())
+                .andExpect(jsonPath("$.error").value("Method not allowed"));
     }
 
     @Test
