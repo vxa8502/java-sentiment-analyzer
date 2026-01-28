@@ -280,7 +280,7 @@ public class SentimentController {
                 new HealthResponse.LabelDistribution(
                         snapshot.positivePredictions(),
                         snapshot.negativePredictions(),
-                        snapshot.neutralPredictions()
+                        snapshot.uncertainPredictions()
                 ),
                 snapshot.averageConfidence(),
                 snapshot.lowConfidenceRatePercent(),

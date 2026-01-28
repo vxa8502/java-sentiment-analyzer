@@ -16,10 +16,9 @@ public class PredictionMetrics {
 
     private final MeterRegistry meterRegistry;
 
-    // Counters for label distribution
+    // Counters for label distribution (model outputs positive/negative, API may return uncertain)
     private final Counter positiveCounter;
     private final Counter negativeCounter;
-    private final Counter neutralCounter;
     private final Counter uncertainCounter;
 
     // Counter for low-confidence predictions
@@ -51,11 +50,6 @@ public class PredictionMetrics {
         this.negativeCounter = Counter.builder("sentiment.predictions.total")
                 .tag("label", "negative")
                 .description("Total negative sentiment predictions")
-                .register(meterRegistry);
-
-        this.neutralCounter = Counter.builder("sentiment.predictions.total")
-                .tag("label", "neutral")
-                .description("Total neutral sentiment predictions")
                 .register(meterRegistry);
 
         this.uncertainCounter = Counter.builder("sentiment.predictions.total")
@@ -98,11 +92,10 @@ public class PredictionMetrics {
      * Record a prediction with its metrics.
      */
     public void recordPrediction(String label, double confidence, Duration latency) {
-        // Increment label counter
+        // Increment label counter (model outputs positive/negative, API may return uncertain)
         switch (label.toLowerCase()) {
             case "positive" -> positiveCounter.increment();
             case "negative" -> negativeCounter.increment();
-            case "neutral" -> neutralCounter.increment();
             case "uncertain" -> uncertainCounter.increment();
         }
 
@@ -161,7 +154,6 @@ public class PredictionMetrics {
                 totalPredictions.longValue(),
                 positiveCounter.count(),
                 negativeCounter.count(),
-                neutralCounter.count(),
                 uncertainCounter.count(),
                 getAverageConfidence(),
                 getLowConfidenceRate(),
@@ -192,7 +184,6 @@ public class PredictionMetrics {
             long totalPredictions,
             double positivePredictions,
             double negativePredictions,
-            double neutralPredictions,
             double uncertainPredictions,
             double averageConfidence,
             double lowConfidenceRatePercent,

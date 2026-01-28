@@ -66,8 +66,8 @@ public class SentimentService {
             }
 
             if (confidence < 0.75) {
-                warning = "Low confidence prediction. This model only supports 'positive' and 'negative' labels. " +
-                         "Neutral or ambiguous text may be misclassified. Check /api/v1/health for supportedLabels.";
+                warning = "Low confidence prediction. The model classifies as 'positive' or 'negative' only. " +
+                         "Ambiguous text may produce unreliable results. Use confidenceThreshold parameter to get 'uncertain' for low-confidence predictions.";
             }
 
             long processingTime = System.currentTimeMillis() - startTime;

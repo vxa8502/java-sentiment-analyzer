@@ -109,8 +109,12 @@ public class ModelTrainer {
 
             long startTime = System.currentTimeMillis();
 
+            // Determine total steps: 6 base + 1 if feature importance enabled
+            // Steps: 1=Load, 2=Split(fallback), 3=Train, 4=Validate, 5=Evaluate, [6=FeatureImportance], 6or7=Save
+            int totalSteps = showFeatureImportance ? 7 : 6;
+
             // Step 1: Load data - prefer prepared splits if available
-            logger.info("Step 1/5: Loading training data...");
+            logger.info("Step 1/{}: Loading training data...", totalSteps);
             if (testDataPath != null && !testDataPath.trim().isEmpty()) {
                 logger.info("Note: Ignoring separate test file - using prepared splits for consistency");
             }
@@ -160,7 +164,7 @@ public class ModelTrainer {
                 logger.info(" Loaded {} samples in {}ms", allData.size(), loadTime);
 
                 // Step 2: Perform stratified train/test split (80/20)
-                logger.info("Step 2/5: Performing stratified 80/20 train/test split...");
+                logger.info("Step 2/{}: Performing stratified 80/20 train/test split...", totalSteps);
                 split = StratifiedDataSplitter.stratifiedSplit(
                         allData,
                         0.8,  // 80% train
@@ -177,7 +181,7 @@ public class ModelTrainer {
                     split.train.size(), split.test.size());
 
             // Step 3: Create and train classifier (ONLY on train set)
-            logger.info("Step 3/5: Training {} classifier on TRAIN SET ONLY...", algorithmType.getDisplayName());
+            logger.info("Step 3/{}: Training {} classifier on TRAIN SET ONLY...", totalSteps, algorithmType.getDisplayName());
             long trainStartTime = System.currentTimeMillis();
             SentimentClassifier classifier = createClassifier(algorithmType);
 
@@ -203,12 +207,12 @@ public class ModelTrainer {
             }
 
             // Step 4: Validate trained model (on train set for sanity check)
-            logger.info("Step 4/5: Validating trained model...");
+            logger.info("Step 4/{}: Validating trained model...", totalSteps);
             validateModel(classifier, split.train);
             logger.info(" Model validation passed");
 
             // Step 5: Evaluate on test set
-            logger.info("Step 5/7: Evaluating model on test set...");
+            logger.info("Step 5/{}: Evaluating model on test set...", totalSteps);
             ClassifierEvaluationResult testEvaluation = evaluateOnTestSet(classifier, split.test);
             logger.info(" Test Accuracy: {}", String.format("%.3f", testEvaluation.getAccuracy()));
             logger.info(" Test Precision (macro): {}", String.format("%.3f", testEvaluation.getMacroAvgPrecision()));
@@ -217,13 +221,12 @@ public class ModelTrainer {
 
             // Step 6: Analyze feature importance (if requested)
             if (showFeatureImportance) {
-                logger.info("Step 6/7: Analyzing feature importance...");
+                logger.info("Step 6/{}: Analyzing feature importance...", totalSteps);
                 analyzeAndPrintFeatureImportance(classifier, split, topFeaturesCount, outputPath, algorithmType);
             }
 
-            // Step 7: Save model and metadata to disk
-            int finalStep = showFeatureImportance ? 7 : 6;
-            logger.info("Step {}/{}: Saving model and metadata to {}...", finalStep, finalStep, outputPath);
+            // Final step: Save model and metadata to disk
+            logger.info("Step {}/{}: Saving model and metadata to {}...", totalSteps, totalSteps, outputPath);
             long saveStartTime = System.currentTimeMillis();
             saveModel(classifier, outputPath, algorithmType);
             saveTrainingMetadata(dataPath, outputPath, algorithmType, split, testEvaluation, trainTime, classifier,

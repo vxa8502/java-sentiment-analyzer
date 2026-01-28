@@ -41,7 +41,7 @@ public record HealthResponse(
     public record LabelDistribution(
         double positive,
         double negative,
-        double neutral
+        double uncertain
     ) {}
 
     public record LatencyStats(
