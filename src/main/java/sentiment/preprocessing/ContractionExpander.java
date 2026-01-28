@@ -24,8 +24,9 @@ public class ContractionExpander {
     private static final Logger logger = LoggerFactory.getLogger(ContractionExpander.class);
 
     // Comprehensive contractions map with case-insensitive matching
+    // Includes both standard (with apostrophe) and informal (without apostrophe) forms
     private static final Map<String, String> CONTRACTIONS = Map.<String, String>ofEntries(
-            // Common negative contractions
+            // Common negative contractions (with apostrophe)
             Map.entry("don't", "do not"),
             Map.entry("doesn't", "does not"),
             Map.entry("didn't", "did not"),
@@ -41,18 +42,44 @@ public class ContractionExpander {
             Map.entry("mightn't", "might not"),
             Map.entry("oughtn't", "ought not"),
 
-            // "Be" verb contractions
+            // Common negative contractions (without apostrophe - informal/social media)
+            Map.entry("dont", "do not"),
+            Map.entry("doesnt", "does not"),
+            Map.entry("didnt", "did not"),
+            Map.entry("wont", "will not"),
+            Map.entry("wouldnt", "would not"),
+            Map.entry("cant", "cannot"),
+            Map.entry("couldnt", "could not"),
+            Map.entry("shouldnt", "should not"),
+            Map.entry("mustnt", "must not"),
+            Map.entry("neednt", "need not"),
+            Map.entry("darent", "dare not"),
+            Map.entry("mightnt", "might not"),
+            Map.entry("oughtnt", "ought not"),
+
+            // "Be" verb contractions (with apostrophe)
             Map.entry("isn't", "is not"),
             Map.entry("aren't", "are not"),
             Map.entry("wasn't", "was not"),
             Map.entry("weren't", "were not"),
 
-            // "Have" verb contractions
+            // "Be" verb contractions (without apostrophe)
+            Map.entry("isnt", "is not"),
+            Map.entry("arent", "are not"),
+            Map.entry("wasnt", "was not"),
+            Map.entry("werent", "were not"),
+
+            // "Have" verb contractions (with apostrophe)
             Map.entry("haven't", "have not"),
             Map.entry("hasn't", "has not"),
             Map.entry("hadn't", "had not"),
 
-            // Positive contractions with pronouns
+            // "Have" verb contractions (without apostrophe)
+            Map.entry("havent", "have not"),
+            Map.entry("hasnt", "has not"),
+            Map.entry("hadnt", "had not"),
+
+            // Positive contractions with pronouns (with apostrophe)
             Map.entry("i'm", "I am"),
             Map.entry("you're", "you are"),
             Map.entry("he's", "he is"),
@@ -70,13 +97,37 @@ public class ContractionExpander {
             Map.entry("how's", "how is"),
             Map.entry("who's", "who is"),
 
-            // "Have" contractions
+            // Positive contractions with pronouns (without apostrophe)
+            // Note: Some omitted to avoid confusion with real words
+            // (e.g., "were" = past tense, "its" = possessive, "well" = adverb)
+            Map.entry("im", "I am"),
+            Map.entry("youre", "you are"),
+            Map.entry("hes", "he is"),
+            Map.entry("shes", "she is"),
+            Map.entry("theyre", "they are"),
+            Map.entry("thats", "that is"),
+            Map.entry("theres", "there is"),
+            Map.entry("heres", "here is"),
+            Map.entry("whats", "what is"),
+            Map.entry("wheres", "where is"),
+            Map.entry("whens", "when is"),
+            Map.entry("whys", "why is"),
+            Map.entry("hows", "how is"),
+            Map.entry("whos", "who is"),
+
+            // "Have" contractions (with apostrophe)
             Map.entry("i've", "I have"),
             Map.entry("you've", "you have"),
             Map.entry("we've", "we have"),
             Map.entry("they've", "they have"),
 
-            // "Will" contractions
+            // "Have" contractions (without apostrophe)
+            Map.entry("ive", "I have"),
+            Map.entry("youve", "you have"),
+            Map.entry("weve", "we have"),
+            Map.entry("theyve", "they have"),
+
+            // "Will" contractions (with apostrophe)
             Map.entry("i'll", "I will"),
             Map.entry("you'll", "you will"),
             Map.entry("he'll", "he will"),
@@ -86,7 +137,15 @@ public class ContractionExpander {
             Map.entry("they'll", "they will"),
             Map.entry("that'll", "that will"),
 
-            // "Would" contractions
+            // "Will" contractions (without apostrophe)
+            // Note: Some omitted to avoid confusion with real words
+            // (e.g., "ill" = sick, "well" = adverb, "shell" = seashell, "hell" = place)
+            Map.entry("youll", "you will"),
+            Map.entry("itll", "it will"),
+            Map.entry("theyll", "they will"),
+            Map.entry("thatll", "that will"),
+
+            // "Would" contractions (with apostrophe)
             Map.entry("i'd", "I would"),
             Map.entry("you'd", "you would"),
             Map.entry("he'd", "he would"),
@@ -95,7 +154,14 @@ public class ContractionExpander {
             Map.entry("they'd", "they would"),
             Map.entry("that'd", "that would"),
 
-            // Informal contractions
+            // "Would" contractions (without apostrophe)
+            // Note: Some omitted to avoid confusion with real words
+            // (e.g., "id" = identification, "wed" = marry, "shed" = building)
+            Map.entry("youd", "you would"),
+            Map.entry("theyd", "they would"),
+            Map.entry("thatd", "that would"),
+
+            // Informal contractions (with apostrophe)
             Map.entry("ain't", "am not"),
             Map.entry("y'all", "you all"),
             Map.entry("'til", "until"),
@@ -104,7 +170,16 @@ public class ContractionExpander {
             Map.entry("'round", "around"),
             Map.entry("o'clock", "of the clock"),
 
+            // Informal contractions (without apostrophe)
+            // Note: "cause", "bout", "til" are NOT included because they are also
+            // real English words (e.g., "the cause of", "a bout of", "cash til").
+            // Only include forms that are unambiguously contractions.
+            Map.entry("aint", "am not"),
+            Map.entry("yall", "you all"),
+
             // Let's handle "let us"
+            // Note: "lets" (without apostrophe) is NOT included because it's also
+            // the third person singular verb "lets" (e.g., "this lets you...")
             Map.entry("let's", "let us")
     );
 
@@ -200,8 +275,10 @@ public class ContractionExpander {
      */
     public ContractionStats getStats() {
         int totalContractions = CONTRACTIONS.size();
-        long negativeContractions = CONTRACTIONS.keySet().stream()
-                .filter(key -> key.contains("n't"))
+        // Count negative contractions: both "n't" (standard) and "nt" endings (informal)
+        // but exclude words ending in "nt" that aren't negations (e.g., "bout", "til")
+        long negativeContractions = CONTRACTIONS.entrySet().stream()
+                .filter(entry -> entry.getValue().contains("not"))
                 .count();
 
         return new ContractionStats(totalContractions, (int) negativeContractions);

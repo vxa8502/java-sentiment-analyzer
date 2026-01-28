@@ -631,6 +631,54 @@ class TextPreprocessorTest {
             "Words after expanded 'not' should be tagged. Got: " + result);
     }
 
+    @Test
+    @DisplayName("Negation scope should handle informal contractions without apostrophes")
+    void testNegationScope_InformalContractions() {
+        TextPreprocessor realPreprocessor = createRealPreprocessor("SENTIMENT_AWARE");
+
+        List<Dataset> trainingData = createMockTrainingData(10);
+        realPreprocessor.fit(trainingData);
+
+        // "dont" (no apostrophe) should expand to "do not" and trigger negation scope
+        String result = realPreprocessor.transform("dont like this");
+
+        assertTrue(result.contains("NOT_like"),
+            "Informal 'dont' should expand and trigger negation scope. Got: " + result);
+    }
+
+    @Test
+    @DisplayName("Pipeline should handle informal cant contraction")
+    void testPipeline_InformalCantContraction() {
+        TextPreprocessor realPreprocessor = createRealPreprocessor("SENTIMENT_AWARE");
+
+        List<Dataset> trainingData = createMockTrainingData(10);
+        realPreprocessor.fit(trainingData);
+
+        // "cant" should expand to "cannot" which contains "not" and triggers negation scope
+        String result = realPreprocessor.transform("cant wait to see you");
+
+        // "cannot" should trigger negation, tagging "wait"
+        assertTrue(result.contains("cannot") || result.contains("NOT_wait"),
+            "Informal 'cant' should expand to 'cannot'. Got: " + result);
+    }
+
+    @Test
+    @DisplayName("Pipeline should handle mixed formal and informal contractions")
+    void testPipeline_MixedContractions() {
+        TextPreprocessor realPreprocessor = createRealPreprocessor("SENTIMENT_AWARE");
+
+        List<Dataset> trainingData = createMockTrainingData(10);
+        realPreprocessor.fit(trainingData);
+
+        // Mix of apostrophe and non-apostrophe contractions
+        String result = realPreprocessor.transform("I dont think it's good and I can't believe youre here");
+
+        // Both "dont" and "can't" should expand and work correctly
+        assertFalse(result.contains("dont"), "Informal 'dont' should be expanded. Got: " + result);
+        assertFalse(result.contains("can't"), "Formal 'can't' should be expanded. Got: " + result);
+        assertFalse(result.contains("youre"), "Informal 'youre' should be expanded. Got: " + result);
+    }
+
     // ==================== HELPER METHODS ====================
 
     /**

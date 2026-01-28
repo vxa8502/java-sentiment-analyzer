@@ -446,4 +446,114 @@ class ContractionExpanderTest {
         assertTrue(result.contains("?"));
         assertTrue(result.contains("."));
     }
+
+    // ==================== APOSTROPHE-LESS CONTRACTIONS TESTS ====================
+    // Tests for informal contractions commonly used in social media and casual text
+
+    @Test
+    @DisplayName("expand should expand informal cant (no apostrophe) to cannot")
+    void testExpand_InformalCantToCannot() {
+        String result = expander.expand("I cant wait to see you");
+        assertTrue(result.contains("cannot"), "Expected 'cant' to expand to 'cannot'");
+        assertFalse(result.contains("cant"));
+    }
+
+    @Test
+    @DisplayName("expand should expand informal dont (no apostrophe) to do not")
+    void testExpand_InformalDontToDoNot() {
+        String result = expander.expand("I dont think so");
+        assertTrue(result.contains("do not"), "Expected 'dont' to expand to 'do not'");
+        assertFalse(result.contains("dont"));
+    }
+
+    @Test
+    @DisplayName("expand should expand informal wont (no apostrophe) to will not")
+    void testExpand_InformalWontToWillNot() {
+        String result = expander.expand("They wont come");
+        assertTrue(result.contains("will not"), "Expected 'wont' to expand to 'will not'");
+    }
+
+    @Test
+    @DisplayName("expand should expand informal isnt (no apostrophe) to is not")
+    void testExpand_InformalIsntToIsNot() {
+        String result = expander.expand("This isnt right");
+        assertTrue(result.contains("is not"), "Expected 'isnt' to expand to 'is not'");
+    }
+
+    @Test
+    @DisplayName("expand should expand im to I am")
+    void testExpand_ImToIAmWithoutApostrophe() {
+        String result = expander.expand("im happy");
+        assertTrue(result.toLowerCase().contains("i am"), "Expected 'im' to expand to 'I am'");
+    }
+
+    @Test
+    @DisplayName("expand should expand youre to you are")
+    void testExpand_YoureToYouAreWithoutApostrophe() {
+        String result = expander.expand("youre the best");
+        assertTrue(result.toLowerCase().contains("you are"), "Expected 'youre' to expand to 'you are'");
+    }
+
+    @Test
+    @DisplayName("expand should expand thats to that is")
+    void testExpand_ThatsToThatIsWithoutApostrophe() {
+        String result = expander.expand("thats amazing");
+        assertTrue(result.toLowerCase().contains("that is"), "Expected 'thats' to expand to 'that is'");
+    }
+
+    @Test
+    @DisplayName("expand should expand ive to I have")
+    void testExpand_IveToIHaveWithoutApostrophe() {
+        String result = expander.expand("ive been waiting");
+        assertTrue(result.toLowerCase().contains("i have"), "Expected 'ive' to expand to 'I have'");
+    }
+
+    @Test
+    @DisplayName("expand should expand theyll to they will")
+    void testExpand_TheyllToTheyWillWithoutApostrophe() {
+        String result = expander.expand("theyll be here soon");
+        assertTrue(result.toLowerCase().contains("they will"), "Expected 'theyll' to expand to 'they will'");
+    }
+
+    @Test
+    @DisplayName("expand should expand youd to you would")
+    void testExpand_YoudToYouWouldWithoutApostrophe() {
+        String result = expander.expand("youd love this");
+        assertTrue(result.toLowerCase().contains("you would"), "Expected 'youd' to expand to 'you would'");
+    }
+
+    @Test
+    @DisplayName("expand should handle mixed apostrophe and non-apostrophe contractions")
+    void testExpand_MixedContractions() {
+        String text = "I cant believe you don't know what im saying";
+        String result = expander.expand(text);
+
+        assertTrue(result.contains("cannot"), "Expected 'cant' to expand");
+        assertTrue(result.contains("do not"), "Expected 'don't' to expand");
+        assertTrue(result.toLowerCase().contains("i am"), "Expected 'im' to expand");
+    }
+
+    @Test
+    @DisplayName("expand should handle informal social media text")
+    void testExpand_SocialMediaText() {
+        String text = "cant wait!! youre gonna love this, its amazing and i dont wanna miss it";
+        String result = expander.expand(text);
+
+        assertTrue(result.contains("cannot"), "Expected 'cant' to expand");
+        assertTrue(result.toLowerCase().contains("you are"), "Expected 'youre' to expand");
+        assertTrue(result.contains("do not"), "Expected 'dont' to expand");
+    }
+
+    @Test
+    @DisplayName("expand should not expand words that look like contractions but are real words")
+    void testExpand_ShouldNotExpandRealWords() {
+        // These should NOT be expanded as they are real English words
+        String text = "I feel ill and need to rest well in the shed";
+        String result = expander.expand(text);
+
+        // "ill", "well", and "shed" should remain unchanged
+        assertTrue(result.contains("ill"), "Should not expand 'ill' (it means sick)");
+        assertTrue(result.contains("well"), "Should not expand 'well' (it's an adverb)");
+        assertTrue(result.contains("shed"), "Should not expand 'shed' (it's a building)");
+    }
 }
