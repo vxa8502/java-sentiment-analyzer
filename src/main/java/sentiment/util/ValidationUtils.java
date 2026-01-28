@@ -1,10 +1,12 @@
 package sentiment.util;
 
+import java.util.Collection;
+
 /**
- * Centralized text validation utilities.
+ * Centralized validation utilities.
  *
- * <p>This class provides consistent validation methods for null or empty text
- * across the entire application. Using these utilities ensures:
+ * <p>This class provides consistent validation methods for null or empty values
+ * (strings and collections) across the entire application. Using these utilities ensures:
  * <ul>
  *   <li>Consistent validation logic (no code duplication)</li>
  *   <li>Uniform error messages</li>
@@ -17,10 +19,14 @@ package sentiment.util;
  * <pre>
  * // Strict validation (throws exception)
  * ValidationUtils.requireNonEmpty(text, "Input text");
+ * ValidationUtils.requireNonEmpty(datasets, "Training datasets");
  *
  * // Lenient validation (returns boolean)
  * if (ValidationUtils.isNullOrEmpty(text)) {
  *     return defaultValue;
+ * }
+ * if (ValidationUtils.isNullOrEmpty(results)) {
+ *     return Collections.emptyList();
  * }
  * </pre>
  */
@@ -125,6 +131,43 @@ public final class ValidationUtils {
             if (objects[i] == null) {
                 throw new IllegalArgumentException(names[i] + " cannot be null");
             }
+        }
+    }
+
+    // ========== Collection Validation ==========
+
+    /**
+     * Checks if a collection is null or empty.
+     *
+     * <p>This is the <b>lenient validation</b> pattern - returns a boolean
+     * allowing callers to handle empty collections gracefully.
+     *
+     * <p><b>Use case:</b> Data processing methods that can return early
+     * or provide defaults for empty inputs.
+     *
+     * @param collection The collection to check
+     * @return {@code true} if collection is null or empty, {@code false} otherwise
+     */
+    public static boolean isNullOrEmpty(Collection<?> collection) {
+        return collection == null || collection.isEmpty();
+    }
+
+    /**
+     * Validates that a collection is non-null and non-empty, throwing an exception if invalid.
+     *
+     * <p>This is the <b>strict validation</b> pattern - throws an exception
+     * ensuring that callers must provide valid input.
+     *
+     * <p><b>Use case:</b> Training methods and data loaders that require
+     * at least one element to function correctly.
+     *
+     * @param collection The collection to validate
+     * @param fieldName The name of the field being validated (for error message)
+     * @throws IllegalArgumentException if collection is null or empty
+     */
+    public static void requireNonEmpty(Collection<?> collection, String fieldName) {
+        if (isNullOrEmpty(collection)) {
+            throw new IllegalArgumentException(fieldName + " cannot be null or empty");
         }
     }
 }
