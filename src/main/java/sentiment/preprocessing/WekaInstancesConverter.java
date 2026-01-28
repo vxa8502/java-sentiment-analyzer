@@ -340,14 +340,7 @@ public class WekaInstancesConverter extends sentiment.TrainingTemplate<Instances
         Instances instances = new Instances("SentimentAnalysis", attributes, datasets.size());
         instances.setClassIndex(1);
 
-        for (Dataset dataset : datasets) {
-            DenseInstance instance = new DenseInstance(2);
-            instance.setDataset(instances);  // Must set dataset BEFORE setValue()
-            String preprocessed = sanitizeForWeka(textPreprocessor.transform(dataset.getText()));
-            instance.setValue(0, preprocessed);
-            instance.setValue(1, dataset.getSentiment().getDisplayName());
-            instances.add(instance);
-        }
+        populateInstances(instances, datasets);
 
         return instances;
     }
@@ -366,16 +359,27 @@ public class WekaInstancesConverter extends sentiment.TrainingTemplate<Instances
         // Use the training structure as template to preserve class attribute values
         Instances instances = new Instances(filterTrainingStructure, datasets.size());
 
+        populateInstances(instances, datasets);
+
+        return instances;
+    }
+
+    /**
+     * Populates a Weka Instances object with preprocessed text from datasets.
+     * Shared by both training and inference instance creation.
+     *
+     * @param target the Instances object to populate
+     * @param datasets the source datasets
+     */
+    private void populateInstances(Instances target, List<Dataset> datasets) {
         for (Dataset dataset : datasets) {
             DenseInstance instance = new DenseInstance(2);
-            instance.setDataset(instances);
+            instance.setDataset(target);  // Must set dataset BEFORE setValue()
             String preprocessed = sanitizeForWeka(textPreprocessor.transform(dataset.getText()));
             instance.setValue(0, preprocessed);
             instance.setValue(1, dataset.getSentiment().getDisplayName());
-            instances.add(instance);
+            target.add(instance);
         }
-
-        return instances;
     }
 
     private Instance createSingleRawInstance(String text, String defaultSentiment) {

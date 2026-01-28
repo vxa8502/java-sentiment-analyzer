@@ -6,6 +6,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.beans.factory.annotation.Value;
 
 import java.util.*;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 /**
@@ -122,48 +123,35 @@ public class IntelligentStopwordRemover {
      */
     private List<String> applyStopwordStrategy(List<String> tokens, StopwordStrategy strategy) {
         return switch (strategy) {
-            case BASIC -> removeBasicStopwords(tokens);
-            case EXTENDED -> removeExtendedStopwords(tokens);
-            case SENTIMENT_AWARE -> removeSentimentAwareStopwords(tokens);
-            case MINIMAL -> removeMinimalStopwords(tokens);
+            case BASIC -> filterStopwords(tokens, this::isBasicStopword);
+            case EXTENDED -> filterStopwords(tokens, this::isExtendedStopword);
+            case SENTIMENT_AWARE -> filterStopwords(tokens, this::isSentimentAwareStopword);
+            case MINIMAL -> filterStopwords(tokens, this::isMinimalStopword);
         };
     }
 
     /**
-     * Basic stopword removal - conservative approach
+     * Filters tokens by removing those identified as stopwords by the given predicate.
+     *
+     * @param tokens list of tokens to filter
+     * @param isStopword predicate that returns true if a token is a stopword
+     * @return filtered list with stopwords removed
      */
-    private List<String> removeBasicStopwords(List<String> tokens) {
+    private List<String> filterStopwords(List<String> tokens, Predicate<String> isStopword) {
         return tokens.stream()
-                .filter(token -> !isBasicStopword(token))
+                .filter(token -> !isStopword.test(token))
                 .collect(Collectors.toList());
     }
 
-    /**
-     * Extended stopword removal - more aggressive filtering
-     */
-    private List<String> removeExtendedStopwords(List<String> tokens) {
-        return tokens.stream()
-                .filter(token -> !isExtendedStopword(token))
-                .collect(Collectors.toList());
-    }
+    private static final Set<String> MINIMAL_STOPWORDS = Set.of(
+            "the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for", "of", "with", "by"
+    );
 
     /**
-     * Sentiment-aware stopword removal - preserves sentiment-critical words
+     * Check if token is a minimal stopword (most common function words only)
      */
-    private List<String> removeSentimentAwareStopwords(List<String> tokens) {
-        return tokens.stream()
-                .filter(token -> !isSentimentAwareStopword(token))
-                .collect(Collectors.toList());
-    }
-
-    /**
-     * Minimal stopword removal - only removes the most common function words
-     */
-    private List<String> removeMinimalStopwords(List<String> tokens) {
-        Set<String> minimalStops = Set.of("the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for", "of", "with", "by");
-        return tokens.stream()
-                .filter(token -> !minimalStops.contains(token.toLowerCase()))
-                .collect(Collectors.toList());
+    private boolean isMinimalStopword(String token) {
+        return MINIMAL_STOPWORDS.contains(token.toLowerCase());
     }
 
     /**
