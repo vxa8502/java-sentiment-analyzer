@@ -1,6 +1,8 @@
 package sentiment.api.metrics;
 
 import io.micrometer.core.instrument.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
@@ -13,6 +15,8 @@ import java.util.concurrent.atomic.LongAdder;
  */
 @Component
 public class PredictionMetrics {
+
+    private static final Logger logger = LoggerFactory.getLogger(PredictionMetrics.class);
 
     private final MeterRegistry meterRegistry;
 
@@ -63,10 +67,18 @@ public class PredictionMetrics {
                 .register(meterRegistry);
 
         // Inference latency timer with percentiles
+        // Configure histogram bounds to match expected latency range (1ms-5s) and use longer
+        // expiry window to prevent stale percentile values during low-traffic periods.
+        // Without explicit bounds, Micrometer defaults (1ms-30s) create sparse bucket coverage
+        // that causes inaccurate percentile approximations.
         this.inferenceTimer = Timer.builder("sentiment.inference.duration")
                 .description("Time to perform sentiment inference")
                 .publishPercentiles(0.5, 0.95, 0.99)
                 .publishPercentileHistogram()
+                .minimumExpectedValue(Duration.ofMillis(1))
+                .maximumExpectedValue(Duration.ofSeconds(5))
+                .distributionStatisticExpiry(Duration.ofMinutes(5))
+                .distributionStatisticBufferLength(5)
                 .register(meterRegistry);
 
         // Confidence distribution summary
@@ -165,16 +177,22 @@ public class PredictionMetrics {
     }
 
     private double getPercentile(Timer timer, double percentile) {
-        // percentileValues() array indices based on publishPercentiles(0.5, 0.95, 0.99):
-        // [0] = p50, [1] = p95, [2] = p99
-        int percentileInt = (int) Math.round(percentile * 100);
-        int index = switch (percentileInt) {
-            case 50 -> 0;
-            case 95 -> 1;
-            case 99 -> 2;
-            default -> throw new IllegalArgumentException("Unknown percentile: " + percentile);
-        };
-        return timer.takeSnapshot().percentileValues()[index].value(java.util.concurrent.TimeUnit.MILLISECONDS);
+        // Iterate through percentileValues and match by percentile value (not index)
+        // This is more robust than assuming array order matches publishPercentiles() order
+        var snapshot = timer.takeSnapshot();
+        for (var vap : snapshot.percentileValues()) {
+            if (Math.abs(vap.percentile() - percentile) < 0.001) {
+                return vap.value(java.util.concurrent.TimeUnit.MILLISECONDS);
+            }
+        }
+        // Fallback: return 0 if percentile not found
+        // This can happen if no data recorded yet, or if percentile config is mismatched
+        if (timer.count() > 0) {
+            logger.warn("Percentile {} not found in timer snapshot with {} recordings. " +
+                    "Available percentiles: {}", percentile, timer.count(),
+                    java.util.Arrays.toString(snapshot.percentileValues()));
+        }
+        return 0.0;
     }
 
     /**
