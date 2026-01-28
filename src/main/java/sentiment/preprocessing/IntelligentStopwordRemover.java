@@ -98,6 +98,16 @@ public class IntelligentStopwordRemover {
             "super", "ultra", "mega", "hyper", "exceptionally", "remarkably"
     );
 
+    // Phrase patterns where stopwords should be preserved for sentiment analysis
+    // Key: the stopword, Value: words that follow it to form a meaningful phrase
+    private static final Map<String, Set<String>> PROTECTED_PHRASE_PATTERNS = Map.of(
+            "at", Set.of("best", "worst", "least", "most", "all"),
+            "by", Set.of("far", "no", "any"),
+            "no", Set.of("way", "means", "doubt"),
+            "so", Set.of("far", "much"),
+            "as", Set.of("well", "good", "bad", "expected")
+    );
+
     /**
      * Main stopword removal method with strategy selection
      */
@@ -132,15 +142,70 @@ public class IntelligentStopwordRemover {
 
     /**
      * Filters tokens by removing those identified as stopwords by the given predicate.
+     * Preserves stopwords that are part of sentiment-critical phrases (e.g., "at best").
      *
      * @param tokens list of tokens to filter
      * @param isStopword predicate that returns true if a token is a stopword
      * @return filtered list with stopwords removed
      */
     private List<String> filterStopwords(List<String> tokens, Predicate<String> isStopword) {
-        return tokens.stream()
-                .filter(token -> !isStopword.test(token))
-                .collect(Collectors.toList());
+        List<String> result = new ArrayList<>();
+
+        for (int i = 0; i < tokens.size(); i++) {
+            String token = tokens.get(i);
+
+            // Check if this token is part of a protected phrase
+            if (isPartOfProtectedPhrase(tokens, i)) {
+                result.add(token);
+                continue;
+            }
+
+            // Standard stopword check
+            if (!isStopword.test(token)) {
+                result.add(token);
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * Checks if a token at the given index is part of a protected phrase that should
+     * not have its stopwords removed (e.g., "at" in "at best").
+     *
+     * @param tokens the full token list
+     * @param index the index of the token to check
+     * @return true if the token is part of a protected phrase
+     */
+    private boolean isPartOfProtectedPhrase(List<String> tokens, int index) {
+        String token = tokens.get(index).toLowerCase();
+
+        // Check if this token starts a protected phrase
+        if (PROTECTED_PHRASE_PATTERNS.containsKey(token)) {
+            Set<String> followers = PROTECTED_PHRASE_PATTERNS.get(token);
+            // Check if the next token completes a protected phrase
+            if (index + 1 < tokens.size()) {
+                String nextToken = tokens.get(index + 1).toLowerCase();
+                if (followers.contains(nextToken)) {
+                    logger.trace("Preserving '{}' as part of phrase '{} {}'", token, token, nextToken);
+                    return true;
+                }
+            }
+        }
+
+        // Check if this token completes a protected phrase (previous token started it)
+        if (index > 0) {
+            String prevToken = tokens.get(index - 1).toLowerCase();
+            if (PROTECTED_PHRASE_PATTERNS.containsKey(prevToken)) {
+                Set<String> followers = PROTECTED_PHRASE_PATTERNS.get(prevToken);
+                if (followers.contains(token)) {
+                    logger.trace("Preserving '{}' as part of phrase '{} {}'", token, prevToken, token);
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private static final Set<String> MINIMAL_STOPWORDS = Set.of(

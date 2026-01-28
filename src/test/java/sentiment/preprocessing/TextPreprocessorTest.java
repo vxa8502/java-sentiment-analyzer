@@ -679,6 +679,65 @@ class TextPreprocessorTest {
         assertFalse(result.contains("youre"), "Informal 'youre' should be expanded. Got: " + result);
     }
 
+    // ==================== PHRASE PROTECTION TESTS ====================
+
+    @Test
+    @DisplayName("Pipeline should preserve 'at' in 'at best' phrase")
+    void testPipeline_PreservesAtBestPhrase() {
+        TextPreprocessor realPreprocessor = createRealPreprocessor("SENTIMENT_AWARE");
+
+        List<Dataset> trainingData = createMockTrainingData(10);
+        realPreprocessor.fit(trainingData);
+
+        String result = realPreprocessor.transform("average at best");
+
+        // "at" should be preserved because it's part of "at best" phrase
+        assertTrue(result.contains("at") && result.contains("best"),
+            "Both 'at' and 'best' should be preserved in 'at best' phrase. Got: " + result);
+    }
+
+    @Test
+    @DisplayName("Pipeline should preserve 'at' in 'at worst' phrase")
+    void testPipeline_PreservesAtWorstPhrase() {
+        TextPreprocessor realPreprocessor = createRealPreprocessor("SENTIMENT_AWARE");
+
+        List<Dataset> trainingData = createMockTrainingData(10);
+        realPreprocessor.fit(trainingData);
+
+        String result = realPreprocessor.transform("this is at worst mediocre");
+
+        assertTrue(result.contains("at") && result.contains("worst"),
+            "Both 'at' and 'worst' should be preserved in 'at worst' phrase. Got: " + result);
+    }
+
+    @Test
+    @DisplayName("Pipeline should preserve 'at' in 'at all' phrase")
+    void testPipeline_PreservesAtAllPhrase() {
+        TextPreprocessor realPreprocessor = createRealPreprocessor("SENTIMENT_AWARE");
+
+        List<Dataset> trainingData = createMockTrainingData(10);
+        realPreprocessor.fit(trainingData);
+
+        String result = realPreprocessor.transform("not good at all");
+
+        assertTrue(result.contains("at") && result.contains("all"),
+            "Both 'at' and 'all' should be preserved in 'at all' phrase. Got: " + result);
+    }
+
+    @Test
+    @DisplayName("Pipeline should preserve 'by' in 'by far' phrase")
+    void testPipeline_PreservesByFarPhrase() {
+        TextPreprocessor realPreprocessor = createRealPreprocessor("SENTIMENT_AWARE");
+
+        List<Dataset> trainingData = createMockTrainingData(10);
+        realPreprocessor.fit(trainingData);
+
+        String result = realPreprocessor.transform("this is by far the best");
+
+        assertTrue(result.contains("by") && result.contains("far"),
+            "Both 'by' and 'far' should be preserved in 'by far' phrase. Got: " + result);
+    }
+
     // ==================== HELPER METHODS ====================
 
     /**
