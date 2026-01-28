@@ -9,6 +9,7 @@ import org.springframework.stereotype.Component;
 import sentiment.util.ValidationUtils;
 
 import java.io.BufferedReader;
+import java.io.BufferedWriter;
 import java.io.FileReader;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -395,6 +396,44 @@ public class SimpleDatasetLoader {
             filePath,
             "TXT"
         );
+    }
+
+    // CSV WRITING
+
+    /**
+     * Write datasets to CSV file in the standard format used by this loader.
+     * Format: "review,sentiment" with quoted text field and lowercase sentiment.
+     *
+     * This is the inverse of loadCsv() - keeping read/write together ensures format consistency.
+     *
+     * @param data list of datasets to write
+     * @param path destination file path
+     * @throws IOException if file cannot be written
+     */
+    public static void writeCsv(List<Dataset> data, Path path) throws IOException {
+        try (BufferedWriter writer = Files.newBufferedWriter(path, StandardCharsets.UTF_8)) {
+            // Use explicit \n for cross-platform consistency (matches original format)
+            writer.write("review,sentiment\n");
+
+            for (Dataset sample : data) {
+                writer.write('"');
+                writer.write(escapeCsvField(sample.getText()));
+                writer.write("\",");
+                writer.write(sample.getSentiment().name().toLowerCase());
+                writer.write('\n');
+            }
+        }
+    }
+
+    /**
+     * Escape special characters in CSV field (quotes and newlines).
+     */
+    private static String escapeCsvField(String text) {
+        if (text == null) {
+            return "";
+        }
+        // Double quotes to escape them in CSV
+        return text.replace("\"", "\"\"");
     }
 
     //  UTILITIES

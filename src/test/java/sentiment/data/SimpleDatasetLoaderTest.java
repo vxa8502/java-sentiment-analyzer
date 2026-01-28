@@ -321,4 +321,62 @@ class SimpleDatasetLoaderTest {
         assertEquals(50, positiveCount);
         assertEquals(50, negativeCount);
     }
+
+    // ==================== WRITE CSV TESTS ====================
+
+    @Test
+    @DisplayName("Should write and read back CSV roundtrip")
+    void testWriteCsv_Roundtrip() throws Exception {
+        // Create test data
+        List<Dataset> original = List.of(
+            new Dataset.Builder("This is a positive review", Dataset.SentimentLabel.POSITIVE).build(),
+            new Dataset.Builder("This is a negative review", Dataset.SentimentLabel.NEGATIVE).build(),
+            new Dataset.Builder("Another positive one", Dataset.SentimentLabel.POSITIVE).build()
+        );
+
+        // Write to CSV
+        Path csvFile = tempDir.resolve("roundtrip.csv");
+        SimpleDatasetLoader.writeCsv(original, csvFile);
+
+        // Read back
+        List<Dataset> loaded = loader.load(csvFile.toString());
+
+        // Verify
+        assertEquals(original.size(), loaded.size());
+        for (int i = 0; i < original.size(); i++) {
+            assertEquals(original.get(i).getText(), loaded.get(i).getText());
+            assertEquals(original.get(i).getSentiment(), loaded.get(i).getSentiment());
+        }
+    }
+
+    @Test
+    @DisplayName("Should escape quotes in CSV output")
+    void testWriteCsv_EscapesQuotes() throws Exception {
+        List<Dataset> data = List.of(
+            new Dataset.Builder("Text with \"quotes\" inside", Dataset.SentimentLabel.POSITIVE).build()
+        );
+
+        Path csvFile = tempDir.resolve("quotes.csv");
+        SimpleDatasetLoader.writeCsv(data, csvFile);
+
+        // Read back and verify quotes are preserved
+        List<Dataset> loaded = loader.load(csvFile.toString());
+
+        assertEquals(1, loaded.size());
+        assertEquals("Text with \"quotes\" inside", loaded.get(0).getText());
+    }
+
+    @Test
+    @DisplayName("Should handle empty list for CSV write")
+    void testWriteCsv_EmptyList() throws Exception {
+        List<Dataset> data = List.of();
+
+        Path csvFile = tempDir.resolve("empty.csv");
+        SimpleDatasetLoader.writeCsv(data, csvFile);
+
+        // File should exist with just header
+        assertTrue(Files.exists(csvFile));
+        String content = Files.readString(csvFile);
+        assertTrue(content.startsWith("review,sentiment"));
+    }
 }

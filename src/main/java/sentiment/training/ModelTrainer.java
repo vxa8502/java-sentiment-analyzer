@@ -7,6 +7,7 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import sentiment.data.Dataset;
+import sentiment.data.DatasetUtils;
 import sentiment.data.SimpleDatasetLoader;
 import sentiment.data.DatasetLoadResult;
 import sentiment.data.SplitManifest;
@@ -21,13 +22,11 @@ import sentiment.preprocessing.WekaInstancesConverter;
 import sentiment.config.FeatureExtractionProperties;
 import weka.core.Instances;
 
-import java.io.FileWriter;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
-import java.util.stream.Collectors;
 
 /**
  * Service for training and persisting sentiment analysis models.
@@ -327,59 +326,8 @@ public class ModelTrainer {
 
         // Balance classes by undersampling majority class to match minority class
         // This ensures fair comparison across datasets (IMDB 50/50, Amazon 50/50, Yelp 75/25 -> 50/50)
-        List<Dataset> balanced = balanceClasses(shuffled);
-
-        return balanced;
-    }
-
-    /**
-     * Balances classes by undersampling the majority class to match the minority class.
-     * This ensures fair model comparison across datasets with different class distributions.
-     *
-     * @param data shuffled dataset (may be imbalanced)
-     * @return balanced dataset with equal positive/negative samples
-     */
-    private List<Dataset> balanceClasses(List<Dataset> data) {
-        // Separate by class
-        List<Dataset> positive = data.stream()
-                .filter(d -> d.getSentiment() == Dataset.SentimentLabel.POSITIVE)
-                .collect(Collectors.toList());
-        List<Dataset> negative = data.stream()
-                .filter(d -> d.getSentiment() == Dataset.SentimentLabel.NEGATIVE)
-                .collect(Collectors.toList());
-
-        // Find minority class size
-        int minoritySize = Math.min(positive.size(), negative.size());
-
-        if (minoritySize == 0) {
-            logger.warn("One class has zero samples - cannot balance. Returning original data.");
-            return data;
-        }
-
-        // Check if already balanced (within 5% tolerance)
-        double ratio = (double) Math.min(positive.size(), negative.size()) /
-                       Math.max(positive.size(), negative.size());
-        if (ratio >= 0.95) {
-            logger.info("Classes already balanced (ratio: {}) - no undersampling needed",
-                    String.format("%.2f", ratio));
-            return data;
-        }
-
-        // Undersample majority class
-        List<Dataset> balancedPositive = positive.subList(0, minoritySize);
-        List<Dataset> balancedNegative = negative.subList(0, minoritySize);
-
-        // Combine and shuffle again to mix classes
-        List<Dataset> balanced = new ArrayList<>(minoritySize * 2);
-        balanced.addAll(balancedPositive);
-        balanced.addAll(balancedNegative);
-        Collections.shuffle(balanced, new Random(42));
-
-        logger.info("Balanced classes: {} -> {} samples (undersampled {} from majority class)",
-                data.size(), balanced.size(), data.size() - balanced.size());
-        logger.info("Final distribution: positive={}, negative={}", minoritySize, minoritySize);
-
-        return balanced;
+        // Uses shared utility to ensure consistent balancing across training and data preparation
+        return DatasetUtils.balanceByUndersampling(shuffled, 42L);
     }
 
     /**
@@ -675,28 +623,19 @@ public class ModelTrainer {
         }
 
         // Save both splits (backward compatibility path - no manifest)
+        // Uses shared CSV writer to ensure format consistency with data preparation pipeline
         logger.warn("Saving splits without manifest (legacy mode). Run ./scripts/prepare_data.sh for proper setup.");
-        saveSplitToFile(trainData, processedDir.resolve("train.csv"), "train");
-        saveSplitToFile(testData, processedDir.resolve("test.csv"), "test");
-    }
-
-    /**
-     * Save a data split to CSV file.
-     */
-    private void saveSplitToFile(List<Dataset> data, Path filePath, String splitName) {
-        try (FileWriter writer = new FileWriter(filePath.toFile())) {
-            writer.write("review,sentiment\n");
-
-            for (Dataset sample : data) {
-                String sentiment = sample.getSentiment().name().toLowerCase();
-                String text = escapeCsv(sample.getText());
-                writer.write("\"" + text + "\"," + sentiment + "\n");
-            }
-
-            logger.info("Saved {} split ({} samples) to: {}", splitName, data.size(), filePath);
-
-        } catch (Exception e) {
-            logger.error("ARTIFACT_SAVE_FAILED: {} split - {}", splitName, e.getMessage());
+        try {
+            SimpleDatasetLoader.writeCsv(trainData, processedDir.resolve("train.csv"));
+            logger.info("Saved train split ({} samples) to: {}", trainData.size(), processedDir.resolve("train.csv"));
+        } catch (IOException e) {
+            logger.error("ARTIFACT_SAVE_FAILED: train split - {}", e.getMessage());
+        }
+        try {
+            SimpleDatasetLoader.writeCsv(testData, processedDir.resolve("test.csv"));
+            logger.info("Saved test split ({} samples) to: {}", testData.size(), processedDir.resolve("test.csv"));
+        } catch (IOException e) {
+            logger.error("ARTIFACT_SAVE_FAILED: test split - {}", e.getMessage());
         }
     }
 
@@ -720,15 +659,6 @@ public class ModelTrainer {
         String filename = path.getFileName().toString();
         int dotIndex = filename.lastIndexOf('.');
         return dotIndex > 0 ? filename.substring(0, dotIndex) : filename;
-    }
-
-    /**
-     * Escape CSV special characters in text.
-     */
-    private String escapeCsv(String text) {
-        if (text == null) return "";
-        // Escape quotes by doubling them
-        return text.replace("\"", "\"\"");
     }
 
     private void analyzeAndPrintFeatureImportance(SentimentClassifier classifier,

@@ -4,14 +4,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import sentiment.evaluation.StratifiedDataSplitter;
 
-import java.io.FileWriter;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Instant;
 import java.util.*;
-import java.util.stream.Collectors;
 
 /**
  * Prepares and manages immutable data splits for training.
@@ -165,8 +163,10 @@ public class DataPreparer {
         Path trainPath = processedDir.resolve("train.csv");
         Path testPath = processedDir.resolve("test.csv");
 
-        saveSplitToCsv(split.train, trainPath);
-        saveSplitToCsv(split.test, testPath);
+        SimpleDatasetLoader.writeCsv(split.train, trainPath);
+        logger.info("Saved {} samples to {}", split.train.size(), trainPath);
+        SimpleDatasetLoader.writeCsv(split.test, testPath);
+        logger.info("Saved {} samples to {}", split.test.size(), testPath);
 
         // Step 4: Create and save manifest
         logger.info("Step 4/4: Creating manifest with checksums...");
@@ -221,74 +221,8 @@ public class DataPreparer {
         List<Dataset> shuffled = new ArrayList<>(allData);
         Collections.shuffle(shuffled, new Random(seed));
 
-        // Balance classes by undersampling majority
-        return balanceClasses(shuffled, seed);
-    }
-
-    /**
-     * Balance classes by undersampling the majority class.
-     */
-    private List<Dataset> balanceClasses(List<Dataset> data, int seed) {
-        List<Dataset> positive = data.stream()
-                .filter(d -> d.getSentiment() == Dataset.SentimentLabel.POSITIVE)
-                .collect(Collectors.toList());
-        List<Dataset> negative = data.stream()
-                .filter(d -> d.getSentiment() == Dataset.SentimentLabel.NEGATIVE)
-                .collect(Collectors.toList());
-
-        int minoritySize = Math.min(positive.size(), negative.size());
-
-        if (minoritySize == 0) {
-            logger.warn("One class has zero samples - cannot balance");
-            return data;
-        }
-
-        // Check if already balanced (within 5% tolerance)
-        double ratio = (double) Math.min(positive.size(), negative.size()) /
-                       Math.max(positive.size(), negative.size());
-        if (ratio >= 0.95) {
-            logger.info("Classes already balanced (ratio: {}) - no undersampling needed",
-                    String.format("%.2f", ratio));
-            return data;
-        }
-
-        // Undersample majority class
-        List<Dataset> balancedPositive = positive.subList(0, minoritySize);
-        List<Dataset> balancedNegative = negative.subList(0, minoritySize);
-
-        List<Dataset> balanced = new ArrayList<>(minoritySize * 2);
-        balanced.addAll(balancedPositive);
-        balanced.addAll(balancedNegative);
-        Collections.shuffle(balanced, new Random(seed));
-
-        logger.info("Balanced classes: {} -> {} samples (undersampled {} from majority)",
-                data.size(), balanced.size(), data.size() - balanced.size());
-
-        return balanced;
-    }
-
-    /**
-     * Save a data split to CSV file.
-     */
-    private void saveSplitToCsv(List<Dataset> data, Path filePath) throws IOException {
-        try (FileWriter writer = new FileWriter(filePath.toFile())) {
-            writer.write("review,sentiment\n");
-
-            for (Dataset sample : data) {
-                String sentiment = sample.getSentiment().name().toLowerCase();
-                String text = escapeCsv(sample.getText());
-                writer.write("\"" + text + "\"," + sentiment + "\n");
-            }
-        }
-        logger.info("Saved {} samples to {}", data.size(), filePath);
-    }
-
-    /**
-     * Escape CSV special characters in text.
-     */
-    private String escapeCsv(String text) {
-        if (text == null) return "";
-        return text.replace("\"", "\"\"");
+        // Balance classes by undersampling majority (uses shared utility)
+        return DatasetUtils.balanceByUndersampling(shuffled, seed);
     }
 
     // ===== CLI Entry Point =====
