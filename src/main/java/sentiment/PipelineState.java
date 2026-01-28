@@ -8,9 +8,10 @@ import java.util.List;
  *
  * <p>State transitions:
  * <pre>
- * UNINITIALIZED → TRAINING → READY
- *       ↑            ↓         ↓
- *       ←─────── ERROR ←───────┘
+ * UNINITIALIZED ─→ TRAINING ─→ READY
+ *       ↑ │            ↓        ↓ │
+ *       │ └──────→ ERROR ←──────┘ │
+ *       └──────────────┴──────────┘
  * </pre>
  */
 public enum PipelineState {

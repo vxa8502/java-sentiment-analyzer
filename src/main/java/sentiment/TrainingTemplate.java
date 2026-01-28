@@ -53,7 +53,7 @@ public abstract class TrainingTemplate<T> {
      *
      * @param trainingData training datasets
      * @return training result
-     * @throws IllegalStateException if already training
+     * @throws IllegalStateException if already training or already trained (call reset() first)
      * @throws IllegalArgumentException if trainingData null/empty
      */
     protected final T trainInternal(List<Dataset> trainingData) throws Exception {
@@ -190,10 +190,11 @@ public abstract class TrainingTemplate<T> {
 
     // RESET AND CLEANUP
 
-    /** Resets component to UNINITIALIZED state (NOT thread-safe). */
+    /** Resets component to UNINITIALIZED state. Thread-safe (acquires write lock). */
     public void reset() {
         getStateLock().writeLock().lock(); // EXCLUSIVE ACCESS
         try {
+            ensureStateInitialized();
             getLogger().info("Resetting {} from state: {}", getComponentType(), pipelineState);
 
             // Clear subclass resources
@@ -226,8 +227,9 @@ public abstract class TrainingTemplate<T> {
 
     // READ-ONLY STATE ACCESS
 
-    /** Gets current pipeline state (thread-safe). */
+    /** Gets current pipeline state (thread-safe). Returns UNINITIALIZED if not yet set. */
     public PipelineState getState() {
+        ensureStateInitialized();
         return pipelineState;
     }
 
@@ -243,8 +245,7 @@ public abstract class TrainingTemplate<T> {
 
     // DIAGNOSTICS
 
-    /** Gets comprehensive diagnostics information. */
-    @SuppressWarnings("unused")
+    /** Gets comprehensive diagnostics information. Useful for debugging and monitoring. */
     public String getDiagnostics() {
         getStateLock().readLock().lock();
         try {
@@ -277,17 +278,34 @@ public abstract class TrainingTemplate<T> {
 
     // PERSISTENCE SUPPORT
 
-    /** Acquires write lock for external operations. MUST release via {@link #releaseWriteLock()}. */
+    /**
+     * Acquires write lock for external operations (e.g., model serialization).
+     *
+     * <p><b>Warning:</b> Caller MUST release via {@link #releaseWriteLock()} in a finally block.
+     * Failure to release will cause deadlock. Prefer using {@link #trainInternal} or
+     * {@link #reset} which handle locking automatically.
+     */
     public void acquireWriteLock() {
         getStateLock().writeLock().lock();
     }
 
-    /** Releases write lock after external operations (call in finally block). */
+    /**
+     * Releases write lock after external operations.
+     *
+     * <p><b>Warning:</b> Must be called in a finally block after {@link #acquireWriteLock()}.
+     */
     public void releaseWriteLock() {
         getStateLock().writeLock().unlock();
     }
 
-    /** Sets state directly (bypasses validation - use only for model loading). */
+    /**
+     * Sets state directly, bypassing validation.
+     *
+     * <p><b>Warning:</b> For model deserialization only. Bypasses state machine validation.
+     * Misuse can leave the component in an inconsistent state. Caller must hold write lock.
+     *
+     * @param state the state to set (non-null)
+     */
     public void setState(PipelineState state) {
         this.pipelineState = state;
     }
