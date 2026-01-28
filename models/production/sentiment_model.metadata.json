@@ -4,7 +4,7 @@
     "kernel": "linear",
     "framework": "Weka 3.9.6",
     "version": "2.0.0",
-    "notes": "SVM with C=0.1000, linear kernel (default config, no grid search)"
+    "notes": "Tuned SVM with C=0.0500, 5-fold CV accuracy=89.64%"
   },
   "training_data": {
     "dataset": "amazon_polarity",
@@ -22,8 +22,8 @@
       "val": 0,
       "test": 10000
     },
-    "split_manifest_hash": "0e3eeabb4c45c7888d0205b55d6ba530f9ef2f4f8fd8b0eaad717d1e927e876f",
-    "test_split_hash": "61691be3f00ade15035d21f743cca4e0f4c2b0601c9064879d2b8e22dcd05dbe"
+    "split_manifest_hash": "80599a1eaace61064869321fcd3723f68d2295fab169f8332215b88e42c4640c",
+    "test_split_hash": "de469ff964d5146caf1959bcbafdb8da10268bbd414fffec28c4fbef2e1fe9c0"
   },
   "preprocessing": {
     "lowercase": true,
@@ -37,53 +37,56 @@
   "hyperparameters": {
     "algorithm": "SVM",
     "kernel": "linear",
-    "c_parameter": 0.1,
-    "tuning_method": "default"
+    "c_parameter": 0.05,
+    "tuning_method": "grid_search",
+    "cv_folds": 5,
+    "cv_accuracy": 0.896375,
+    "cv_std_dev": 0.0034074708248017327
   },
   "performance": {
-    "test_accuracy": 0.8848,
-    "test_precision": 0.8848232929235205,
-    "test_recall": 0.8848023585288491,
-    "test_f1": 0.8847986682726052,
+    "test_accuracy": 0.8944,
+    "test_precision": 0.8944193784051615,
+    "test_recall": 0.8943979219832519,
+    "test_f1": 0.894398310372966,
     "confusion_matrix": [
       [
-        4407,
-        596
+        4492,
+        511
       ],
       [
-        556,
-        4441
+        545,
+        4452
       ]
     ],
-    "roc_auc": 0.9500291820105056
+    "roc_auc": 0.9584201050312378
   },
   "cross_domain_performance": {
-    "evaluated_at": "2026-01-23T02:30:21.798067",
+    "evaluated_at": "2026-01-27T11:52:37.323130",
     "imdb_50k": {
-      "accuracy": 0.848984898489849,
-      "f1": 0.848984898489849,
-      "precision": 0.848984898489849,
-      "recall": 0.848984898489849,
+      "accuracy": 0.8532853285328533,
+      "f1": 0.8532853285328533,
+      "precision": 0.8532853285328533,
+      "recall": 0.8532853285328533,
       "test_samples": 9999,
       "is_in_domain": false
     },
     "amazon_polarity": {
-      "accuracy": 0.8848,
-      "f1": 0.8848,
-      "precision": 0.8848,
-      "recall": 0.8848,
+      "accuracy": 0.893,
+      "f1": 0.893,
+      "precision": 0.893,
+      "recall": 0.893,
       "test_samples": 10000,
       "is_in_domain": true
     },
     "yelp": {
-      "accuracy": 0.9099329917225069,
-      "f1": 0.9099329917225069,
-      "precision": 0.9099329917225069,
-      "recall": 0.9099329917225069,
+      "accuracy": 0.9117067402443831,
+      "f1": 0.9117067402443831,
+      "precision": 0.9117067402443831,
+      "recall": 0.9117067402443831,
       "test_samples": 5074,
       "is_in_domain": false
     },
-    "cross_domain_average": 0.879458945106178
+    "cross_domain_average": 0.8824960343886182
   },
   "artifacts": {
     "model_file": "sentiment_model.ser",
@@ -93,12 +96,12 @@
     "random_seed": 42,
     "java_version": "24.0.1",
     "weka_version": "3.9.6",
-    "commit_hash": "61309b6"
+    "commit_hash": "4eea486"
   },
-  "trained_at": "2026-01-23T14:28:35.489733Z",
-  "training_duration_seconds": 4963,
-  "model_id": "svm-2026-01-23T14-28-35",
+  "trained_at": "2026-01-28T08:25:50.346120Z",
+  "training_duration_seconds": 6683,
+  "model_id": "svm-2026-01-28T08-25-50",
   "algorithm": "SVM",
   "model_file": "sentiment_model.ser",
-  "model_size_bytes": 15871293
+  "model_size_bytes": 16623386
 }

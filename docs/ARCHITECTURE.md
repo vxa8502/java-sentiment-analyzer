@@ -13,7 +13,7 @@ This document details the technical architecture, design patterns, and implement
 | **Preprocessing** | TF-IDF + MI selection | Thread-safe with ReadWriteLock |
 | **Deployment** | Docker | Non-root container, health checks |
 
-**Production model**: SVM trained on Amazon reviews, 87.9% cross-domain accuracy.
+**Production model**: SVM trained on Amazon reviews, 88.2% cross-domain accuracy.
 
 **Quick links**: [Training Guide](TRAINING.md) | [Deployment Guide](DEPLOYMENT.md) | [Data Cards](data_cards/)
 

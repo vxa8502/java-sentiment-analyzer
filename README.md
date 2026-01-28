@@ -6,7 +6,7 @@ Goal: Understand engineering rigor of production ML Systems (type safety, circui
 
 | Metric | Value |
 |--------|-------|
-| Cross-domain accuracy | **87.9%** (tested on 3 different text domains) |
+| Cross-domain accuracy | **88.2%** (tested on 3 different text domains) |
 | Latency | **10-50ms** per request |
 | Throughput | **1,000+ req/min** |
 
@@ -43,9 +43,9 @@ The result: a sentiment classifier that runs anywhere Docker runs, handles real 
 
 | Metric | Value |
 |--------|-------|
-| **Test Accuracy** | 88.5% |
-| **Cross-Domain Average** | 87.9% |
-| **F1 Score** | 0.885 |
+| **Test Accuracy** | 89.4% |
+| **Cross-Domain Average** | 88.2% |
+| **F1 Score** | 0.894 |
 | **Latency** | 10-50ms |
 | **Throughput** | ~1,000 req/min |
 
@@ -53,9 +53,9 @@ The production model (SVM trained on Amazon product reviews) was selected for **
 
 | Test Domain | Accuracy |
 |-------------|----------|
-| Amazon (in-domain) | 88.5% |
-| IMDB movies | 84.9% |
-| Yelp restaurants | 91.0% |
+| Amazon (in-domain) | 89.3% |
+| IMDB movies | 85.3% |
+| Yelp restaurants | 91.2% |
 
 ### Model Comparison (12 experiments)
 
@@ -63,26 +63,26 @@ Trained 4 algorithms across 3 domains to find the best trade-off between accurac
 
 | Algorithm | Best In-Domain | Cross-Domain Avg | Notes |
 |-----------|----------------|------------------|-------|
-| **SVM** | 93.7% (Yelp) | **87.9%** | Best generalizing |
-| Random Forest | 91.2% (Yelp) | 85.5% | Largest model files |
-| Logistic Regression | 92.2% (Yelp) | 82.8% | Fastest training |
-| Naive Bayes | 84.0% (IMDB) | 76.3% | Fastest inference |
+| **SVM** | 93.8% (Yelp) | **88.2%** | Best generalizing |
+| Random Forest | 91.6% (Yelp) | 85.2% | Largest model files |
+| Logistic Regression | 92.5% (Yelp) | 83.3% | Fastest training |
+| Naive Bayes | 82.3% (IMDB) | 76.3% | Fastest inference |
 
 Full results: [Model Comparison Report](results/FINAL_COMPREHENSIVE_REPORT.md)
 
 ### What the Model Learned
 
-Top features by SVM weight show the model captures negation patterns and domain-specific language:
+Selected features by SVM weight (curated to highlight negation handling):
 
 | Positive Indicators | Weight | Negative Indicators | Weight |
 |---------------------|--------|---------------------|--------|
-| not disappointed | +1.32 | not worth | -1.50 |
-| excellent | +0.94 | disappointing | -1.26 |
-| awesome | +0.92 | not recommend | -1.27 |
-| fantastic | +0.91 | worst | -1.23 |
-| four stars | +0.88 | two stars | -1.03 |
+| excellent | +0.88 | disappointment | -1.08 |
+| not_disappointed | +0.58 | disappointing | -1.03 |
+| fantastic | +0.76 | worst | -1.03 |
+| awesome | +0.75 | disappointed | -1.01 |
+| not_boring | +0.48 | boring | -1.00 |
 
-The bigram "not disappointed" ranking as the top positive indicator demonstrates that TF-IDF bigrams successfully capture negation—a common failure mode for bag-of-words models.
+Features like `not_disappointed` and `not_boring` show that the preprocessing pipeline captures negation scope (Pang et al. 2002)—a common failure mode for bag-of-words models. Words following negation triggers are prefixed with `not_`, allowing the model to learn that "not boring" indicates positive sentiment.
 
 Full feature analysis: [Feature Importance API endpoint](#feature-importance) or `models/production/sentiment_model-feature-importance.json`
 
