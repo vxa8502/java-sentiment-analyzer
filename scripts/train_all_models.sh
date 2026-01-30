@@ -102,13 +102,32 @@ for dataset in "${DATASETS[@]}"; do
 
         model_path="$PROJECT_ROOT/models/${algo}/${dataset}_${algo}_model.ser"
 
-        # Check if model already exists (skip if it does)
+        # Check if model already exists AND is valid (skip if it does)
         if [ -f "$model_path" ]; then
-            echo "[SKIP] Model already exists: $model_path"
-            models_skipped=$((models_skipped + 1))
-            echo "Progress: $((models_trained + models_skipped + models_failed))/${total_models} | Trained: ${models_trained} | Skipped: ${models_skipped} | Failed: ${models_failed}"
-            echo ""
-            continue
+            # CRITICAL: Verify model file is valid, not just exists
+            # Check 1: File size > 1KB (empty/corrupt files are tiny)
+            file_size=$(stat -f%z "$model_path" 2>/dev/null || stat --printf="%s" "$model_path" 2>/dev/null || echo "0")
+            if [ "$file_size" -lt 1024 ]; then
+                echo "[WARN] Model file exists but is too small (${file_size} bytes), likely corrupted: $model_path"
+                echo "[INFO] Removing corrupted model and retraining..."
+                rm -f "$model_path"
+                # Also remove metadata if it exists
+                rm -f "${model_path%.ser}.metadata.json"
+            else
+                # Check 2: Corresponding metadata file exists
+                meta_path="${model_path%.ser}.metadata.json"
+                if [ ! -f "$meta_path" ]; then
+                    echo "[WARN] Model exists but metadata is missing: $meta_path"
+                    echo "[INFO] Retraining to regenerate metadata..."
+                    rm -f "$model_path"
+                else
+                    echo "[SKIP] Model already exists and validated: $model_path"
+                    models_skipped=$((models_skipped + 1))
+                    echo "Progress: $((models_trained + models_skipped + models_failed))/${total_models} | Trained: ${models_trained} | Skipped: ${models_skipped} | Failed: ${models_failed}"
+                    echo ""
+                    continue
+                fi
+            fi
         fi
 
         # Check if dataset exists
@@ -127,16 +146,38 @@ for dataset in "${DATASETS[@]}"; do
         fi
 
         echo "Using stratified 80/20 split (heap: $heap_size)"
-        MAVEN_OPTS="-Xmx${heap_size} -XX:+UseG1GC -XX:MaxGCPauseMillis=200" mvn -q exec:java \
+
+        # Create logs directory if needed
+        logs_dir="$PROJECT_ROOT/logs"
+        mkdir -p "$logs_dir"
+        log_file="$logs_dir/train_${dataset}_${algo}.log"
+
+        # CRITICAL: Do NOT use -q flag - it suppresses error messages
+        # Capture output to both console (summary) and log file (full details)
+        echo "Training... (full log: $log_file)"
+        MAVEN_OPTS="-Xmx${heap_size} -XX:+UseG1GC -XX:MaxGCPauseMillis=200" mvn exec:java \
             -Dexec.mainClass="sentiment.training.TrainModel" \
             -Dexec.args="\"$dataset_path\" \"$model_path\" \"$algo\" $MAX_SAMPLES false 30 false" \
-            -Dexec.cleanupDaemonThreads=false
+            -Dexec.cleanupDaemonThreads=false 2>&1 | tee "$log_file"
 
-        if [ $? -eq 0 ]; then
+        # Check exit status from PIPESTATUS (since we piped through tee)
+        exit_code=${PIPESTATUS[0]}
+
+        if [ $exit_code -eq 0 ]; then
             echo "[OK] Training complete: $model_path"
             models_trained=$((models_trained + 1))
         else
+            echo ""
+            echo "========================================"
             echo "[FAIL] Training failed for $algo on $dataset"
+            echo "========================================"
+            echo "  Exit code: $exit_code"
+            echo "  Log file: $log_file"
+            echo ""
+            echo "  Last 10 lines of log:"
+            tail -10 "$log_file" | sed 's/^/    /'
+            echo "========================================"
+            echo ""
             models_failed=$((models_failed + 1))
             # Don't exit - continue with remaining models
         fi

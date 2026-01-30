@@ -8,7 +8,6 @@
 #
 # Usage:
 #   ./scripts/promote_to_production.sh
-#   ./scripts/promote_to_production.sh --skip-tuning
 #
 
 set -e
@@ -20,10 +19,10 @@ RESULTS_DIR="$PROJECT_ROOT/results"
 PRODUCTION_DIR="$MODELS_DIR/production"
 CROSS_DOMAIN_JSON="$RESULTS_DIR/cross_domain_matrix.json"
 
-# Dataset paths - configurable via environment variables
-DATA_PATH_IMDB="${SENTIMENT_DATA_IMDB:-data/raw/imdb_50k/IMDB Dataset.csv}"
-DATA_PATH_AMAZON="${SENTIMENT_DATA_AMAZON:-data/raw/amazon_polarity/train.csv}"
-DATA_PATH_YELP="${SENTIMENT_DATA_YELP:-data/raw/yelp/yelp_reviews.csv}"
+# Dataset paths - configurable via environment variables (use absolute paths for reproducibility)
+DATA_PATH_IMDB="${SENTIMENT_DATA_IMDB:-$PROJECT_ROOT/data/raw/imdb_50k/IMDB Dataset.csv}"
+DATA_PATH_AMAZON="${SENTIMENT_DATA_AMAZON:-$PROJECT_ROOT/data/raw/amazon_polarity/train.csv}"
+DATA_PATH_YELP="${SENTIMENT_DATA_YELP:-$PROJECT_ROOT/data/raw/yelp/yelp_reviews.csv}"
 
 # Get data path for a dataset name
 get_data_path() {
@@ -52,23 +51,14 @@ log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 log_step() { echo -e "${BLUE}[STEP]${NC} ${BOLD}$1${NC}"; }
 
-SKIP_TUNING=false
-
 # Parse arguments
 for arg in "$@"; do
     case $arg in
-        --skip-tuning)
-            SKIP_TUNING=true
-            ;;
         --help|-h)
-            echo "Usage: $0 [OPTIONS]"
+            echo "Usage: $0"
             echo ""
-            echo "Options:"
-            echo "  --skip-tuning  Skip hyperparameter tuning for SVM (use default C)"
-            echo ""
-            echo "Examples:"
-            echo "  $0               # Auto-detect winner, full pipeline"
-            echo "  $0 --skip-tuning # Skip SVM tuning, faster"
+            echo "Promotes the best cross-domain model to production."
+            echo "For SVM: performs hyperparameter tuning via grid search."
             echo ""
             exit 0
             ;;
@@ -126,15 +116,9 @@ get_source_metadata_path() {
     echo "$MODELS_DIR/$ALGO_DIR/$meta_file"
 }
 
-# Tune and retrain SVM
+# Tune and retrain SVM (always with hyperparameter tuning)
 tune_and_retrain_svm() {
-    local enable_tuning="true"
-    if [ "$SKIP_TUNING" = true ]; then
-        log_step "Training SVM (tuning SKIPPED)..."
-        enable_tuning="false"
-    else
-        log_step "Hyperparameter tuning SVM (grid search)..."
-    fi
+    log_step "Hyperparameter tuning SVM (grid search)..."
 
     # Get data path (configurable via environment variables)
     local data_path
@@ -142,23 +126,19 @@ tune_and_retrain_svm() {
 
     log_info "Dataset: $DATASET"
     log_info "Data path: $data_path"
-    if [ "$SKIP_TUNING" = true ]; then
-        log_info "Hyperparameter tuning: DISABLED (using default C)"
-    else
-        log_info "This will take 5-10x longer than base training..."
-    fi
+    log_info "Hyperparameter tuning: ENABLED (grid search for optimal C)"
     echo ""
 
     cd "$PROJECT_ROOT"
 
-    # Run training with hyperparameter tuning based on flag
+    # Run training with hyperparameter tuning always enabled
     # Args: dataPath outputPath algorithm [maxSamples] [showFeatureImportance] [topFeaturesCount] [enableHyperparameterTuning]
     # IMPORTANT: Use same 50K cap as base models for fair comparison
     local output_file="$PRODUCTION_DIR/sentiment_model.ser"
-    mvn -q exec:java -Dexec.mainClass="sentiment.training.TrainModel" \
-        -Dexec.args="\"$data_path\" \"$output_file\" SVM 50000 true 100 $enable_tuning"
+    mvn exec:java -Dexec.mainClass="sentiment.training.TrainModel" \
+        -Dexec.args="\"$data_path\" \"$output_file\" SVM 50000 true 100 true"
 
-    log_info "SVM trained with feature importance"
+    log_info "SVM trained with hyperparameter tuning and feature importance"
 }
 
 # Retrain non-SVM model with feature importance
@@ -190,18 +170,38 @@ retrain_with_feature_importance() {
 }
 
 # Copy cross_domain_performance from source model
+# Returns 0 on success, 1 on failure
 copy_source_metadata() {
     local source_meta=$(get_source_metadata_path)
     local prod_meta="$PRODUCTION_DIR/sentiment_model.metadata.json"
 
     if [ ! -f "$source_meta" ]; then
-        log_warn "Source metadata not found: $source_meta"
-        return
+        echo ""
+        echo "========================================"
+        log_error "METADATA COPY FAILED"
+        echo "========================================"
+        echo "  Source metadata not found: $source_meta"
+        echo ""
+        echo "  This means cross_domain_performance will be MISSING"
+        echo "  from the production model metadata."
+        echo ""
+        echo "  To fix: Re-run ./scripts/evaluate_cross_domain.sh"
+        echo "  then re-run this script."
+        echo "========================================"
+        return 1
     fi
 
     if [ ! -f "$prod_meta" ]; then
-        log_warn "Production metadata not found: $prod_meta"
-        return
+        echo ""
+        echo "========================================"
+        log_error "METADATA COPY FAILED"
+        echo "========================================"
+        echo "  Production metadata not found: $prod_meta"
+        echo ""
+        echo "  This indicates training did not complete successfully."
+        echo "  Check the training output above for errors."
+        echo "========================================"
+        return 1
     fi
 
     log_step "Copying evaluation metadata from source model..."
@@ -209,17 +209,26 @@ copy_source_metadata() {
     # Extract cross_domain_performance from source
     local cross_domain=$(jq '.cross_domain_performance' "$source_meta")
 
+    if [ "$cross_domain" = "null" ] || [ -z "$cross_domain" ]; then
+        log_warn "Source model has no cross_domain_performance data"
+        log_warn "Run ./scripts/evaluate_cross_domain.sh to generate it"
+        return 1
+    fi
+
     # Merge into production metadata
     local updated=$(jq \
         --argjson cross_domain "$cross_domain" \
         '.cross_domain_performance = $cross_domain' \
         "$prod_meta")
 
-    echo "$updated" > "$prod_meta"
-
-    if [ "$cross_domain" != "null" ]; then
-        log_info "Copied cross_domain_performance from source model"
+    if [ -z "$updated" ]; then
+        log_error "jq merge failed - metadata may be corrupted"
+        return 1
     fi
+
+    echo "$updated" > "$prod_meta"
+    log_info "Copied cross_domain_performance from source model"
+    return 0
 }
 
 # Print summary
@@ -292,21 +301,7 @@ main() {
 
     # Branch based on algorithm
     if [ "$ALGO" = "svm" ]; then
-        if [ "$SKIP_TUNING" = true ]; then
-            log_info "SVM detected - will retrain with feature importance (tuning SKIPPED)"
-        else
-            log_info "SVM detected - will tune hyperparameters and retrain with feature importance"
-            echo ""
-            read -p "This will take 5-10x longer than base training. Continue? [y/N] " -n 1 -r
-            echo ""
-            case "$REPLY" in
-                [Yy]) ;;  # proceed
-                *)
-                    log_info "Aborted. Use --skip-tuning to skip hyperparameter tuning."
-                    exit 0
-                    ;;
-            esac
-        fi
+        log_info "SVM detected - will tune hyperparameters and retrain with feature importance"
 
         tune_and_retrain_svm
 
@@ -319,7 +314,10 @@ main() {
     fi
 
     # Copy evaluation metadata from source model
-    copy_source_metadata
+    if ! copy_source_metadata; then
+        log_warn "Metadata copy failed - production model will have incomplete metadata"
+        log_warn "The model itself is valid, but cross_domain_performance is missing"
+    fi
 
     print_summary
 

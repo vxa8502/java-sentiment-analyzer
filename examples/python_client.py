@@ -26,7 +26,7 @@ class SentimentAnalyzerClient:
         Initialize the client.
 
         Args:
-            base_url: Base URL of the API (default: http://localhost:8080/api/v1)
+            base_url: Base URL of the API (default: https://java-sentiment-api.onrender.com/api/v1)
         """
         self.base_url = base_url
         self.session = requests.Session()

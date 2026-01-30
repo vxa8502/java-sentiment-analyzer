@@ -34,7 +34,7 @@ management:
 # Main sentiment analyzer configuration
 sentiment:
   # Model configuration
-  model-type: svm  # Production model: SVM (Amazon) - 88.4% accuracy, best cross-domain
+  model-type: svm  # Production model: SVM (Amazon) - 88.0% cross-domain accuracy
   confidence-threshold: 0.7
 
   # Data paths - Docker-friendly defaults (use environment variables to override)
@@ -42,10 +42,10 @@ sentiment:
   models-path: "${SENTIMENT_MODELS_PATH:/app/models}"
 
   # Pre-trained model paths (set to load specific models at startup)
-  # Models can be generated using sentiment.training.ModelTrainingMain
+  # Models can be generated using sentiment.training.ModelTrainer
   models:
     # Production model (SVM trained on Amazon - best cross-domain performance)
-    # Cross-domain avg: 87.9%
+    # Cross-domain avg: 88.0%
     production-model-path: "${SENTIMENT_PRODUCTION_MODEL:/app/models/production/sentiment_model.ser}"
 
     # Path to pre-trained SVM model (default model used by the application)

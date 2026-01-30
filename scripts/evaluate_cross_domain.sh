@@ -50,23 +50,42 @@ echo "Verifying prepared data splits..."
 missing_splits=false
 for dataset in "${DATASETS[@]}"; do
     manifest_path="$PROJECT_ROOT/data/processed/$dataset/splits.manifest.json"
+    test_csv="$PROJECT_ROOT/data/processed/$dataset/test.csv"
+
     if [ ! -f "$manifest_path" ]; then
         echo "[ERROR] No prepared splits for $dataset"
         echo "        Missing: $manifest_path"
         missing_splits=true
+    elif [ ! -f "$test_csv" ]; then
+        # CRITICAL: Manifest exists but test.csv is missing
+        echo "[ERROR] Manifest exists but test.csv is MISSING for $dataset"
+        echo "        Expected: $test_csv"
+        echo "        Run: ./scripts/prepare_data.sh --force"
+        missing_splits=true
     else
-        echo "[OK] Found splits for $dataset"
+        # Verify test.csv is not empty
+        line_count=$(wc -l < "$test_csv" | tr -d ' ')
+        if [ "$line_count" -lt 2 ]; then
+            echo "[ERROR] test.csv is empty or corrupt for $dataset (${line_count} lines)"
+            missing_splits=true
+        else
+            echo "[OK] Found splits for $dataset (test.csv: ${line_count} lines)"
+        fi
     fi
 done
 
 if [ "$missing_splits" = true ]; then
     echo ""
-    echo "ERROR: Missing prepared splits. Evaluation requires immutable data splits."
+    echo "========================================"
+    echo "ERROR: Missing or corrupt test data"
+    echo "========================================"
+    echo "Evaluation requires valid test splits for all domains."
     echo ""
-    echo "Run the following to prepare splits:"
-    echo "  ./scripts/prepare_data.sh"
+    echo "To fix, run:"
+    echo "  ./scripts/prepare_data.sh --force"
     echo ""
     echo "This ensures reproducible cross-domain evaluation."
+    echo "========================================"
     exit 1
 fi
 echo ""
@@ -95,9 +114,36 @@ echo "This will test each model on all 3 datasets (IMDB, Amazon, Yelp)"
 echo ""
 
 # Build classpath from Maven dependencies
+echo "Building classpath..."
 CLASSPATH=$(mvn -q dependency:build-classpath -Dmdep.outputFile=/dev/stdout)
+if [ -z "$CLASSPATH" ]; then
+    echo "[FAIL] Could not build classpath from Maven dependencies"
+    echo "       Try running: mvn clean package -DskipTests"
+    exit 1
+fi
+
+# CRITICAL: Verify JAR exists before using it
 JAR_ORIGINAL=$(ls target/sentiment-analyzer-*.jar.original 2>/dev/null | head -1)
-CLASSPATH="target/classes:${JAR_ORIGINAL:-target/sentiment-analyzer-1.0.0.jar.original}:$CLASSPATH"
+if [ -z "$JAR_ORIGINAL" ]; then
+    # Try the regular JAR if .original doesn't exist
+    JAR_ORIGINAL=$(ls target/sentiment-analyzer-*.jar 2>/dev/null | grep -v sources | grep -v javadoc | head -1)
+fi
+
+if [ -z "$JAR_ORIGINAL" ] || [ ! -f "$JAR_ORIGINAL" ]; then
+    echo "[FAIL] No compiled JAR found in target/"
+    echo "       Run: mvn clean package -DskipTests"
+    exit 1
+fi
+
+# Verify target/classes exists
+if [ ! -d "target/classes" ]; then
+    echo "[FAIL] target/classes not found - project not compiled"
+    echo "       Run: mvn clean package -DskipTests"
+    exit 1
+fi
+
+CLASSPATH="target/classes:${JAR_ORIGINAL}:$CLASSPATH"
+echo "[OK] Classpath built successfully"
 
 # Use full saved test sets (up to 25K per domain, more than any test set has)
 MAX_SAMPLES_PER_DOMAIN=25000

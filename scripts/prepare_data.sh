@@ -122,14 +122,45 @@ for dataset in "${DATASETS[@]}"; do
 
     # Check if raw data exists
     if [ ! -f "$PROJECT_ROOT/$raw_path" ]; then
-        echo "[FAIL] Raw data not found: $raw_path"
-        echo "       See docs/data_cards/${dataset}.yaml for download instructions"
+        echo ""
+        echo "========================================"
+        echo "[FAIL] MISSING RAW DATA: $dataset"
+        echo "========================================"
+        echo "  Expected file: $raw_path"
+        echo "  Full path: $PROJECT_ROOT/$raw_path"
+        echo ""
+        echo "  To fix: Download the dataset and place it at the expected path."
+        echo "  See docs/data_cards/${dataset}.yaml for download instructions."
+        echo "========================================"
+        echo ""
         failed=$((failed + 1))
         continue
     fi
 
     # Check if splits already exist (unless force mode)
     if [ -f "$manifest_path" ] && [ -z "$FORCE_FLAG" ]; then
+        # CRITICAL: Verify actual CSV files exist, not just manifest
+        local train_csv="data/processed/$dataset/train.csv"
+        local test_csv="data/processed/$dataset/test.csv"
+        local integrity_ok=true
+
+        if [ ! -f "$PROJECT_ROOT/$train_csv" ]; then
+            echo "[ERROR] Manifest exists but train.csv is MISSING: $train_csv"
+            integrity_ok=false
+        fi
+        if [ ! -f "$PROJECT_ROOT/$test_csv" ]; then
+            echo "[ERROR] Manifest exists but test.csv is MISSING: $test_csv"
+            integrity_ok=false
+        fi
+
+        if [ "$integrity_ok" = false ]; then
+            echo "[FAIL] Data integrity check failed for $dataset"
+            echo "       Run with --force to regenerate splits"
+            failed=$((failed + 1))
+            echo ""
+            continue
+        fi
+
         echo "[SKIP] Splits already exist at: data/processed/$dataset/"
         echo "       Created: $(grep -o '"created_at"[^,]*' "$manifest_path" | cut -d'"' -f4)"
         skipped=$((skipped + 1))

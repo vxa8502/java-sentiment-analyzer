@@ -167,6 +167,45 @@ verify_clean() {
     log_step "Verifying clean state..."
 
     local remaining=$(count_artifacts)
+    local verification_failed=false
+
+    # Explicit verification: check that specific critical files are gone
+    # This catches cases where find -delete silently failed
+    for dir in svm naive_bayes logistic_regression random_forest production; do
+        local dir_path="$MODELS_DIR/$dir"
+        if [ -d "$dir_path" ]; then
+            # Check for any remaining .ser files
+            local ser_files=$(find "$dir_path" -name "*.ser" -type f 2>/dev/null)
+            if [ -n "$ser_files" ]; then
+                log_error "Model files not deleted in $dir/:"
+                echo "$ser_files" | while read f; do echo "  - $f"; done
+                verification_failed=true
+            fi
+            # Check for any remaining metadata .json files (excluding .gitignore)
+            local json_files=$(find "$dir_path" -name "*.json" -type f 2>/dev/null)
+            if [ -n "$json_files" ]; then
+                log_error "Metadata files not deleted in $dir/:"
+                echo "$json_files" | while read f; do echo "  - $f"; done
+                verification_failed=true
+            fi
+        fi
+    done
+
+    # Verify processed data splits are gone
+    if [ -d "$PROCESSED_DIR" ]; then
+        local csv_files=$(find "$PROCESSED_DIR" -name "*.csv" -type f 2>/dev/null)
+        if [ -n "$csv_files" ]; then
+            log_error "Processed data splits not deleted:"
+            echo "$csv_files" | while read f; do echo "  - $f"; done
+            verification_failed=true
+        fi
+    fi
+
+    if [ "$verification_failed" = true ]; then
+        log_error "Clean verification FAILED - some files could not be deleted"
+        log_error "Check file permissions and try again"
+        exit 1
+    fi
 
     if [ "$remaining" -gt 0 ]; then
         log_error "Clean verification failed! $remaining artifacts remaining:"
@@ -182,10 +221,12 @@ verify_clean() {
         fi
 
         # Ensure .gitignore exists (training model dirs only - NOT production)
-        if [ ! -f "$MODELS_DIR/$dir/.gitignore" ]; then
-            echo "*.ser" > "$MODELS_DIR/$dir/.gitignore"
-            echo "*.json" >> "$MODELS_DIR/$dir/.gitignore"
-            echo "!.gitignore" >> "$MODELS_DIR/$dir/.gitignore"
+        # IMPORTANT: Only create if missing - never overwrite existing .gitignore
+        local gitignore_path="$MODELS_DIR/$dir/.gitignore"
+        if [ ! -f "$gitignore_path" ]; then
+            echo "*.ser" > "$gitignore_path"
+            echo "*.json" >> "$gitignore_path"
+            echo "!.gitignore" >> "$gitignore_path"
             log_info "Created .gitignore in models/$dir/"
         fi
     done

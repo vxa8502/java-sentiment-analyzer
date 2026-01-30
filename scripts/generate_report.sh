@@ -72,26 +72,77 @@ get_date() {
     date "+%B %d, %Y"
 }
 
-# Get production model info
+# Get production model info with error handling
 get_production_info() {
     local prod_meta="$MODELS_DIR/production/sentiment_model.metadata.json"
 
-    PROD_ALGO=$(jq -r '.model_info.algorithm // .algorithm' "$prod_meta")
-    PROD_ACCURACY=$(jq -r '.performance.test_accuracy' "$prod_meta")
-    PROD_F1=$(jq -r '.performance.test_f1' "$prod_meta")
-    PROD_PRECISION=$(jq -r '.performance.test_precision' "$prod_meta")
-    PROD_RECALL=$(jq -r '.performance.test_recall' "$prod_meta")
-    PROD_ROC_AUC=$(jq -r '.performance.roc_auc' "$prod_meta")
-    PROD_DATASET=$(jq -r '.training_data.dataset' "$prod_meta")
-    PROD_SAMPLES=$(jq -r '.training_data.num_samples' "$prod_meta")
-    PROD_SIZE_MB=$(jq -r '.model_size_bytes' "$prod_meta" | awk '{printf "%.1f", $1/1048576}')
-    PROD_CROSS_DOMAIN_AVG=$(jq -r '.cross_domain_performance.cross_domain_average // empty' "$prod_meta" 2>/dev/null | awk '{printf "%.1f%%", $1*100}')
-    if [ -z "$PROD_CROSS_DOMAIN_AVG" ]; then PROD_CROSS_DOMAIN_AVG="N/A"; fi
+    # Verify file exists and is valid JSON
+    if [ ! -f "$prod_meta" ]; then
+        log_error "Production metadata not found: $prod_meta"
+        exit 1
+    fi
+
+    if ! jq empty "$prod_meta" 2>/dev/null; then
+        log_error "Production metadata is not valid JSON: $prod_meta"
+        exit 1
+    fi
+
+    # Extract values with fallbacks for missing fields
+    PROD_ALGO=$(jq -r '.model_info.algorithm // .algorithm // "unknown"' "$prod_meta")
+    PROD_ACCURACY=$(jq -r '.performance.test_accuracy // 0' "$prod_meta")
+    PROD_F1=$(jq -r '.performance.test_f1 // 0' "$prod_meta")
+    PROD_PRECISION=$(jq -r '.performance.test_precision // 0' "$prod_meta")
+    PROD_RECALL=$(jq -r '.performance.test_recall // 0' "$prod_meta")
+    PROD_ROC_AUC=$(jq -r '.performance.roc_auc // 0' "$prod_meta")
+    PROD_DATASET=$(jq -r '.training_data.dataset // "unknown"' "$prod_meta")
+    PROD_SAMPLES=$(jq -r '.training_data.num_samples // 0' "$prod_meta")
+
+    local size_bytes=$(jq -r '.model_size_bytes // 0' "$prod_meta")
+    if [ "$size_bytes" = "null" ] || [ -z "$size_bytes" ]; then
+        PROD_SIZE_MB="N/A"
+    else
+        PROD_SIZE_MB=$(echo "$size_bytes" | awk '{printf "%.1f", $1/1048576}')
+    fi
+
+    local cross_avg=$(jq -r '.cross_domain_performance.cross_domain_average // empty' "$prod_meta" 2>/dev/null)
+    if [ -z "$cross_avg" ] || [ "$cross_avg" = "null" ]; then
+        PROD_CROSS_DOMAIN_AVG="N/A"
+    else
+        PROD_CROSS_DOMAIN_AVG=$(echo "$cross_avg" | awk '{printf "%.1f%%", $1*100}')
+    fi
+
+    # Warn if critical values are missing/zero
+    if [ "$PROD_ACCURACY" = "0" ] || [ "$PROD_ACCURACY" = "null" ]; then
+        log_warn "Production model accuracy is 0 or missing - metadata may be incomplete"
+    fi
+}
+
+# Helper function to format accuracy, handling null values properly
+format_accuracy() {
+    local value="$1"
+    if [ "$value" = "null" ] || [ -z "$value" ]; then
+        echo "N/A"
+    else
+        echo "$value" | awk '{printf "%.1f%%", $1*100}'
+    fi
 }
 
 # Build cross-domain performance tables
 build_cross_domain_tables() {
     local matrix="$RESULTS_DIR/cross_domain_matrix.json"
+
+    # Verify matrix file exists and is valid JSON
+    if [ ! -f "$matrix" ]; then
+        echo "**ERROR: Cross-domain matrix not found**"
+        echo ""
+        return 1
+    fi
+
+    if ! jq empty "$matrix" 2>/dev/null; then
+        echo "**ERROR: Cross-domain matrix is not valid JSON**"
+        echo ""
+        return 1
+    fi
 
     for algo in svm logistic_regression random_forest naive_bayes; do
         local algo_upper=$(echo "$algo" | tr '[:lower:]' '[:upper:]' | sed 's/_/ /g')
@@ -102,16 +153,23 @@ build_cross_domain_tables() {
         echo "|--------------|-----------|-------------|-----------|------------------|"
 
         for domain in imdb_50k amazon_polarity yelp; do
-            local imdb=$(jq -r ".results.${algo}.${domain}.imdb_50k.accuracy" "$matrix" | awk '{printf "%.1f%%", $1*100}')
-            local amazon=$(jq -r ".results.${algo}.${domain}.amazon_polarity.accuracy" "$matrix" | awk '{printf "%.1f%%", $1*100}')
-            local yelp=$(jq -r ".results.${algo}.${domain}.yelp.accuracy" "$matrix" | awk '{printf "%.1f%%", $1*100}')
-            local avg=$(jq -r ".results.${algo}.${domain}.cross_domain_avg" "$matrix" | awk '{printf "%.1f%%", $1*100}')
+            # CRITICAL: Check for null values before formatting
+            # jq returns "null" (string) when key doesn't exist
+            local imdb_raw=$(jq -r ".results.${algo}.${domain}.imdb_50k.accuracy // empty" "$matrix")
+            local amazon_raw=$(jq -r ".results.${algo}.${domain}.amazon_polarity.accuracy // empty" "$matrix")
+            local yelp_raw=$(jq -r ".results.${algo}.${domain}.yelp.accuracy // empty" "$matrix")
+            local avg_raw=$(jq -r ".results.${algo}.${domain}.cross_domain_avg // empty" "$matrix")
 
-            # Mark in-domain with asterisk
+            local imdb=$(format_accuracy "$imdb_raw")
+            local amazon=$(format_accuracy "$amazon_raw")
+            local yelp_val=$(format_accuracy "$yelp_raw")
+            local avg=$(format_accuracy "$avg_raw")
+
+            # Mark in-domain with asterisk (only if not N/A)
             case $domain in
-                imdb_50k) imdb="${imdb} *" ;;
-                amazon_polarity) amazon="${amazon} *" ;;
-                yelp) yelp="${yelp} *" ;;
+                imdb_50k) [ "$imdb" != "N/A" ] && imdb="${imdb} *" ;;
+                amazon_polarity) [ "$amazon" != "N/A" ] && amazon="${amazon} *" ;;
+                yelp) [ "$yelp_val" != "N/A" ] && yelp_val="${yelp_val} *" ;;
             esac
 
             # Map domain to display name (portable across BSD/GNU sed)
@@ -122,7 +180,7 @@ build_cross_domain_tables() {
                 yelp) domain_display="yelp" ;;
                 *) domain_display="$domain" ;;
             esac
-            echo "| $domain_display | $imdb | $amazon | $yelp | $avg |"
+            echo "| $domain_display | $imdb | $amazon | $yelp_val | $avg |"
         done
         echo ""
     done
@@ -301,24 +359,64 @@ EOF
 validate_output() {
     log_info "Validating generated report..."
 
+    local warnings=0
+    local errors=0
+
     # Check file exists and has content
     if [ ! -s "$OUTPUT_FILE" ]; then
         log_error "Generated report is empty!"
         exit 1
     fi
 
-    # Check for placeholder text that shouldn't be there
-    if grep -q "N/A" "$OUTPUT_FILE"; then
-        log_warn "Report contains N/A values - some data may be missing"
+    # Check for N/A values that indicate missing data
+    local na_count=$(grep -c "N/A" "$OUTPUT_FILE" 2>/dev/null || echo "0")
+    if [ "$na_count" -gt 0 ]; then
+        log_warn "Report contains $na_count N/A values - some data may be missing"
+        warnings=$((warnings + 1))
+    fi
+
+    # CRITICAL: Check for suspicious 0.0% values in cross-domain tables
+    # Real accuracy should never be exactly 0.0% - this indicates a data problem
+    local zero_count=$(grep -E "^\|.*\| 0\.0%" "$OUTPUT_FILE" 2>/dev/null | wc -l | tr -d ' ')
+    if [ "$zero_count" -gt 0 ]; then
+        log_error "Report contains $zero_count suspicious 0.0% accuracy values!"
+        log_error "This usually indicates missing or corrupt evaluation data."
+        log_error "Re-run: ./scripts/evaluate_cross_domain.sh"
+        errors=$((errors + 1))
     fi
 
     # Check confusion matrix is 2x2
     if grep -q "3x3\|neutral" "$OUTPUT_FILE"; then
         log_error "Report contains references to 3-class data - check model metadata"
+        errors=$((errors + 1))
+    fi
+
+    # Check that all expected sections exist
+    if ! grep -q "## Executive Summary" "$OUTPUT_FILE"; then
+        log_error "Missing Executive Summary section"
+        errors=$((errors + 1))
+    fi
+
+    if ! grep -q "## Part 1: Model Comparison" "$OUTPUT_FILE"; then
+        log_error "Missing Model Comparison section"
+        errors=$((errors + 1))
+    fi
+
+    if ! grep -q "## Part 2: Cross-Domain Evaluation" "$OUTPUT_FILE"; then
+        log_error "Missing Cross-Domain Evaluation section"
+        errors=$((errors + 1))
+    fi
+
+    if [ "$errors" -gt 0 ]; then
+        log_error "Validation FAILED with $errors error(s)"
         exit 1
     fi
 
-    log_info "Validation passed"
+    if [ "$warnings" -gt 0 ]; then
+        log_warn "Validation passed with $warnings warning(s)"
+    else
+        log_info "Validation passed"
+    fi
 }
 
 # Main

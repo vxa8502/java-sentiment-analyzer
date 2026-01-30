@@ -86,15 +86,9 @@ Tests each model on all 3 datasets to measure generalization. Results saved to:
 ./scripts/promote_to_production.sh
 ```
 
-Selects the best-generalizing model based on `cross_domain_matrix.json`, runs hyperparameter tuning (for SVM), and deploys to `models/production/`.
+Selects the best-generalizing model based on `cross_domain_matrix.json`, runs hyperparameter tuning (for SVM via grid search), and deploys to `models/production/`.
 
-**Options:**
-- `--skip-tuning` - Skip SVM hyperparameter tuning (faster, uses default C=0.1)
-
-```bash
-# Fast promotion without hyperparameter tuning
-./scripts/promote_to_production.sh --skip-tuning
-```
+**Note:** Hyperparameter tuning is always enabled to ensure optimal model performance. There is no skip option.
 
 **Output:**
 ```

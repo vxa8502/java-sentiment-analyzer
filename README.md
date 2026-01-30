@@ -6,7 +6,7 @@ Goal: Understand engineering rigor of production ML Systems (type safety, circui
 
 | Metric | Value |
 |--------|-------|
-| Cross-domain accuracy | **88.2%** (tested on 3 different text domains) |
+| Cross-domain accuracy | **88.0%** (tested on 3 different text domains) |
 | Latency | **10-50ms** per request |
 | Throughput | **1,000+ req/min** |
 
@@ -43,9 +43,9 @@ The result: a sentiment classifier that runs anywhere Docker runs, handles real 
 
 | Metric | Value |
 |--------|-------|
-| **Test Accuracy** | 89.4% |
-| **Cross-Domain Average** | 88.2% |
-| **F1 Score** | 0.894 |
+| **Test Accuracy** | 89.6% |
+| **Cross-Domain Average** | 88.0% |
+| **F1 Score** | 0.896 |
 | **Latency** | 10-50ms |
 | **Throughput** | ~1,000 req/min |
 
@@ -53,9 +53,9 @@ The production model (SVM trained on Amazon product reviews) was selected for **
 
 | Test Domain | Accuracy |
 |-------------|----------|
-| Amazon (in-domain) | 89.3% |
-| IMDB movies | 85.3% |
-| Yelp restaurants | 91.2% |
+| Amazon (in-domain) | 89.2% |
+| IMDB movies | 85.2% |
+| Yelp restaurants | 90.9% |
 
 ### Model Comparison (12 experiments)
 
@@ -63,10 +63,10 @@ Trained 4 algorithms across 3 domains to find the best trade-off between accurac
 
 | Algorithm | Best In-Domain | Cross-Domain Avg | Notes |
 |-----------|----------------|------------------|-------|
-| **SVM** | 93.8% (Yelp) | **88.2%** | Best generalizing |
-| Random Forest | 91.6% (Yelp) | 85.2% | Largest model files |
-| Logistic Regression | 92.5% (Yelp) | 83.3% | Fastest training |
-| Naive Bayes | 82.3% (IMDB) | 76.3% | Fastest inference |
+| **SVM** | 94.0% (Yelp) | **88.0%** | Best generalizing |
+| Random Forest | 92.0% (Yelp) | 84.6% | Largest model files |
+| Logistic Regression | 92.6% (Yelp) | 82.6% | Fastest training |
+| Naive Bayes | 82.9% (IMDB) | 76.3% | Fastest inference |
 
 Full results: [Model Comparison Report](results/FINAL_COMPREHENSIVE_REPORT.md)
 

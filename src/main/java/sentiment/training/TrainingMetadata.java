@@ -251,7 +251,9 @@ public class TrainingMetadata {
 
         public Builder datasetPath(String path) {
             if (metadata.dataset == null) metadata.dataset = new DatasetInfo();
-            metadata.dataset.path = path;
+            // Always store absolute path for consistency and reproducibility
+            Path pathObj = Path.of(path);
+            metadata.dataset.path = pathObj.isAbsolute() ? path : pathObj.toAbsolutePath().toString();
             metadata.dataset.source = inferDatasetSource(path);
             return this;
         }
