@@ -1,0 +1,360 @@
+#!/bin/bash
+#
+# reset.sh - Clean reset of ALL artifacts before full retraining
+#
+# This script:
+#   1. Deletes all model files (.ser, .metadata.json, feature-importance.json)
+#   2. Deletes processed data splits (data/processed/*/)
+#   3. Verifies clean state
+#   4. Optionally verifies data pipeline (--verify flag)
+#
+# Usage:
+#   ./scripts/reset.sh           # Full reset
+#   ./scripts/reset.sh --verify  # Reset + verify data pipeline
+#   ./scripts/reset.sh --dry-run # Show what would be deleted
+#
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+MODELS_DIR="$PROJECT_ROOT/models"
+RESULTS_DIR="$PROJECT_ROOT/results"
+PROCESSED_DIR="$PROJECT_ROOT/data/processed"
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+BOLD='\033[1m'
+NC='\033[0m'
+
+log_info() { echo -e "${GREEN}[INFO]${NC} $1"; }
+log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
+log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
+log_step() { echo -e "${BLUE}[STEP]${NC} ${BOLD}$1${NC}"; }
+
+DRY_RUN=false
+VERIFY=false
+
+# Parse arguments
+for arg in "$@"; do
+    case $arg in
+        --dry-run)
+            DRY_RUN=true
+            ;;
+        --verify)
+            VERIFY=true
+            ;;
+        --help|-h)
+            echo "Usage: $0 [--dry-run] [--verify]"
+            echo ""
+            echo "Options:"
+            echo "  --dry-run  Show what would be deleted without deleting"
+            echo "  --verify   After reset, verify data pipeline is ready"
+            echo ""
+            exit 0
+            ;;
+    esac
+done
+
+# Count files before deletion
+count_artifacts() {
+    local count=0
+    for dir in svm naive_bayes logistic_regression random_forest production; do
+        if [ -d "$MODELS_DIR/$dir" ]; then
+            # Count .ser files AND backup files
+            count=$((count + $(find "$MODELS_DIR/$dir" -type f \( -name "*.ser" -o -name "*.ser.backup" -o -name "*.backup" \) 2>/dev/null | wc -l)))
+            count=$((count + $(find "$MODELS_DIR/$dir" -name "*.json" 2>/dev/null | wc -l)))
+        fi
+    done
+    # Count cross_domain_matrix.json
+    if [ -f "$RESULTS_DIR/cross_domain_matrix.json" ]; then
+        count=$((count + 1))
+    fi
+    # Count FINAL_COMPREHENSIVE_REPORT.md (stale reports cause confusion)
+    if [ -f "$RESULTS_DIR/FINAL_COMPREHENSIVE_REPORT.md" ]; then
+        count=$((count + 1))
+    fi
+    # Count processed data splits
+    if [ -d "$PROCESSED_DIR" ]; then
+        count=$((count + $(find "$PROCESSED_DIR" -name "*.csv" 2>/dev/null | wc -l)))
+        count=$((count + $(find "$PROCESSED_DIR" -name "*.json" 2>/dev/null | wc -l)))
+    fi
+    echo $count
+}
+
+# List all artifacts
+list_artifacts() {
+    echo ""
+    echo "Model files (.ser and backups):"
+    find "$MODELS_DIR" -type f \( -name "*.ser" -o -name "*.ser.backup" -o -name "*.backup" \) 2>/dev/null | sed 's|'"$PROJECT_ROOT"'/||' | sort || echo "  (none)"
+
+    echo ""
+    echo "Metadata files (.json):"
+    find "$MODELS_DIR" -name "*.json" ! -name ".gitignore" 2>/dev/null | sed 's|'"$PROJECT_ROOT"'/||' | sort || echo "  (none)"
+
+    echo ""
+    echo "Processed data splits:"
+    if [ -d "$PROCESSED_DIR" ]; then
+        find "$PROCESSED_DIR" -type f \( -name "*.csv" -o -name "*.json" \) 2>/dev/null | sed 's|'"$PROJECT_ROOT"'/||' | sort || echo "  (none)"
+    else
+        echo "  (none)"
+    fi
+
+    echo ""
+    echo "Results files:"
+    if [ -f "$RESULTS_DIR/cross_domain_matrix.json" ]; then
+        echo "  results/cross_domain_matrix.json"
+    fi
+    if [ -f "$RESULTS_DIR/FINAL_COMPREHENSIVE_REPORT.md" ]; then
+        echo "  results/FINAL_COMPREHENSIVE_REPORT.md"
+    fi
+    echo ""
+}
+
+# Delete all model artifacts
+delete_artifacts() {
+    log_step "Deleting model artifacts..."
+
+    for dir in svm naive_bayes logistic_regression random_forest production; do
+        local dir_path="$MODELS_DIR/$dir"
+        if [ -d "$dir_path" ]; then
+            # Delete .ser files AND backup files (*.ser, *.ser.backup, *.backup)
+            find "$dir_path" -type f \( -name "*.ser" -o -name "*.ser.backup" -o -name "*.backup" \) -delete 2>/dev/null || true
+
+            # Delete .json files (but not .gitignore)
+            find "$dir_path" -name "*.json" -type f -delete 2>/dev/null || true
+
+            log_info "Cleaned: models/$dir/"
+        fi
+    done
+
+    # Delete processed data splits (will regenerate via prepare_data.sh)
+    if [ -d "$PROCESSED_DIR" ]; then
+        for domain_dir in "$PROCESSED_DIR"/*/; do
+            if [ -d "$domain_dir" ]; then
+                rm -rf "$domain_dir"
+            fi
+        done
+        log_info "Deleted: data/processed/*/ (run prepare_data.sh to regenerate)"
+    fi
+
+    # Delete cross_domain_matrix.json
+    if [ -f "$RESULTS_DIR/cross_domain_matrix.json" ]; then
+        rm "$RESULTS_DIR/cross_domain_matrix.json"
+        log_info "Deleted: results/cross_domain_matrix.json"
+    fi
+
+    # Delete FINAL_COMPREHENSIVE_REPORT.md (will be regenerated by generate_report.sh)
+    # Keeping stale reports causes confusion about current model performance
+    if [ -f "$RESULTS_DIR/FINAL_COMPREHENSIVE_REPORT.md" ]; then
+        rm "$RESULTS_DIR/FINAL_COMPREHENSIVE_REPORT.md"
+        log_info "Deleted: results/FINAL_COMPREHENSIVE_REPORT.md (will regenerate)"
+    fi
+
+    # Warn about demo/ directory if it contains data that may be stale
+    local demo_dir="$PROJECT_ROOT/demo"
+    if [ -d "$demo_dir/data" ] && [ "$(find "$demo_dir/data" -type f 2>/dev/null | wc -l)" -gt 0 ]; then
+        log_warn "demo/data/ contains files that may reference old model outputs"
+        log_warn "Consider manually reviewing: demo/data/"
+    fi
+}
+
+# Verify clean state
+verify_clean() {
+    log_step "Verifying clean state..."
+
+    local remaining=$(count_artifacts)
+    local verification_failed=false
+
+    # Explicit verification: check that specific critical files are gone
+    # This catches cases where find -delete silently failed
+    for dir in svm naive_bayes logistic_regression random_forest production; do
+        local dir_path="$MODELS_DIR/$dir"
+        if [ -d "$dir_path" ]; then
+            # Check for any remaining .ser files
+            local ser_files=$(find "$dir_path" -name "*.ser" -type f 2>/dev/null)
+            if [ -n "$ser_files" ]; then
+                log_error "Model files not deleted in $dir/:"
+                echo "$ser_files" | while read f; do echo "  - $f"; done
+                verification_failed=true
+            fi
+            # Check for any remaining metadata .json files (excluding .gitignore)
+            local json_files=$(find "$dir_path" -name "*.json" -type f 2>/dev/null)
+            if [ -n "$json_files" ]; then
+                log_error "Metadata files not deleted in $dir/:"
+                echo "$json_files" | while read f; do echo "  - $f"; done
+                verification_failed=true
+            fi
+        fi
+    done
+
+    # Verify processed data splits are gone
+    if [ -d "$PROCESSED_DIR" ]; then
+        local csv_files=$(find "$PROCESSED_DIR" -name "*.csv" -type f 2>/dev/null)
+        if [ -n "$csv_files" ]; then
+            log_error "Processed data splits not deleted:"
+            echo "$csv_files" | while read f; do echo "  - $f"; done
+            verification_failed=true
+        fi
+    fi
+
+    if [ "$verification_failed" = true ]; then
+        log_error "Clean verification FAILED - some files could not be deleted"
+        log_error "Check file permissions and try again"
+        exit 1
+    fi
+
+    if [ "$remaining" -gt 0 ]; then
+        log_error "Clean verification failed! $remaining artifacts remaining:"
+        list_artifacts
+        exit 1
+    fi
+
+    # Verify directory structure exists
+    for dir in svm naive_bayes logistic_regression random_forest; do
+        if [ ! -d "$MODELS_DIR/$dir" ]; then
+            log_warn "Creating missing directory: models/$dir/"
+            mkdir -p "$MODELS_DIR/$dir"
+        fi
+
+        # Ensure .gitignore exists (training model dirs only - NOT production)
+        # IMPORTANT: Only create if missing - never overwrite existing .gitignore
+        local gitignore_path="$MODELS_DIR/$dir/.gitignore"
+        if [ ! -f "$gitignore_path" ]; then
+            echo "*.ser" > "$gitignore_path"
+            echo "*.json" >> "$gitignore_path"
+            echo "!.gitignore" >> "$gitignore_path"
+            log_info "Created .gitignore in models/$dir/"
+        fi
+    done
+
+    # Production directory - no .gitignore (files must be tracked)
+    if [ ! -d "$MODELS_DIR/production" ]; then
+        log_warn "Creating missing directory: models/production/"
+        mkdir -p "$MODELS_DIR/production"
+    fi
+
+    log_info "Clean state verified: 0 artifacts, directories intact"
+}
+
+# Verify data pipeline
+verify_data_pipeline() {
+    log_step "Verifying data pipeline..."
+
+    local datasets=("imdb_50k" "amazon_polarity" "yelp")
+    local data_dir="$PROJECT_ROOT/data/raw"
+    local all_ok=true
+
+    echo ""
+    echo "┌─────────────────────────────────────────────────────────┐"
+    echo "│                   DATA PIPELINE CHECK                   │"
+    echo "├─────────────────────────────────────────────────────────┤"
+
+    # Check each dataset directory exists
+    for dataset in "${datasets[@]}"; do
+        if [ -d "$data_dir/$dataset" ]; then
+            local csv_count=$(find "$data_dir/$dataset" -name "*.csv" | wc -l | tr -d ' ')
+            echo "│ $dataset: $csv_count CSV file(s) found"
+        else
+            echo "│ $dataset: MISSING"
+            all_ok=false
+        fi
+    done
+
+    echo "├─────────────────────────────────────────────────────────┤"
+
+    # Run preprocessing test
+    echo "│ Running preprocessing tests...                          │"
+    cd "$PROJECT_ROOT"
+    if mvn test -Dtest=WekaInstancesConverterTest -q 2>/dev/null; then
+        echo "│ WekaInstancesConverterTest: PASSED                      │"
+    else
+        echo "│ WekaInstancesConverterTest: FAILED                      │"
+        all_ok=false
+    fi
+
+    echo "└─────────────────────────────────────────────────────────┘"
+    echo ""
+
+    if [ "$all_ok" = true ]; then
+        log_info "Data pipeline verification: PASSED"
+    else
+        log_error "Data pipeline verification: FAILED"
+        log_error "Fix issues above before training"
+        exit 1
+    fi
+}
+
+# Print summary
+print_summary() {
+    echo ""
+    echo "┌─────────────────────────────────────────────────────────┐"
+    echo "│                     RESET COMPLETE                      │"
+    echo "├─────────────────────────────────────────────────────────┤"
+    echo "│ Model artifacts: DELETED (including backups)             │"
+    echo "│ Processed data splits: DELETED                          │"
+    echo "│ cross_domain_matrix.json: DELETED                       │"
+    echo "│ FINAL_COMPREHENSIVE_REPORT.md: DELETED                  │"
+    echo "├─────────────────────────────────────────────────────────┤"
+    echo "│                     NEXT STEPS                          │"
+    echo "├─────────────────────────────────────────────────────────┤"
+    echo "│ 1. ./scripts/prepare_data.sh                            │"
+    echo "│ 2. ./scripts/train_all_models.sh                        │"
+    echo "│ 3. ./scripts/evaluate_cross_domain.sh                   │"
+    echo "│ 4. ./scripts/promote_to_production.sh                   │"
+    echo "│ 5. ./scripts/generate_report.sh                         │"
+    echo "└─────────────────────────────────────────────────────────┘"
+    echo ""
+}
+
+# Main
+main() {
+    echo ""
+    echo "╔═════════════════════════════════════════════════════════╗"
+    echo "║           SENTIMENT ANALYZER - RESET SCRIPT             ║"
+    echo "╚═════════════════════════════════════════════════════════╝"
+    echo ""
+
+    local artifact_count=$(count_artifacts)
+    log_info "Found $artifact_count artifacts to delete"
+
+    if [ "$DRY_RUN" = true ]; then
+        log_warn "DRY RUN - No files will be deleted"
+        list_artifacts
+        exit 0
+    fi
+
+    if [ "$artifact_count" -eq 0 ]; then
+        log_info "Already clean - no artifacts to delete"
+    else
+        # Confirm deletion
+        echo ""
+        list_artifacts
+        echo -e "${YELLOW}This will delete all $artifact_count artifacts listed above.${NC}"
+        read -p "Continue? [y/N] " -n 1 -r
+        echo ""
+
+        case "$REPLY" in
+            [Yy]) ;;  # proceed
+            *)
+                log_info "Aborted"
+                exit 0
+                ;;
+        esac
+
+        delete_artifacts
+    fi
+
+    verify_clean
+
+    if [ "$VERIFY" = true ]; then
+        verify_data_pipeline
+    fi
+
+    print_summary
+}
+
+main "$@"

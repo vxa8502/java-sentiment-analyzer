@@ -64,10 +64,5 @@ personal/
 # Test scripts in root
 test_*.sh
 
-# Generated results (metrics in README)
-results/
-
 # Dev-only scripts
-scripts/reset.sh
 scripts/cleanup.sh
-scripts/generate_report.sh
