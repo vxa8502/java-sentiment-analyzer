@@ -1,0 +1,22 @@
+{
+  "version" : "1.0",
+  "domain" : "amazon_polarity",
+  "created_at" : "2026-01-28T23:28:15.506923Z",
+  "seed" : 42,
+  "max_samples" : 50000,
+  "raw_source" : "data/raw/amazon_polarity/train.csv",
+  "train" : {
+    "file" : "train.csv",
+    "samples" : 40000,
+    "sha256" : "c49b83a823e117e29fb8eed26bdf6aa9369cead068a022086c67f1be51e5177e",
+    "positive" : 19988,
+    "negative" : 20012
+  },
+  "test" : {
+    "file" : "test.csv",
+    "samples" : 10000,
+    "sha256" : "61691be3f00ade15035d21f743cca4e0f4c2b0601c9064879d2b8e22dcd05dbe",
+    "positive" : 4997,
+    "negative" : 5003
+  }
+}

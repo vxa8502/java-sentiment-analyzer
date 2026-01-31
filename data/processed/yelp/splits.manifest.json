@@ -1,0 +1,22 @@
+{
+  "version" : "1.0",
+  "domain" : "yelp",
+  "created_at" : "2026-01-28T23:28:23.590617Z",
+  "seed" : 42,
+  "max_samples" : 50000,
+  "raw_source" : "data/raw/yelp/yelp_reviews.csv",
+  "train" : {
+    "file" : "train.csv",
+    "samples" : 20292,
+    "sha256" : "07aa22ad0d32ba115b0f8d9dd0ad6c7d0e9eec8bd71543089e2d3e962d24261b",
+    "positive" : 10146,
+    "negative" : 10146
+  },
+  "test" : {
+    "file" : "test.csv",
+    "samples" : 5074,
+    "sha256" : "046040e6b7d4403d7e76c8a6b1dc2b49779b2a15aa5e1c7a0dcee3bdc8209b3f",
+    "positive" : 2537,
+    "negative" : 2537
+  }
+}

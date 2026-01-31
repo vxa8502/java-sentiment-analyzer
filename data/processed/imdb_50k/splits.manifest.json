@@ -1,0 +1,22 @@
+{
+  "version" : "1.0",
+  "domain" : "imdb_50k",
+  "created_at" : "2026-01-28T23:28:08.254827Z",
+  "seed" : 42,
+  "max_samples" : 50000,
+  "raw_source" : "data/raw/imdb_50k/IMDB Dataset.csv",
+  "train" : {
+    "file" : "train.csv",
+    "samples" : 39995,
+    "sha256" : "64d7669fe3c07b71fc9c1ca97f1c89859377aedfca32fc3fb9c282350e4ed07c",
+    "positive" : 19995,
+    "negative" : 20000
+  },
+  "test" : {
+    "file" : "test.csv",
+    "samples" : 9999,
+    "sha256" : "c8ce4e8f5c01bc1d42f9a5b22abb10a5da8cc56f5c465646d837bec79df6af19",
+    "positive" : 4999,
+    "negative" : 5000
+  }
+}
