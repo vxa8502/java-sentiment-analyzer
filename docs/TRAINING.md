@@ -47,6 +47,30 @@ models/production/
 
 Binary classification only (positive/negative). Neutral samples filtered.
 
+## Hyperparameter Search
+
+The production SVM was selected from a 16-configuration grid search using 5-fold stratified CV.
+
+### Grid Tested
+
+| Parameter | Values |
+|-----------|--------|
+| C (regularization) | 0.01, 0.05, 0.1, 1.0 |
+| Kernel | Linear, RBF (gamma: 0.001, 0.01), Poly (degree: 2) |
+
+### Selected Configuration
+
+**Linear kernel, C=0.05** achieved 88.91% CV accuracy (best of 16 configs).
+
+Why linear won:
+- High-dimensional sparse TF-IDF features are often linearly separable
+- RBF suffers from curse of dimensionality with 5000+ features
+- Linear kernel enables feature weight extraction for interpretability
+
+*Note: Full per-config results were not preserved. Future runs can enable `--full-search` flag to log all configurations.*
+
+---
+
 ## Configuration
 
 Key settings in `application.yml`:

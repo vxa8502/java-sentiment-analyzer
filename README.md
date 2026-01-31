@@ -99,6 +99,17 @@ Test: `curl http://localhost:8080/api/v1/health`
 | Runtime | Java 21 |
 | Deploy | Docker |
 
+## Testing
+
+| Metric | Value |
+|--------|-------|
+| Test count | 480 |
+| Test coverage | 50% (instruction) |
+| CI | GitHub Actions |
+
+Run tests: `mvn test`
+Coverage report: `mvn jacoco:report` (output: `target/site/jacoco/index.html`)
+
 ## Limitations
 
 - Binary classification only (positive/negative)

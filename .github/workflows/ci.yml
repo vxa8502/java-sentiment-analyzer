@@ -22,8 +22,16 @@ jobs:
           distribution: 'temurin'
           cache: maven
 
-      - name: Run tests
-        run: mvn test --batch-mode --fail-at-end
+      - name: Run tests with coverage
+        run: mvn test jacoco:report --batch-mode --fail-at-end
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: target/site/jacoco/
+          retention-days: 7
 
       - name: Upload test results
         if: always()

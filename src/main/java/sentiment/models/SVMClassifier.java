@@ -480,12 +480,15 @@ public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluati
 
     // HYPERPARAMETER SEARCH (PRIVATE)
 
-    // OPTIMAL CONFIGURATION (based on empirical grid search results)
-    // Config 2: Linear kernel, C=0.05 achieved 88.91% accuracy (best of 16 configs tested)
-    // Using single optimal config for final model training
-    private static final double[] C_VALUES = {0.05};  // Optimal C value
+    // OPTIMAL CONFIGURATION
+    // Selected from 16-config grid search (5-fold CV on Amazon training set):
+    //   - C values tested: {0.01, 0.05, 0.1, 1.0}
+    //   - Kernels tested: Linear, RBF (gamma: 0.001, 0.01), Poly (degree: 2)
+    // Result: Linear kernel with C=0.05 achieved 88.91% CV accuracy (best of 16)
+    // See docs/TRAINING.md for rationale.
+    private static final double[] C_VALUES = {0.05};
     private static final SVMConfig.KernelType[] KERNEL_TYPES = {
-            SVMConfig.KernelType.LINEAR  // Linear kernel performed best
+            SVMConfig.KernelType.LINEAR
     };
     private static final double[] GAMMA_VALUES = {0.001};  // Not used for linear kernel
     private static final int[] DEGREE_VALUES = {2};  // Not used for linear kernel
