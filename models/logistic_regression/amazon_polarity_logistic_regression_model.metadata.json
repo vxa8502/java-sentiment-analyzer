@@ -1,0 +1,93 @@
+{
+  "model_info" : {
+    "algorithm" : "LOGISTIC_REGRESSION",
+    "kernel" : null,
+    "framework" : "Weka 3.9.6",
+    "version" : "2.0.0",
+    "notes" : null
+  },
+  "training_data" : {
+    "dataset" : "amazon_polarity",
+    "dataset_version" : "2015-mcauley",
+    "split" : "train",
+    "num_samples" : 40000,
+    "class_balance" : {
+      "positive" : 19988,
+      "negative" : 20012
+    },
+    "source" : "https://huggingface.co/datasets/amazon_polarity",
+    "path" : "/Users/victoriaalabi/java-sentiment-analyzer/data/raw/amazon_polarity/train.csv",
+    "samples" : {
+      "train" : 40000,
+      "val" : 0,
+      "test" : 10000
+    },
+    "split_manifest_hash" : "1c7ae721d1a1fbff9cac6100d2145163080fe1cf66d4f45ba048514191ecd3c1",
+    "test_split_hash" : "61691be3f00ade15035d21f743cca4e0f4c2b0601c9064879d2b8e22dcd05dbe"
+  },
+  "preprocessing" : {
+    "lowercase" : true,
+    "remove_stopwords" : false,
+    "max_features" : 5000,
+    "min_word_frequency" : 2,
+    "use_tfidf" : true,
+    "use_bigrams" : true,
+    "tokenizer" : "AdvancedTokenizer"
+  },
+  "hyperparameters" : {
+    "algorithm" : "LOGISTIC_REGRESSION",
+    "ridge" : 1.0E-8
+  },
+  "performance" : {
+    "test_accuracy" : 0.8406,
+    "test_precision" : 0.8406085872777067,
+    "test_recall" : 0.840601502616541,
+    "test_f1" : 0.8405993623974497,
+    "confusion_matrix" : [ [ 4193, 810 ], [ 784, 4213 ] ],
+    "roc_auc" : 0.9134920088571232
+  },
+  "cross_domain_performance" : {
+    "evaluated_at" : "2026-01-30T02:21:19.687589",
+    "imdb_50k" : {
+      "accuracy" : 0.8044804480448045,
+      "f1" : 0.8044804480448045,
+      "precision" : 0.8044804480448045,
+      "recall" : 0.8044804480448045,
+      "test_samples" : 9999,
+      "is_in_domain" : false
+    },
+    "amazon_polarity" : {
+      "accuracy" : 0.8406,
+      "f1" : 0.8406,
+      "precision" : 0.8406,
+      "recall" : 0.8406,
+      "test_samples" : 10000,
+      "is_in_domain" : true
+    },
+    "yelp" : {
+      "accuracy" : 0.8472605439495468,
+      "f1" : 0.8472605439495468,
+      "precision" : 0.8472605439495468,
+      "recall" : 0.8472605439495468,
+      "test_samples" : 5074,
+      "is_in_domain" : false
+    },
+    "cross_domain_average" : 0.8258704959971757
+  },
+  "artifacts" : {
+    "model_file" : "amazon_polarity_logistic_regression_model.ser",
+    "feature_importance" : "amazon_polarity_logistic_regression_model-feature-importance.json"
+  },
+  "reproducibility" : {
+    "random_seed" : 42,
+    "java_version" : "24.0.1",
+    "weka_version" : "3.9.6",
+    "commit_hash" : "6d7f5e5"
+  },
+  "trained_at" : "2026-01-30T02:49:56.037088Z",
+  "training_duration_seconds" : 3208,
+  "model_id" : "logistic_regression-2026-01-30T02-49-55",
+  "algorithm" : "LOGISTIC_REGRESSION",
+  "model_file" : "amazon_polarity_logistic_regression_model.ser",
+  "model_size_bytes" : 15084720
+}

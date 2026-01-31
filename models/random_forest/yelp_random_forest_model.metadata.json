@@ -1,0 +1,94 @@
+{
+  "model_info" : {
+    "algorithm" : "RANDOM_FOREST",
+    "kernel" : null,
+    "framework" : "Weka 3.9.6",
+    "version" : "2.0.0",
+    "notes" : null
+  },
+  "training_data" : {
+    "dataset" : "yelp",
+    "dataset_version" : "2015-yelp-challenge",
+    "split" : "train",
+    "num_samples" : 20292,
+    "class_balance" : {
+      "positive" : 10146,
+      "negative" : 10146
+    },
+    "source" : "https://www.yelp.com/dataset",
+    "path" : "/Users/victoriaalabi/java-sentiment-analyzer/data/raw/yelp/yelp_reviews.csv",
+    "samples" : {
+      "train" : 20292,
+      "val" : 0,
+      "test" : 5074
+    },
+    "split_manifest_hash" : "015be812064839ac323c6a61005ba8633f1ec69a71fd47c5585486c3b0764d10",
+    "test_split_hash" : "046040e6b7d4403d7e76c8a6b1dc2b49779b2a15aa5e1c7a0dcee3bdc8209b3f"
+  },
+  "preprocessing" : {
+    "lowercase" : true,
+    "remove_stopwords" : false,
+    "max_features" : 5000,
+    "min_word_frequency" : 2,
+    "use_tfidf" : true,
+    "use_bigrams" : true,
+    "tokenizer" : "AdvancedTokenizer"
+  },
+  "hyperparameters" : {
+    "algorithm" : "RANDOM_FOREST",
+    "num_trees" : 100,
+    "max_depth" : 0
+  },
+  "performance" : {
+    "test_accuracy" : 0.9201813165155696,
+    "test_precision" : 0.9211713002473043,
+    "test_recall" : 0.9201813165155696,
+    "test_f1" : 0.9201343845071347,
+    "confusion_matrix" : [ [ 2396, 141 ], [ 264, 2273 ] ],
+    "roc_auc" : 0.976222618684541
+  },
+  "cross_domain_performance" : {
+    "evaluated_at" : "2026-01-30T02:21:19.687589",
+    "imdb_50k" : {
+      "accuracy" : 0.7148714871487148,
+      "f1" : 0.7148714871487148,
+      "precision" : 0.7148714871487148,
+      "recall" : 0.7148714871487148,
+      "test_samples" : 9999,
+      "is_in_domain" : false
+    },
+    "amazon_polarity" : {
+      "accuracy" : 0.8128,
+      "f1" : 0.8128,
+      "precision" : 0.8128,
+      "recall" : 0.8128,
+      "test_samples" : 10000,
+      "is_in_domain" : false
+    },
+    "yelp" : {
+      "accuracy" : 0.9201813165155696,
+      "f1" : 0.9201813165155696,
+      "precision" : 0.9201813165155696,
+      "recall" : 0.9201813165155696,
+      "test_samples" : 5074,
+      "is_in_domain" : true
+    },
+    "cross_domain_average" : 0.7638357435743575
+  },
+  "artifacts" : {
+    "model_file" : "yelp_random_forest_model.ser",
+    "feature_importance" : "yelp_random_forest_model-feature-importance.json"
+  },
+  "reproducibility" : {
+    "random_seed" : 42,
+    "java_version" : "24.0.1",
+    "weka_version" : "3.9.6",
+    "commit_hash" : "6d7f5e5"
+  },
+  "trained_at" : "2026-01-29T09:47:53.403949Z",
+  "training_duration_seconds" : 2267,
+  "model_id" : "random_forest-2026-01-29T09-47-52",
+  "algorithm" : "RANDOM_FOREST",
+  "model_file" : "yelp_random_forest_model.ser",
+  "model_size_bytes" : 96359543
+}

@@ -1,0 +1,95 @@
+{
+  "model_info" : {
+    "algorithm" : "SVM",
+    "kernel" : "linear",
+    "framework" : "Weka 3.9.6",
+    "version" : "2.0.0",
+    "notes" : "SVM with C=0.1000, linear kernel (default config, no grid search)"
+  },
+  "training_data" : {
+    "dataset" : "imdb_50k",
+    "dataset_version" : "2011-maas",
+    "split" : "train",
+    "num_samples" : 39995,
+    "class_balance" : {
+      "positive" : 19995,
+      "negative" : 20000
+    },
+    "source" : "https://ai.stanford.edu/~amaas/data/sentiment/",
+    "path" : "/Users/victoriaalabi/java-sentiment-analyzer/data/raw/imdb_50k/IMDB Dataset.csv",
+    "samples" : {
+      "train" : 39995,
+      "val" : 0,
+      "test" : 9999
+    },
+    "split_manifest_hash" : "68396d92d59afc32735e236bad0d376adf0c13fe138311f6e45e41d24019bb8f",
+    "test_split_hash" : "c8ce4e8f5c01bc1d42f9a5b22abb10a5da8cc56f5c465646d837bec79df6af19"
+  },
+  "preprocessing" : {
+    "lowercase" : true,
+    "remove_stopwords" : false,
+    "max_features" : 5000,
+    "min_word_frequency" : 2,
+    "use_tfidf" : true,
+    "use_bigrams" : true,
+    "tokenizer" : "AdvancedTokenizer"
+  },
+  "hyperparameters" : {
+    "algorithm" : "SVM",
+    "kernel" : "linear",
+    "c_parameter" : 0.1,
+    "tuning_method" : "default"
+  },
+  "performance" : {
+    "test_accuracy" : 0.8905890589058906,
+    "test_precision" : 0.8905994754814588,
+    "test_recall" : 0.8905893178635726,
+    "test_f1" : 0.8905883749464489,
+    "confusion_matrix" : [ [ 4440, 560 ], [ 534, 4465 ] ],
+    "roc_auc" : 0.955423524704941
+  },
+  "cross_domain_performance" : {
+    "evaluated_at" : "2026-01-30T02:21:19.687589",
+    "imdb_50k" : {
+      "accuracy" : 0.8905890589058906,
+      "f1" : 0.8905890589058906,
+      "precision" : 0.8905890589058906,
+      "recall" : 0.8905890589058906,
+      "test_samples" : 9999,
+      "is_in_domain" : true
+    },
+    "amazon_polarity" : {
+      "accuracy" : 0.8187,
+      "f1" : 0.8187,
+      "precision" : 0.8187,
+      "recall" : 0.8187,
+      "test_samples" : 10000,
+      "is_in_domain" : false
+    },
+    "yelp" : {
+      "accuracy" : 0.8488372093023255,
+      "f1" : 0.8488372093023255,
+      "precision" : 0.8488372093023255,
+      "recall" : 0.8488372093023255,
+      "test_samples" : 5074,
+      "is_in_domain" : false
+    },
+    "cross_domain_average" : 0.8337686046511628
+  },
+  "artifacts" : {
+    "model_file" : "imdb_50k_svm_model.ser",
+    "feature_importance" : "imdb_50k_svm_model-feature-importance.json"
+  },
+  "reproducibility" : {
+    "random_seed" : 42,
+    "java_version" : "24.0.1",
+    "weka_version" : "3.9.6",
+    "commit_hash" : "6d7f5e5"
+  },
+  "trained_at" : "2026-01-29T16:18:19.458783Z",
+  "training_duration_seconds" : 14756,
+  "model_id" : "svm-2026-01-29T16-18-16",
+  "algorithm" : "SVM",
+  "model_file" : "imdb_50k_svm_model.ser",
+  "model_size_bytes" : 33166201
+}
