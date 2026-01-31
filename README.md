@@ -1,55 +1,31 @@
 # Java Sentiment Analyzer
 
-A sentiment analysis API built in Java with Spring Boot.
-
-Goal: Understand engineering rigor of production ML Systems (type safety, circuit breakers, health checks, and containerized deployment).
-
-| Metric | Value |
-|--------|-------|
-| Cross-domain accuracy | **88.0%** (tested on 3 different text domains) |
-| Latency | **10-50ms** per request |
-| Throughput | **1,000+ req/min** |
-
-**[Try the Live API](https://java-sentiment-api.onrender.com/api/v1/health)**
+Sentiment classification API that handles negated expressions most models get wrong.
 
 ```bash
 curl -X POST https://java-sentiment-api.onrender.com/api/v1/sentiment/analyze \
   -H "Content-Type: application/json" \
-  -d '{"text":"This product is amazing and I love it"}'
+  -d '{"text":"I am not disappointed"}'
+# → positive (83% confidence)
 ```
 
-```json
-{"sentiment":"positive","confidence":0.95,"text":"This product is amazing and I love it","processingTimeMs":12}
-```
+| Metric | Value |
+|--------|-------|
+| Cross-domain accuracy | 88.0% (Amazon → IMDB → Yelp) |
+| Latency | <10ms mean, <3ms p99 |
+| Negation handling | "not bad" → positive, "not recommend" → negative |
 
----
-
-## Why Java for ML?
-
-I built this to demonstrate cross-language proficiency and enterprise deployment patterns that Python notebooks don't address:
-
-- **Type-safe pipelines** catch errors at compile time, not in production
-- **Spring Boot patterns**: circuit breakers, rate limiting, health checks
-- **Weka's maturity**: 20+ years of peer-reviewed ML algorithms
-- **JVM concurrency**: ReadWriteLock enables parallel inference during model updates
-
-The result: a sentiment classifier that runs anywhere Docker runs, handles real traffic patterns, and maintains consistent accuracy across completely different text domains (movie reviews, product reviews, restaurant reviews).
-
----
+Built in Java to demonstrate ML outside the Python ecosystem. Uses Weka for interpretable models, Spring Boot for the API layer, deployed on Render.
 
 ## Results
-
-### Production Model Performance
 
 | Metric | Value |
 |--------|-------|
 | **Test Accuracy** | 89.6% |
 | **Cross-Domain Average** | 88.0% |
 | **F1 Score** | 0.896 |
-| **Latency** | 10-50ms |
-| **Throughput** | ~1,000 req/min |
 
-The production model (SVM trained on Amazon product reviews) was selected for **best generalization**—it maintains 85-91% accuracy when applied to completely different domains:
+The production model (SVM trained on Amazon reviews) maintains 85-91% accuracy across different domains:
 
 | Test Domain | Accuracy |
 |-------------|----------|
@@ -57,248 +33,86 @@ The production model (SVM trained on Amazon product reviews) was selected for **
 | IMDB movies | 85.2% |
 | Yelp restaurants | 90.9% |
 
-### Model Comparison (12 experiments)
+### Model Comparison
 
-Trained 4 algorithms across 3 domains to find the best trade-off between accuracy and generalization:
+| Algorithm | Best In-Domain | Cross-Domain Avg |
+|-----------|----------------|------------------|
+| **SVM** | 94.0% (Yelp) | **88.0%** |
+| Random Forest | 92.0% (Yelp) | 84.6% |
+| Logistic Regression | 92.6% (Yelp) | 82.6% |
+| Naive Bayes | 82.9% (IMDB) | 76.3% |
 
-| Algorithm | Best In-Domain | Cross-Domain Avg | Notes |
-|-----------|----------------|------------------|-------|
-| **SVM** | 94.0% (Yelp) | **88.0%** | Best generalizing |
-| Random Forest | 92.0% (Yelp) | 84.6% | Largest model files |
-| Logistic Regression | 92.6% (Yelp) | 82.6% | Fastest training |
-| Naive Bayes | 82.9% (IMDB) | 76.3% | Fastest inference |
+### Top Features
 
-Full results: [Model Comparison Report](results/FINAL_COMPREHENSIVE_REPORT.md)
+| Positive | Weight | Negative | Weight |
+|----------|--------|----------|--------|
+| excellent | +0.83 | disappointing | -1.12 |
+| awesome | +0.79 | worst | -1.09 |
+| fantastic | +0.75 | disappointment | -0.99 |
+| not_be not_disappointed | +0.64 | boring | -0.96 |
+| perfect | +0.67 | disappointed | -0.93 |
 
-### What the Model Learned
-
-Selected features by SVM weight (curated to highlight negation handling):
-
-| Positive Indicators | Weight | Negative Indicators | Weight |
-|---------------------|--------|---------------------|--------|
-| excellent | +0.88 | disappointment | -1.08 |
-| not_disappointed | +0.58 | disappointing | -1.03 |
-| fantastic | +0.76 | worst | -1.03 |
-| awesome | +0.75 | disappointed | -1.01 |
-| not_boring | +0.48 | boring | -1.00 |
-
-Features like `not_disappointed` and `not_boring` show that the preprocessing pipeline captures negation scope (Pang et al. 2002)—a common failure mode for bag-of-words models. Words following negation triggers are prefixed with `not_`, allowing the model to learn that "not boring" indicates positive sentiment.
-
-Full feature analysis: [Feature Importance API endpoint](#feature-importance) or `models/production/sentiment_model-feature-importance.json`
-
----
+The bigram `not_be not_disappointed` shows negation scope handling (Pang et al. 2002).
 
 ## Quick Start
 
-**Try the live API:**
-```bash
-curl -X POST https://java-sentiment-api.onrender.com/api/v1/sentiment/analyze \
-  -H "Content-Type: application/json" \
-  -d '{"text":"This product exceeded my expectations!"}'
-```
-
-**Or run locally with Docker:**
 ```bash
 docker build -t sentiment-api .
 docker run -p 8080:8080 sentiment-api
 ```
 
-The API starts at http://localhost:8080. Test it:
-
-```bash
-curl -X POST http://localhost:8080/api/v1/sentiment/analyze \
-  -H "Content-Type: application/json" \
-  -d '{"text":"This product exceeded my expectations!"}'
-```
-
-```json
-{
-  "sentiment": "positive",
-  "confidence": 0.92,
-  "text": "This product exceeded my expectations!",
-  "processingTimeMs": 15
-}
-```
-
----
+Test: `curl http://localhost:8080/api/v1/health`
 
 ## API Endpoints
 
-### Single Analysis
-```bash
-curl -X POST http://localhost:8080/api/v1/sentiment/analyze \
-  -H "Content-Type: application/json" \
-  -d '{"text":"Terrible customer service, would not recommend."}'
-```
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/v1/sentiment/analyze` | POST | Single text classification |
+| `/api/v1/sentiment/batch` | POST | Batch classification (up to 100) |
+| `/api/v1/model/feature-importance` | GET | Top features by weight |
+| `/api/v1/health` | GET | Health check |
 
-### Batch Analysis (up to 100 texts)
-```bash
-curl -X POST http://localhost:8080/api/v1/sentiment/batch \
-  -H "Content-Type: application/json" \
-  -d '{"texts":["Great product!", "Disappointing quality.", "It works fine."]}'
-```
-
-### Feature Importance
-```bash
-curl http://localhost:8080/api/v1/model/feature-importance
-```
-
-### Health Check
-```bash
-curl http://localhost:8080/api/v1/health
-```
-
-See [examples/](examples/) for Python client and curl examples.
-
----
-
-## Architecture Highlights
-
-Attempt at a deployable system with production patterns:
+## Architecture
 
 | Concern | Solution |
 |---------|----------|
-| **Fault tolerance** | Circuit breaker pattern (Resilience4j) prevents cascade failures |
-| **Rate limiting** | 100 req/min single, 20 req/min batch |
-| **Thread safety** | ReadWriteLock allows concurrent inference during training |
-| **Reproducibility** | SHA-256 checksums lock train/test splits |
-| **Observability** | Spring Actuator health checks, latency metrics |
+| Fault tolerance | Circuit breaker (Resilience4j) |
+| Rate limiting | 100 req/min single, 20 req/min batch |
+| Thread safety | ReadWriteLock for concurrent inference |
+| Reproducibility | SHA-256 checksums on train/test splits |
 
-### ML Pipeline
-
-```
-Raw Data → Stratified Sampling → TF-IDF + Bigrams → MI Feature Selection → SVM Training
-                                                                              ↓
-                                              Production Model ← Grid Search Tuning
-```
-
-Key preprocessing decisions:
-- **Mutual Information** feature selection (statistically principled, not arbitrary top-k)
-- **TF-IDF with bigrams** captures phrases like "not good" and "highly recommend"
-- **Stratified splits** ensure balanced positive/negative in train and test
-
-Deep dive: [Architecture Documentation](docs/ARCHITECTURE.md)
-
----
-
-## Training Your Own Models
-
-### Full Pipeline
+## Training
 
 ```bash
-# 1. Prepare immutable train/test splits (run once)
-./scripts/prepare_data.sh
-
-# 2. Train all 12 models (4 algorithms x 3 datasets)
-./scripts/train_all_models.sh
-
-# 3. Evaluate cross-domain generalization
-./scripts/evaluate_cross_domain.sh
-
-# 4. Select and deploy best model
-./scripts/promote_to_production.sh
-
-# 5. Generate comparison report
-./scripts/generate_report.sh
+./scripts/train_all_models.sh          # Train 12 models
+./scripts/evaluate_cross_domain.sh     # Cross-domain evaluation
+./scripts/promote_to_production.sh     # Deploy best model
 ```
 
-### Train a Single Model
+## Technology
 
-```bash
-mvn exec:java -Dexec.mainClass="sentiment.training.TrainModel" \
-  -Dexec.args="--algorithm svm --dataset amazon_polarity"
-```
-
-Training documentation: [TRAINING.md](docs/TRAINING.md)
-
----
-
-## Datasets
-
-| Dataset | Samples | Domain | Source |
-|---------|---------|--------|--------|
-| IMDB 50K | 50,000 | Movie reviews | Maas et al. (2011) |
-| Amazon Polarity | 50,000 | Product reviews | McAuley & Leskovec (2013) |
-| Yelp | 25,000 | Restaurant reviews | Yelp Dataset Challenge |
-
-All datasets use stratified 80/20 train/test splits with SHA-256 verification.
-
-Data quality documentation: [Data Cards](docs/data_cards/)
-
----
-
-## Technology Stack
-
-| Layer | Technology | Why |
-|-------|------------|-----|
-| **ML** | Weka 3.9.6 | Mature, accurate, interpretable algorithms |
-| **API** | Spring Boot 3.4 | Production-grade REST with minimal config |
-| **Resilience** | Resilience4j | Circuit breaker, rate limiting |
-| **Build** | Maven | Standard Java dependency management |
-| **Deploy** | Docker | Consistent environments, easy scaling |
-| **Runtime** | Java 21 | LTS with virtual threads support |
-
----
-
-## Project Structure
-
-```
-java-sentiment-analyzer/
-├── src/main/java/sentiment/
-│   ├── api/                  # REST controllers, request/response models
-│   ├── config/               # Spring configuration, model loading
-│   ├── data/                 # Dataset loading and quality validation
-│   ├── evaluation/           # Cross-domain testing, metrics
-│   ├── models/               # SVM, NaiveBayes, RandomForest, LogisticRegression
-│   ├── preprocessing/        # Text cleaning, tokenization, TF-IDF
-│   └── training/             # Training orchestration, metadata persistence
-├── scripts/                  # Training and evaluation automation
-├── models/production/        # Deployed model + feature importance
-├── data/processed/           # Locked train/test splits with manifests
-├── results/                  # Auto-generated evaluation reports
-├── examples/                 # Python client and curl examples
-└── docs/                     # Architecture, deployment, training guides
-```
-
----
-
-## Documentation
-
-| Document | Contents |
-|----------|----------|
-| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | System design, ML decisions, thread safety |
-| [TRAINING.md](docs/TRAINING.md) | Training pipeline, troubleshooting |
-| [DEPLOYMENT.md](docs/DEPLOYMENT.md) | Docker, monitoring, production checklist |
-| [Data Cards](docs/data_cards/) | Dataset provenance, biases, limitations |
-| [Results Report](results/FINAL_COMPREHENSIVE_REPORT.md) | Full 12-model comparison (auto-generated) |
-
----
-
-## Configuration
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `SENTIMENT_RANDOM_SEED` | 42 | Reproducibility seed |
-| `SENTIMENT_MI_THRESHOLD` | 50000 | Feature selection threshold |
-
-Rate limits (per minute, default profile): 100 single / 20 batch / 2 model-compare
-
-Note: Production profile uses stricter limits (60 single / 10 batch / 5 per 10min).
-
-See [DEPLOYMENT.md](docs/DEPLOYMENT.md) for full configuration reference.
-
----
+| Component | Technology |
+|-----------|------------|
+| ML | Weka 3.9.6 |
+| API | Spring Boot 3.4 |
+| Resilience | Resilience4j |
+| Runtime | Java 21 |
+| Deploy | Docker |
 
 ## Limitations
 
-- **Binary classification only**: Positive or negative (no neutral class)
-- **English text**: Not tested on other languages
-- **Domain shift**: Accuracy may vary on domains unlike training data (tech support, legal, medical)
+- Binary classification only (positive/negative)
+- English text only
+- Sarcasm detection limited
+- Some negation edge cases ("not terrible", "not bad at all") may misclassify
 
-For neutral sentiment or multi-class, retrain with appropriately labeled data.
+## Documentation
 
----
+- [Architecture](docs/ARCHITECTURE.md)
+- [Training](docs/TRAINING.md)
+- [Deployment](docs/DEPLOYMENT.md)
+- [Data Cards](docs/data_cards/)
 
 ## License
 
-MIT License. See [LICENSE](LICENSE) for details.
+MIT

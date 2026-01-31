@@ -30,8 +30,11 @@ training_log*.txt
 /data/
 
 # Model files
-# Training models ignored via nested .gitignore in each models/*/ subdirectory
-# Production model MUST be tracked (proof of work + deployment)
+# Training models ignored, only production tracked
+models/svm/
+models/naive_bayes/
+models/random_forest/
+models/logistic_regression/
 !models/production/
 !models/production/*
 
@@ -61,5 +64,10 @@ personal/
 # Test scripts in root
 test_*.sh
 
-# Demo (WIP)
-demo/
+# Generated results (metrics in README)
+results/
+
+# Dev-only scripts
+scripts/reset.sh
+scripts/cleanup.sh
+scripts/generate_report.sh

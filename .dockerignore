@@ -38,9 +38,6 @@ LICENSE
 scripts/
 cleanup.sh
 
-# Examples and demos (not needed in image)
-demo/
-examples/
 
 # Results (training artifacts, not needed at runtime)
 results/

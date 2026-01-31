@@ -1,229 +1,72 @@
 # Deployment Guide
 
-Production deployment and configuration for the Java Sentiment Analyzer.
-
-## Quick Start
-
 **Live API:** https://java-sentiment-api.onrender.com
 
-**Or run locally:**
+## Docker
+
 ```bash
 docker build -t sentiment-api .
 docker run -p 8080:8080 sentiment-api
 ```
 
-Local API available at http://localhost:8080.
-
-## Local Development
-
-### Prerequisites
-
-- Java 21
-- Maven 3.9+
-- Production model in `models/production/` (run `./scripts/promote_to_production.sh` first)
-
-### Run Locally
-
-```bash
-# Build
-mvn clean package -DskipTests
-
-# Run with Spring Boot
-mvn spring-boot:run
-
-# Or run JAR directly
-java -jar target/sentiment-analyzer-*.jar
-```
-
-## Docker
-
-### Build Image
-
-```bash
-docker build -t sentiment-analyzer .
-```
-
-### Run Container
-
-```bash
-docker run -d \
-  -p 8080:8080 \
-  -v $(pwd)/models:/app/models \
-  sentiment-analyzer
-```
-
-### With Custom Configuration
-
+With custom configuration:
 ```bash
 docker run -d \
   -p 8080:8080 \
   -e SPRING_PROFILES_ACTIVE=production \
   -e MAX_HEAP=1g \
-  -e MIN_HEAP=512m \
-  -v $(pwd)/models:/app/models \
-  sentiment-analyzer
+  sentiment-api
 ```
+
+## Local Development
+
+```bash
+mvn clean package -DskipTests
+mvn spring-boot:run
+```
+
+Requires production model in `models/production/` (run `./scripts/promote_to_production.sh` first).
 
 ## Configuration
 
-### Environment Variables
-
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `SPRING_PROFILES_ACTIVE` | `production` | Application profile |
-| `SENTIMENT_SVM_MODEL` | `/app/models/production/sentiment_model.ser` | Path to model file |
-| `SENTIMENT_CONFIDENCE_THRESHOLD` | `0.7` | Minimum confidence for predictions |
-| `MAX_HEAP` | `512m` | JVM max heap size |
-| `MIN_HEAP` | `256m` | JVM initial heap size |
+| `SPRING_PROFILES_ACTIVE` | (none) | Set to `production` for stricter limits |
+| `SENTIMENT_SVM_MODEL` | `/app/models/production/sentiment_model.ser` | Model path |
+| `MAX_HEAP` | `512m` | JVM max heap |
 | `SERVER_PORT` | `8080` | API port |
 
-### Preprocessing Configuration
+**Rate Limits:**
+- Default: 100 single/min, 20 batch/min
+- Production profile: 60 single/min, 10 batch/min
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `SENTIMENT_PREPROCESSING_MAX_FEATURES` | `5000` | Max vocabulary size |
-| `SENTIMENT_PREPROCESSING_MIN_WORD_LENGTH` | `2` | Min word length |
-| `SENTIMENT_PREPROCESSING_USE_TFIDF` | `true` | Use TF-IDF weighting |
-| `SENTIMENT_PREPROCESSING_USE_BIGRAMS` | `true` | Include bigrams |
-| `SENTIMENT_MI_THRESHOLD` | `50000` | MI feature selection threshold |
-
-### API Configuration
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `SENTIMENT_API_MAX_BATCH_SIZE` | `100` | Max texts per batch request |
-| `SENTIMENT_API_VALIDATION_MAX_TEXT_LENGTH` | `10000` | Max characters per text |
-
-**Rate Limits (configured in `application.yml`):**
-
-Default profile:
-- Single analysis: 100 requests/min
-- Batch analysis: 20 requests/min
-- Model comparison: 2 requests/5min
-
-Production profile (stricter):
-- Single analysis: 60 requests/min
-- Batch analysis: 10 requests/min
-- Model comparison: 5 requests/10min
-
-## Health Check & Monitoring
-
-### Health Endpoint
+## Health Check
 
 ```bash
 curl http://localhost:8080/api/v1/health
 ```
 
-### Key Metrics to Monitor
-
-1. **Model Status:**
-   - `modelLoaded` - Should be `true`
-   - `averageConfidence` - Alert if dropping below 0.7
-
-2. **System Performance:**
-   - Response latency - Alert if p99 > 100ms
-   - HTTP 503 errors - Model not loaded
-
-### Spring Actuator
-
-Additional endpoints at `/actuator/`:
-- `/actuator/health` - Basic health
-- `/actuator/info` - App info
-- `/actuator/prometheus` - Prometheus metrics (if enabled)
-
-## Troubleshooting
-
-### Container Fails to Start
-
-**Check logs:**
-```bash
-docker logs sentiment-analyzer
-```
-
-**Common causes:**
-- Model file not found: Ensure `models/production/sentiment_model.ser` exists
-- Out of memory: Increase with `-e MAX_HEAP=1g`
-
-### Model Not Found (Startup Failure)
-
-**Behavior:** The application **fails fast** if no pre-trained model exists. This is intentional - there is no automatic fallback training in production to prevent unexpected resource consumption and slow startup.
-
-**Error message:**
-```
-Pre-trained model not found at: ./models/production/sentiment_model.ser
-Run ./scripts/promote_to_production.sh to create the production model.
-```
-
-**Resolution:**
-```bash
-# Verify model exists
-ls -la models/production/
-
-# If missing, train and promote a model (requires training data)
-./scripts/train_all_models.sh        # Train all algorithms
-./scripts/evaluate_cross_domain.sh   # Evaluate cross-domain performance
-./scripts/promote_to_production.sh   # Promote best model to production
-```
-
-**Why no fallback?** Training takes 1-3 hours and requires ~1GB+ RAM. Automatic training in production would cause unpredictable startup times and resource spikes. The fail-fast approach ensures deployment issues are caught immediately.
-
-### Slow Response Times
-
-**Solutions:**
-1. Increase memory: `-e MAX_HEAP=1g`
-2. Increase CPU: `docker run --cpus 2 ...`
-3. Check model size - smaller vocabulary = faster inference
-
-### Out of Memory
-
-```bash
-# Increase heap
-docker run -p 8080:8080 -e MAX_HEAP=1g -e MIN_HEAP=512m sentiment-api
-```
-
-## Security
-
-### Non-Root Container
-
-The Dockerfile runs as non-root user (UID 1001) by default.
-
-### Network Isolation
-
-```bash
-docker network create sentiment-net
-docker run --network sentiment-net sentiment-api
-```
+Actuator endpoints: `/actuator/health`, `/actuator/prometheus`
 
 ## Performance
-
-### Expected Performance
 
 | Metric | Value |
 |--------|-------|
 | Startup time | < 10 seconds |
-| Memory (steady state) | 512MB - 1GB |
-| Single request latency | 10-50ms |
-| Batch (100 texts) | 1-2 seconds |
-| Throughput | ~1000 req/min per instance |
+| Memory | 512MB - 1GB |
+| Latency | <10ms mean, <3ms p99 |
+| Batch (100 texts) | 50-100ms |
 
-### Resource Limits
+## Troubleshooting
 
-```bash
-docker run -p 8080:8080 --cpus 2 --memory 1g sentiment-api
-```
+| Issue | Solution |
+|-------|----------|
+| Model not found | Run `./scripts/promote_to_production.sh` |
+| Out of memory | Increase `-e MAX_HEAP=1g` |
+| Slow responses | Increase CPU: `--cpus 2` |
 
 ## Production Checklist
 
-- [ ] Production model exists (`models/production/sentiment_model.ser`)
-- [ ] Model metadata exists (`models/production/sentiment_model.metadata.json`)
-- [ ] Health endpoint responds (`/api/v1/health`)
-- [ ] Memory limits configured appropriately
-- [ ] Logs accessible for debugging
-
----
-
-## Related Documentation
-
-- [TRAINING.md](TRAINING.md) - Model training pipeline
-- [ARCHITECTURE.md](ARCHITECTURE.md) - System design, patterns, and technical decisions
-- [Data Cards](data_cards/) - Dataset provenance and quality documentation
+- [ ] Model exists: `models/production/sentiment_model.ser`
+- [ ] Health endpoint responds: `/api/v1/health`
+- [ ] Memory limits configured
