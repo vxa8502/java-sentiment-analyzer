@@ -117,6 +117,10 @@ Coverage report: `mvn jacoco:report` (output: `target/site/jacoco/index.html`)
 - Sarcasm detection limited
 - Some negation edge cases ("not terrible", "not bad at all") may misclassify
 
+## Roadmap
+
+- [ ] **Per-prediction explanations** - Endpoint returning which features contributed to a specific classification (e.g., `POST /api/v1/model/explain`)
+
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md)
