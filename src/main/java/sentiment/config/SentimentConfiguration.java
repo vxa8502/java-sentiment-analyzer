@@ -5,7 +5,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -20,11 +19,17 @@ import java.nio.file.Paths;
 
 /**
  * Spring configuration for sentiment analysis components.
+ *
+ * <p>Uses constructor injection for all dependencies to ensure testability
+ * and make dependencies explicit. ObjectProvider is used for prototype-scoped
+ * beans that need fresh instances per classifier.
  */
 @Configuration
 @org.springframework.boot.context.properties.EnableConfigurationProperties({
     FeatureExtractionProperties.class,
-    ModelPathProperties.class
+    ModelPathProperties.class,
+    DriftDetectionProperties.class,
+    ApiProperties.class
 })
 @org.springframework.context.annotation.Profile("!training")
 public class SentimentConfiguration {
@@ -38,17 +43,29 @@ public class SentimentConfiguration {
 
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
-    @Autowired
-    private ObjectProvider<TextPreprocessor> textPreprocessorProvider;
+    private final ObjectProvider<TextPreprocessor> textPreprocessorProvider;
+    private final ObjectProvider<WekaInstancesConverter> wekaInstancesConverterProvider;
+    private final ModelPathProperties modelPaths;
+    private final String modelType;
 
-    @Autowired
-    private ObjectProvider<WekaInstancesConverter> wekaInstancesConverterProvider;
-
-    @Autowired
-    private ModelPathProperties modelPaths;
-
-    @Value("${sentiment.model-type}")
-    private String modelType;
+    /**
+     * Constructor injection for all dependencies.
+     *
+     * @param textPreprocessorProvider provider for prototype-scoped TextPreprocessor instances
+     * @param wekaInstancesConverterProvider provider for prototype-scoped WekaInstancesConverter instances
+     * @param modelPaths configuration properties for model file paths
+     * @param modelType the algorithm/model type to load (from sentiment.model-type property)
+     */
+    public SentimentConfiguration(
+            ObjectProvider<TextPreprocessor> textPreprocessorProvider,
+            ObjectProvider<WekaInstancesConverter> wekaInstancesConverterProvider,
+            ModelPathProperties modelPaths,
+            @Value("${sentiment.model-type}") String modelType) {
+        this.textPreprocessorProvider = textPreprocessorProvider;
+        this.wekaInstancesConverterProvider = wekaInstancesConverterProvider;
+        this.modelPaths = modelPaths;
+        this.modelType = modelType;
+    }
 
 
     /**
