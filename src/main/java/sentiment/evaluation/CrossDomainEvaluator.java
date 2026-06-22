@@ -503,13 +503,21 @@ public class CrossDomainEvaluator {
 
             for (String algo : ALGORITHMS) {
                 System.out.println("\nLoading " + algo + " models...");
-                Map<String, SentimentClassifier> algoModels = sentiment.models.ModelLoader.loadAllForAlgorithm(algo);
+                sentiment.models.ModelLoader.BatchLoadResult result =
+                        sentiment.models.ModelLoader.loadAllForAlgorithm(algo);
 
-                if (algoModels.isEmpty()) {
+                if (result.models().isEmpty()) {
                     System.out.println("No models found for " + algo);
                 } else {
-                    models.put(algo, algoModels);
-                    System.out.println("Loaded " + algoModels.size() + " " + algo + " model(s)");
+                    models.put(algo, result.models());
+                    System.out.println("Loaded " + result.successCount() + " " + algo + " model(s)");
+                }
+
+                // Report any failures so they're not silently ignored
+                if (result.hasFailures()) {
+                    System.err.println("WARNING: " + result.failureCount() + " " + algo + " model(s) failed to load:");
+                    result.failures().forEach((domain, error) ->
+                            System.err.println("  - " + domain + ": " + error));
                 }
             }
 

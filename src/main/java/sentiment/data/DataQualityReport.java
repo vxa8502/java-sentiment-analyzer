@@ -44,15 +44,15 @@ public class DataQualityReport {
 
         // Compute basic statistics
         builder.statistics = DatasetStatistics.compute(data);
-        System.out.println("✓ Basic statistics computed");
+        System.out.println("Basic statistics computed");
 
         // Detect biases
         builder.biases = detectBiases(data);
-        System.out.println("✓ Bias detection complete");
+        System.out.println("Bias detection complete");
 
         // Analyze label quality
         builder.labelQuality = analyzeLabelQuality(data);
-        System.out.println("✓ Label quality analysis complete");
+        System.out.println("Label quality analysis complete");
 
         return builder.build();
     }
@@ -186,7 +186,7 @@ public class DataQualityReport {
 
         // Bias Detection
         sb.append("\n[!] BIAS DETECTION\n");
-        sb.append(String.format("   Length Bias: %s\n", biases.hasLengthBias ? "DETECTED" : "✓ Not detected"));
+        sb.append(String.format("   Length Bias: %s\n", biases.hasLengthBias ? "DETECTED" : "Not detected"));
         if (!biases.lengthBias.isEmpty()) {
             for (var entry : biases.lengthBias.entrySet()) {
                 sb.append(String.format("     - %s: avg %.0f chars\n",
@@ -255,7 +255,7 @@ public class DataQualityReport {
         report.put("label_quality", qualityMap);
 
         mapper.writeValue(outputPath.toFile(), report);
-        System.out.println("✓ Quality report exported to: " + outputPath);
+        System.out.println("Quality report exported to: " + outputPath);
     }
 
     // Inner classes for organizing results
