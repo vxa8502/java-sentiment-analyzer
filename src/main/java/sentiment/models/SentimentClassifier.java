@@ -13,10 +13,10 @@ public interface SentimentClassifier {
      * Trains the classifier on raw training data.
      *
      * @param trainingData Raw Dataset objects to train on
-     * @throws Exception if training fails due to data issues or algorithm problems
+     * @throws ClassificationException if training fails due to data issues or algorithm problems
      * @throws IllegalArgumentException if trainingData is null or empty
      */
-    void train(List<Dataset> trainingData) throws Exception;
+    void train(List<Dataset> trainingData) throws ClassificationException;
 
     /**
      * Classifies a single text string and returns the predicted sentiment label.
@@ -25,11 +25,11 @@ public interface SentimentClassifier {
      *
      * @param text Raw text to classify (will be preprocessed automatically)
      * @return Predicted sentiment label (e.g., "positive", "negative", "neutral")
-     * @throws Exception if classification fails or preprocessing errors occur
+     * @throws ClassificationException if classification fails or preprocessing errors occur
      * @throws IllegalStateException if classifier hasn't been trained
      * @throws IllegalArgumentException if text is null or empty
      */
-    String classify(String text) throws Exception;
+    String classify(String text) throws ClassificationException;
 
     /**
      * Returns RAW confidence scores for each sentiment category.
@@ -41,12 +41,12 @@ public interface SentimentClassifier {
      *
      * @param text Raw text to analyze (will be preprocessed automatically)
      * @return Array of raw probabilities, one per class, in the order returned by {@code getSupportedClasses()}
-     * @throws Exception if classification fails or preprocessing errors occur
+     * @throws ClassificationException if classification fails or preprocessing errors occur
      * @throws IllegalStateException if classifier hasn't been trained
      * @throws IllegalArgumentException if text is null or empty
      * @see #classifyWithProbabilities(String) for smoothed probabilities (recommended for APIs)
      */
-    double[] getClassificationProbabilities(String text) throws Exception;
+    double[] getClassificationProbabilities(String text) throws ClassificationException;
 
     /**
      * Classifies text and returns both the predicted label and SMOOTHED probability distribution
@@ -58,12 +58,12 @@ public interface SentimentClassifier {
      *
      * @param text Raw text to classify (will be preprocessed automatically)
      * @return ClassificationResult containing label, smoothed probabilities, and class names
-     * @throws Exception if classification fails or preprocessing errors occur
+     * @throws ClassificationException if classification fails or preprocessing errors occur
      * @throws IllegalStateException if classifier hasn't been trained
      * @throws IllegalArgumentException if text is null or empty
      * @see #getClassificationProbabilities(String) for raw probabilities (evaluation/calibration)
      */
-    ClassificationResult classifyWithProbabilities(String text) throws Exception;
+    ClassificationResult classifyWithProbabilities(String text) throws ClassificationException;
 
     /**
      * Result of a classification containing label and probabilities.

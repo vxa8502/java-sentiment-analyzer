@@ -20,6 +20,24 @@ import java.util.*;
  *
  * <p>Supports optional hyperparameter tuning via cross-validation to optimize
  * kernel type, complexity parameter (C), and kernel-specific parameters.
+ *
+ * <h2>Thread Safety</h2>
+ * <p>This class is <b>conditionally thread-safe</b> with the following guarantees:
+ * <ul>
+ *   <li><b>Configuration methods</b> ({@code setHyperparameterTuning}, etc.): Thread-safe via volatile fields.
+ *       These should only be called before training starts.</li>
+ *   <li><b>Training</b> ({@code train}): NOT thread-safe. Must be called from a single thread.
+ *       Do not call train() concurrently or while inference is in progress.</li>
+ *   <li><b>Inference</b> ({@code classify}, {@code classifyWithProbabilities}): Thread-safe.
+ *       Multiple threads can safely call inference methods concurrently after training completes.
+ *       Internally synchronized via {@code classifierLock} inherited from {@link ClassifierTrainingTemplate}.</li>
+ *   <li><b>State queries</b> ({@code isTrained}, {@code getAlgorithmType}): Thread-safe, lock-free.</li>
+ * </ul>
+ *
+ * <p>The underlying Weka {@link SMO} classifier is NOT thread-safe. All inference operations
+ * are serialized through the classifier lock to ensure safe concurrent access.
+ *
+ * @see ClassifierTrainingTemplate for base thread-safety implementation
  */
 public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluationResult>
         implements ClassifierEvaluator {
@@ -29,10 +47,10 @@ public class SVMClassifier extends ClassifierTrainingTemplate<ClassifierEvaluati
     private SMO smo;
     private final TextPreprocessor preprocessor;
 
-    private boolean enableHyperparameterTuning = false;
-    private int cvFolds = 5;
-    private SVMConfig optimalConfig;
-    private double classImbalanceThreshold = 3.0;
+    private volatile boolean enableHyperparameterTuning = false;
+    private volatile int cvFolds = 5;
+    private volatile SVMConfig optimalConfig;  // Written by training thread, read by other threads
+    private volatile double classImbalanceThreshold = 3.0;
 
     /**
      * Creates an SVM classifier with default configuration.

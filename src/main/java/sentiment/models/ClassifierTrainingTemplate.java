@@ -14,35 +14,77 @@ import java.util.*;
 
 /**
  * Template base class implementing common classifier training/inference logic.
- * <p> Extends {@link TrainingTemplate} to provide unified state management and lifecycle control.
+ * <p>Extends {@link TrainingTemplate} to provide unified state management and lifecycle control.
+ *
+ * <h2>Thread Safety Contract</h2>
+ * <p>This class provides thread-safe inference through a centralized locking mechanism:
+ *
+ * <ul>
+ *   <li><b>Training phase</b>: NOT thread-safe. The {@link #train} method must be called from a
+ *       single thread. Do not call training while inference is in progress.</li>
+ *   <li><b>Inference phase</b>: Thread-safe. After training completes, multiple threads can safely
+ *       call {@link #classify}, {@link #classifyWithProbabilities}, and {@link #getClassificationProbabilities}
+ *       concurrently.</li>
+ *   <li><b>State queries</b>: Thread-safe. Methods like {@link #isTrained()}, {@link #getState()},
+ *       {@link #getSupportedClasses()} are safe to call from any thread at any time.</li>
+ * </ul>
+ *
+ * <h3>Synchronization Strategy</h3>
+ * <p>Weka classifiers ({@link weka.classifiers.Classifier}) are NOT thread-safe internally.
+ * This template uses a single object lock ({@code classifierLock}) to serialize all inference
+ * operations. This ensures:
+ * <ul>
+ *   <li>No concurrent modifications to classifier internal state</li>
+ *   <li>Consistent reads of probability distributions</li>
+ *   <li>Safe instance transformation through the preprocessing pipeline</li>
+ * </ul>
+ *
+ * <h3>Performance Implications</h3>
+ * <p>Inference operations are serialized, which may limit throughput under high concurrency.
+ * For high-throughput scenarios, consider:
+ * <ul>
+ *   <li>Running multiple classifier instances behind a load balancer</li>
+ *   <li>Using request batching to amortize lock overhead</li>
+ *   <li>Caching frequent predictions</li>
+ * </ul>
  *
  * @param <T> type of training result (optional, can be {@link Void})
+ * @see #executeInference for the synchronized inference method
  */
 public abstract class ClassifierTrainingTemplate<T> extends TrainingTemplate<T> implements WekaClassifier {
 
+    // =========================================================================
     // WEKA-SPECIFIC SHARED STATE
-    // Subclasses that use Weka should populate these fields during training
+    // These fields are populated during training and read during inference.
+    // Write access is single-threaded (training), read access is synchronized.
+    // =========================================================================
 
     /**
      * Training data structure containing schema only (no instances).
      * Used for feature count and instance validation during inference.
+     * <p>Thread safety: Written once during training, read-only thereafter.
      */
     protected Instances trainingDataStructure;
 
     /**
      * Supported class labels (e.g., {@code ["positive", "negative", "neutral"]}).
      * Populated during training from the Weka class attribute.
+     * <p>Thread safety: Written once during training, read-only thereafter.
      */
     protected String[] supportedClasses;
 
     /**
      * Feature converter for Weka instances.
      * Subclasses should set this field if they use {@link WekaInstancesConverter}.
+     * <p>Thread safety: Set during construction, read-only thereafter.
      */
     protected WekaInstancesConverter converter;
 
     /**
-     * Lock for thread-safe classifier operations (Weka classifiers are not thread-safe internally).
+     * Lock for thread-safe classifier operations.
+     * <p>All Weka classifier inference operations must be synchronized on this lock
+     * because Weka classifiers maintain internal state that is not thread-safe.
+     * <p>Usage: Use {@link #executeInference} for all inference operations.
      */
     private final Object classifierLock = new Object();
 
@@ -52,11 +94,17 @@ public abstract class ClassifierTrainingTemplate<T> extends TrainingTemplate<T> 
      * Trains the classifier on the provided training data.
      *
      * @param trainingData the training datasets
-     * @throws Exception if training fails
+     * @throws ClassificationException if training fails
      */
     @Override
-    public void train(List<Dataset> trainingData) throws Exception {
-        trainInternal(trainingData);
+    public void train(List<Dataset> trainingData) throws ClassificationException {
+        try {
+            trainInternal(trainingData);
+        } catch (IllegalArgumentException e) {
+            throw e;  // Let validation errors propagate as-is
+        } catch (Exception e) {
+            throw ClassificationException.trainingError(e);
+        }
     }
 
     /**
@@ -490,29 +538,36 @@ public abstract class ClassifierTrainingTemplate<T> extends TrainingTemplate<T> 
      *
      * @param text input text to classify
      * @return predicted sentiment label
-     * @throws Exception if classification fails or classifier is not trained
+     * @throws ClassificationException if classification fails
+     * @throws IllegalStateException if classifier is not trained
+     * @throws IllegalArgumentException if text is null or empty
      */
-    public String classify(String text) throws Exception {
+    @Override
+    public String classify(String text) throws ClassificationException {
         requireTrained();
         validateTextInput(text);
 
-        return executeInference((InferenceTask<String>) () -> {
-            getLogger().debug("INFERENCE: Classifying text: '{}'",
-                    text.substring(0, Math.min(50, text.length())));
+        try {
+            return executeInference((InferenceTask<String>) () -> {
+                getLogger().debug("INFERENCE: Classifying text: '{}'",
+                        text.substring(0, Math.min(50, text.length())));
 
-            Instance instance = converter.transform(text, "unknown");
-            instance.setDataset(trainingDataStructure);
+                Instance instance = converter.transform(text, "unknown");
+                instance.setDataset(trainingDataStructure);
 
-            // Synchronize classifier call - Weka classifiers are not thread-safe internally
-            double classIndex;
-            synchronized (classifierLock) {
-                classIndex = getWekaClassifierInstance().classifyInstance(instance);
-            }
-            String predicted = supportedClasses[(int) classIndex];
+                // Synchronize classifier call - Weka classifiers are not thread-safe internally
+                double classIndex;
+                synchronized (classifierLock) {
+                    classIndex = getWekaClassifierInstance().classifyInstance(instance);
+                }
+                String predicted = supportedClasses[(int) classIndex];
 
-            getLogger().debug("Classification result: {}", predicted);
-            return predicted;
-        });
+                getLogger().debug("Classification result: {}", predicted);
+                return predicted;
+            });
+        } catch (Exception e) {
+            throw ClassificationException.inferenceError(e);
+        }
     }
 
     /**
@@ -526,27 +581,34 @@ public abstract class ClassifierTrainingTemplate<T> extends TrainingTemplate<T> 
      *
      * @param text input text to classify
      * @return raw probability distribution over all classes (may contain exact 0.0 or 1.0)
-     * @throws Exception if classification fails or classifier is not trained
+     * @throws ClassificationException if classification fails
+     * @throws IllegalStateException if classifier is not trained
+     * @throws IllegalArgumentException if text is null or empty
      * @see #classifyWithProbabilities(String) for smoothed probabilities
      */
-    public double[] getClassificationProbabilities(String text) throws Exception {
+    @Override
+    public double[] getClassificationProbabilities(String text) throws ClassificationException {
         requireTrained();
         validateTextInput(text);
 
-        return executeInference((InferenceTask<double[]>) () -> {
-            getLogger().debug("INFERENCE: Getting probabilities for: '{}'",
-                    text.substring(0, Math.min(50, text.length())));
+        try {
+            return executeInference((InferenceTask<double[]>) () -> {
+                getLogger().debug("INFERENCE: Getting probabilities for: '{}'",
+                        text.substring(0, Math.min(50, text.length())));
 
-            Instance instance = converter.transform(text, "unknown");
-            instance.setDataset(trainingDataStructure);
+                Instance instance = converter.transform(text, "unknown");
+                instance.setDataset(trainingDataStructure);
 
-            // Synchronize classifier call - Weka classifiers are not thread-safe internally
-            double[] probs;
-            synchronized (classifierLock) {
-                probs = getWekaClassifierInstance().distributionForInstance(instance);
-            }
-            return logProbabilityDistribution(probs);
-        });
+                // Synchronize classifier call - Weka classifiers are not thread-safe internally
+                double[] probs;
+                synchronized (classifierLock) {
+                    probs = getWekaClassifierInstance().distributionForInstance(instance);
+                }
+                return logProbabilityDistribution(probs);
+            });
+        } catch (Exception e) {
+            throw ClassificationException.inferenceError(e);
+        }
     }
 
     /**
@@ -562,47 +624,53 @@ public abstract class ClassifierTrainingTemplate<T> extends TrainingTemplate<T> 
      *
      * @param text input text to classify
      * @return ClassificationResult containing label, probabilities, and class names
-     * @throws Exception if classification fails or classifier is not trained
+     * @throws ClassificationException if classification fails
+     * @throws IllegalStateException if classifier is not trained
+     * @throws IllegalArgumentException if text is null or empty
      */
     @Override
-    public SentimentClassifier.ClassificationResult classifyWithProbabilities(String text) throws Exception {
+    public SentimentClassifier.ClassificationResult classifyWithProbabilities(String text) throws ClassificationException {
         requireTrained();
         validateTextInput(text);
 
-        return executeInference((InferenceTask<SentimentClassifier.ClassificationResult>) () -> {
-            getLogger().debug("INFERENCE: Classifying with probabilities: '{}'",
-                    text.substring(0, Math.min(50, text.length())));
+        try {
+            return executeInference((InferenceTask<SentimentClassifier.ClassificationResult>) () -> {
+                getLogger().debug("INFERENCE: Classifying with probabilities: '{}'",
+                        text.substring(0, Math.min(50, text.length())));
 
-            // Single instance creation and transformation
-            Instance instance = converter.transform(text, "unknown");
-            instance.setDataset(trainingDataStructure);
+                // Single instance creation and transformation
+                Instance instance = converter.transform(text, "unknown");
+                instance.setDataset(trainingDataStructure);
 
-            // Synchronize classifier call - Weka classifiers are not thread-safe internally
-            double[] rawProbs;
-            synchronized (classifierLock) {
-                rawProbs = getWekaClassifierInstance().distributionForInstance(instance);
-            }
-
-            // Apply probability smoothing to prevent exact 0/1 values
-            // This ensures confidence thresholding works and expresses inherent uncertainty
-            double[] probs = smoothProbabilities(rawProbs);
-
-            // Find the predicted class (highest probability)
-            int predictedIndex = 0;
-            double maxProb = probs[0];
-            for (int i = 1; i < probs.length; i++) {
-                if (probs[i] > maxProb) {
-                    maxProb = probs[i];
-                    predictedIndex = i;
+                // Synchronize classifier call - Weka classifiers are not thread-safe internally
+                double[] rawProbs;
+                synchronized (classifierLock) {
+                    rawProbs = getWekaClassifierInstance().distributionForInstance(instance);
                 }
-            }
 
-            String predicted = supportedClasses[predictedIndex];
-            getLogger().debug("Classification result: {} (confidence: {}, raw: {})",
-                    predicted, maxProb, rawProbs[predictedIndex]);
+                // Apply probability smoothing to prevent exact 0/1 values
+                // This ensures confidence thresholding works and expresses inherent uncertainty
+                double[] probs = smoothProbabilities(rawProbs);
 
-            return new SentimentClassifier.ClassificationResult(predicted, probs, supportedClasses.clone());
-        });
+                // Find the predicted class (highest probability)
+                int predictedIndex = 0;
+                double maxProb = probs[0];
+                for (int i = 1; i < probs.length; i++) {
+                    if (probs[i] > maxProb) {
+                        maxProb = probs[i];
+                        predictedIndex = i;
+                    }
+                }
+
+                String predicted = supportedClasses[predictedIndex];
+                getLogger().debug("Classification result: {} (confidence: {}, raw: {})",
+                        predicted, maxProb, rawProbs[predictedIndex]);
+
+                return new SentimentClassifier.ClassificationResult(predicted, probs, supportedClasses.clone());
+            });
+        } catch (Exception e) {
+            throw ClassificationException.inferenceError(e);
+        }
     }
 
     /**

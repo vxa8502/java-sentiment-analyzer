@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Set;
 import java.util.function.BiFunction;
 
 /**
@@ -23,6 +24,17 @@ public class ModelLoader {
     private static final Logger logger = LoggerFactory.getLogger(ModelLoader.class);
 
     /**
+     * Allowed base directories for model loading.
+     * Models can only be loaded from these directories or their subdirectories.
+     * This prevents path traversal attacks.
+     */
+    private static final Set<String> ALLOWED_BASE_DIRS = Set.of(
+            "models",
+            "/app/models",
+            "/tmp/models"  // For testing
+    );
+
+    /**
      * Load model with metadata validation.
      * Throws exception if metadata file is missing (non-negotiable requirement).
      *
@@ -30,11 +42,15 @@ public class ModelLoader {
      * @return loaded classifier with metadata attached
      * @throws IOException if model loading fails
      * @throws IllegalStateException if metadata file is missing
+     * @throws SecurityException if model path is outside allowed directories
      */
     public static SentimentClassifier loadWithMetadata(String modelPath)
             throws IOException, ClassNotFoundException {
 
         Path path = Paths.get(modelPath);
+
+        // Security: Validate path is within allowed directories
+        validateModelPath(path);
 
         // Every model must have metadata for reproducibility
         Path metadataPath = TrainingMetadata.getMetadataPath(path);
@@ -132,43 +148,87 @@ public class ModelLoader {
     }
 
     /**
+     * Result of loading multiple models, including both successes and failures.
+     * This allows callers to handle partial failures appropriately.
+     */
+    public record BatchLoadResult(
+            java.util.Map<String, SentimentClassifier> models,
+            java.util.Map<String, String> failures
+    ) {
+        public boolean hasFailures() {
+            return !failures.isEmpty();
+        }
+
+        public int successCount() {
+            return models.size();
+        }
+
+        public int failureCount() {
+            return failures.size();
+        }
+    }
+
+    /**
      * Load all models for a given algorithm from models/<algorithm>/ directory.
      *
+     * <p>Unlike silently swallowing exceptions, this method returns a {@link BatchLoadResult}
+     * that includes both successfully loaded models and any failures with their error messages.
+     * This allows callers to:
+     * <ul>
+     *   <li>Know if any models failed to load</li>
+     *   <li>Get specific error messages for debugging</li>
+     *   <li>Decide how to handle partial failures</li>
+     * </ul>
+     *
      * @param algorithm algorithm name (svm, naive_bayes, random_forest)
-     * @return map of domain name -> classifier
+     * @return BatchLoadResult containing successfully loaded models and any failures
+     * @throws IOException if the directory listing itself fails
      */
-    public static java.util.Map<String, SentimentClassifier> loadAllForAlgorithm(String algorithm)
+    public static BatchLoadResult loadAllForAlgorithm(String algorithm)
             throws IOException {
 
         java.util.Map<String, SentimentClassifier> models = new java.util.HashMap<>();
+        java.util.Map<String, String> failures = new java.util.HashMap<>();
         Path algoDir = Paths.get("models", algorithm);
 
         if (!Files.exists(algoDir)) {
             logger.warn("Model directory not found: {}", algoDir);
-            return models;
+            return new BatchLoadResult(models, failures);
         }
 
         // Find all .ser files
         try (var stream = Files.list(algoDir)) {
             stream.filter(p -> p.toString().endsWith(".ser"))
                   .forEach(modelPath -> {
-                      try {
-                          // Extract domain name from filename: imdb_50k_svm_model.ser -> imdb_50k
-                          String filename = modelPath.getFileName().toString();
-                          String domain = extractDomainName(filename, algorithm);
+                      String filename = modelPath.getFileName().toString();
+                      String domain = extractDomainName(filename, algorithm);
 
+                      try {
                           SentimentClassifier classifier = loadWithMetadata(modelPath.toString());
                           models.put(domain, classifier);
-
                           logger.info("Loaded {} model trained on {}", algorithm, domain);
 
                       } catch (Exception e) {
-                          logger.error("Failed to load {}: {}", modelPath, e.getMessage());
+                          // Capture the failure instead of silently ignoring it
+                          String errorMsg = String.format("%s: %s",
+                                  e.getClass().getSimpleName(), e.getMessage());
+                          failures.put(domain, errorMsg);
+                          logger.error("Failed to load {} model from {}: {}",
+                                  algorithm, modelPath, errorMsg, e);
                       }
                   });
         }
 
-        return models;
+        // Log summary if there were any failures
+        if (!failures.isEmpty()) {
+            logger.warn("Loaded {}/{} {} models. Failures: {}",
+                    models.size(),
+                    models.size() + failures.size(),
+                    algorithm,
+                    failures.keySet());
+        }
+
+        return new BatchLoadResult(models, failures);
     }
 
     /**
@@ -184,5 +244,76 @@ public class ModelLoader {
         base = base.replace("_model", "");
 
         return base;
+    }
+
+    /**
+     * Validates that a model path is within allowed directories.
+     *
+     * <p>This prevents path traversal attacks where an attacker might try to load
+     * arbitrary files from the filesystem using paths like "../../../etc/passwd"
+     * or "/etc/sensitive/data.ser".
+     *
+     * @param modelPath the path to validate
+     * @throws SecurityException if the path is outside allowed directories
+     */
+    private static void validateModelPath(Path modelPath) {
+        // Normalize the path to resolve any ".." or "." components
+        Path normalizedPath = modelPath.toAbsolutePath().normalize();
+        String pathString = normalizedPath.toString();
+
+        // Check if path contains suspicious traversal patterns
+        String originalString = modelPath.toString();
+        if (originalString.contains("..") || originalString.contains("//")) {
+            logger.warn("Rejected model path with traversal pattern: {}", originalString);
+            throw new SecurityException(
+                    "Model path contains invalid traversal patterns: " + originalString);
+        }
+
+        // Check if the path is within an allowed base directory
+        boolean isAllowed = false;
+        for (String allowedBase : ALLOWED_BASE_DIRS) {
+            Path allowedPath = Paths.get(allowedBase).toAbsolutePath().normalize();
+            if (normalizedPath.startsWith(allowedPath)) {
+                isAllowed = true;
+                break;
+            }
+            // Also check relative paths (for local development)
+            if (pathString.contains("/" + allowedBase + "/") ||
+                pathString.contains("\\" + allowedBase + "\\") ||
+                originalString.startsWith(allowedBase + "/") ||
+                originalString.startsWith(allowedBase + "\\") ||
+                originalString.equals(allowedBase)) {
+                isAllowed = true;
+                break;
+            }
+        }
+
+        // Special case: allow paths that start with "models/" relative to current dir
+        Path currentDir = Paths.get(".").toAbsolutePath().normalize();
+        for (String allowedBase : ALLOWED_BASE_DIRS) {
+            Path allowedRelative = currentDir.resolve(allowedBase).normalize();
+            if (normalizedPath.startsWith(allowedRelative)) {
+                isAllowed = true;
+                break;
+            }
+        }
+
+        if (!isAllowed) {
+            logger.warn("Rejected model path outside allowed directories: {} (normalized: {})",
+                    modelPath, normalizedPath);
+            throw new SecurityException(
+                    "Model path must be within allowed directories (models/, /app/models/, /tmp/models/). " +
+                    "Received: " + modelPath);
+        }
+
+        // Validate file extension
+        String filename = normalizedPath.getFileName().toString().toLowerCase();
+        if (!filename.endsWith(".ser")) {
+            logger.warn("Rejected model path with invalid extension: {}", modelPath);
+            throw new SecurityException(
+                    "Model file must have .ser extension. Received: " + filename);
+        }
+
+        logger.debug("Model path validated: {}", normalizedPath);
     }
 }

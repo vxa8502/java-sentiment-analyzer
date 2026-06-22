@@ -14,9 +14,19 @@ import java.util.*;
 
 /**
  * Naive Bayes sentiment classifier using Weka's NaiveBayes implementation.
- * <p> A fast, probabilistic classifier ideal for baseline comparisons and real-time applications.
+ * <p>A fast, probabilistic classifier ideal for baseline comparisons and real-time applications.
  * Assumes conditional independence between features (often violated in text),
  * therefore may underperform when feature interactions are critical.
+ *
+ * <h2>Thread Safety</h2>
+ * <p>Inherits thread-safety guarantees from {@link ClassifierTrainingTemplate}:
+ * <ul>
+ *   <li><b>Training</b>: NOT thread-safe (single-threaded only)</li>
+ *   <li><b>Inference</b>: Thread-safe (synchronized via classifier lock)</li>
+ *   <li><b>State queries</b>: Thread-safe</li>
+ * </ul>
+ *
+ * @see ClassifierTrainingTemplate for thread-safety contract details
  */
 public class NaiveBayesClassifier extends ClassifierTrainingTemplate<ClassifierEvaluationResult>
         implements ClassifierEvaluator {
