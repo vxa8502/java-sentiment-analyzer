@@ -35,7 +35,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
  * <p><b>Performance optimization:</b> Incoming predictions are added to a lock-free
  * {@link ConcurrentLinkedQueue} on the hot path. The queue is drained to the windowed
  * structures periodically by {@link DriftDetector}, moving lock acquisition off the
- * critical inference path to meet P99 &lt; 3 ms latency SLO.
+ * critical inference path.
  */
 @Component
 @ConditionalOnProperty(name = "sentiment.drift.enabled", havingValue = "true", matchIfMissing = true)

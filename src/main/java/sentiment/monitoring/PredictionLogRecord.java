@@ -15,7 +15,7 @@ import java.util.HexFormat;
  *
  * <p><b>Performance optimization:</b> Hash computation is deferred to when the record
  * is serialized (in {@link #toJsonLine()}), which happens in the background logger
- * thread rather than on the inference hot path. This helps meet P99 &lt; 3 ms latency SLO.
+ * thread rather than on the inference hot path.
  */
 public final class PredictionLogRecord {
     private static final DateTimeFormatter ISO_FORMATTER = DateTimeFormatter.ISO_INSTANT;
