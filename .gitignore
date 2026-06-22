@@ -28,6 +28,7 @@ training_log*.txt
 
 # Data (large CSV files - download via scripts/download_data.sh)
 data/**/*.csv
+data/predictions/
 
 # Model files
 # Binary model files ignored (large), metadata tracked
