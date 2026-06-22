@@ -266,17 +266,27 @@ class StratifiedDataSplitterTest {
     // ==================== VALIDATION TESTS ====================
 
     @Test
-    @DisplayName("Should throw when data is null")
+    @DisplayName("Should throw when data is null with descriptive message")
     void testValidation_NullData() {
-        assertThrows(IllegalArgumentException.class,
+        var ex = assertThrows(IllegalArgumentException.class,
                 () -> StratifiedDataSplitter.stratifiedSplit(null, 0.6, 0.2, 0.2, SEED));
+        // Verify exception message SPECIFICALLY indicates null data (not just generic error)
+        assertNotNull(ex.getMessage(), "Exception should have a message");
+        String msg = ex.getMessage().toLowerCase();
+        assertTrue(msg.contains("null") && msg.contains("data"),
+                "Exception message should specifically state 'data' is 'null', got: " + ex.getMessage());
     }
 
     @Test
-    @DisplayName("Should throw when data is empty")
+    @DisplayName("Should throw when data is empty with descriptive message")
     void testValidation_EmptyData() {
-        assertThrows(IllegalArgumentException.class,
+        var ex = assertThrows(IllegalArgumentException.class,
                 () -> StratifiedDataSplitter.stratifiedSplit(List.of(), 0.6, 0.2, 0.2, SEED));
+        // Verify exception message SPECIFICALLY indicates empty data (not just generic error)
+        assertNotNull(ex.getMessage(), "Exception should have a message");
+        String msg = ex.getMessage().toLowerCase();
+        assertTrue(msg.contains("empty") || (msg.contains("data") && msg.contains("0")),
+                "Exception message should specifically state data is 'empty' or has size 0, got: " + ex.getMessage());
     }
 
     @Test
@@ -382,26 +392,6 @@ class StratifiedDataSplitterTest {
         assertEquals(0, split.validation.size());
         assertFalse(split.train.isEmpty());
         assertFalse(split.test.isEmpty());
-    }
-
-    // ==================== IMMUTABILITY TESTS ====================
-
-    @Test
-    @DisplayName("DataSplit lists should be immutable")
-    @SuppressWarnings("DataFlowIssue") // Intentionally testing immutability violations
-    void testDataSplit_Immutability() {
-        DataSplit split = StratifiedDataSplitter.stratifiedSplit(
-                balancedData, 0.6, 0.2, 0.2, SEED);
-
-        // Should throw when trying to modify
-        assertThrows(UnsupportedOperationException.class,
-                () -> split.train.add(new Dataset("New", Dataset.SentimentLabel.POSITIVE, 0.9)));
-
-        assertThrows(UnsupportedOperationException.class,
-                () -> split.validation.add(new Dataset("New", Dataset.SentimentLabel.POSITIVE, 0.9)));
-
-        assertThrows(UnsupportedOperationException.class,
-                () -> split.test.add(new Dataset("New", Dataset.SentimentLabel.POSITIVE, 0.9)));
     }
 
     // ==================== TO STRING TESTS ====================

@@ -308,9 +308,6 @@ class TextPreprocessorTest {
             "Preprocessor should be fitted after calling fit()");
     }
 
-    // REMOVED: TextPreprocessor no longer injects TFIDFFeatureExtractor
-    // Feature extraction happens in service layer with pre-cleaned datasets
-
     @Test
     @DisplayName("transform should throw when not fitted")
     void testTransform_BeforeFit_ThrowsException() {
@@ -460,7 +457,6 @@ class TextPreprocessorTest {
 
         assertFalse(preprocessor.isFitted(),
             "Should not be fitted after reset");
-        // REMOVED: No longer calls featureExtractor.reset()
     }
 
     // ==================== THREAD SAFETY TESTS ====================

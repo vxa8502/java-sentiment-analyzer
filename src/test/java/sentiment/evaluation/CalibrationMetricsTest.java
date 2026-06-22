@@ -82,18 +82,6 @@ class CalibrationMetricsTest {
     }
 
     @Test
-    @DisplayName("Brier score should be in range [0, 1]")
-    void testBrierScoreRange() {
-        double[] probs = {0.5, 0.5, 0.5, 0.5};
-        int[] labels = {1, 0, 1, 0};
-
-        CalibrationMetrics metrics = CalibrationMetrics.compute(probs, labels, 5);
-
-        assertTrue(metrics.getBrierScore() >= 0.0);
-        assertTrue(metrics.getBrierScore() <= 1.0);
-    }
-
-    @Test
     @DisplayName("Bins should be created correctly")
     void testBinCreation() {
         double[] probs = {0.05, 0.15, 0.25, 0.35, 0.45, 0.55, 0.65, 0.75, 0.85, 0.95};
@@ -183,10 +171,19 @@ class CalibrationMetricsTest {
         CalibrationMetrics metrics = CalibrationMetrics.computeMultiClass(probs, labels, 5);
 
         assertNotNull(metrics);
-        assertTrue(metrics.getBrierScore() >= 0.0);
-        assertTrue(metrics.getBrierScore() <= 1.0);
-        assertTrue(metrics.getExpectedCalibrationError() >= 0.0);
-        assertTrue(metrics.getExpectedCalibrationError() <= 1.0);
+        // Range checks are necessary but NOT sufficient - verify actual calibration quality
+        assertTrue(metrics.getBrierScore() >= 0.0 && metrics.getBrierScore() <= 1.0,
+                "Brier score must be in [0,1]");
+        assertTrue(metrics.getExpectedCalibrationError() >= 0.0 && metrics.getExpectedCalibrationError() <= 1.0,
+                "ECE must be in [0,1]");
+
+        // This is a well-calibrated scenario (high confidence predictions match actual classes)
+        // Brier score should be LOW (< 0.3) for well-calibrated predictions
+        assertTrue(metrics.getBrierScore() < 0.3,
+                "Well-calibrated predictions should have low Brier score, got: " + metrics.getBrierScore());
+        // ECE should also be LOW for well-calibrated predictions
+        assertTrue(metrics.getExpectedCalibrationError() < 0.3,
+                "Well-calibrated predictions should have low ECE, got: " + metrics.getExpectedCalibrationError());
     }
 
     @Test

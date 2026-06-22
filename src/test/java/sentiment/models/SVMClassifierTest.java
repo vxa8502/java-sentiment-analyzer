@@ -227,7 +227,7 @@ class SVMClassifierTest {
     }
 
     @Test
-    @DisplayName("Classify after training should return sentiment label")
+    @DisplayName("Classify after training should return valid sentiment label")
     void testClassify_AfterTraining_ReturnsLabel() throws Exception {
         // Arrange
         trainClassifier();
@@ -239,9 +239,15 @@ class SVMClassifierTest {
         // Act
         String result = classifier.classify("This is great!");
 
-        // Assert
-        assertNotNull(result);
-        assertTrue(result.equals("positive") || result.equals("negative"));
+        // Assert - verify it returns a valid class from the supported classes
+        assertNotNull(result, "Classification result should not be null");
+        String[] supportedClasses = classifier.getSupportedClasses();
+        assertTrue(Arrays.asList(supportedClasses).contains(result),
+                "Result '" + result + "' should be one of the supported classes: " + Arrays.toString(supportedClasses));
+
+        // NOTE: In a unit test with mocked SMO, we cannot verify semantic correctness
+        // (i.e., that "This is great!" classifies as "positive"). That requires integration tests.
+        // Here we only verify the classifier returns a valid label from its training set.
     }
 
     @Test
@@ -319,13 +325,17 @@ class SVMClassifierTest {
                 "All threads should complete within timeout");
 
             int expectedTotal = threadCount * classificationsPerThread;
-            int minimumSuccesses = (int) (expectedTotal * 0.48); // Expect at least 48% success rate with mocks (allows for timing variations in concurrent env)
+            // Thread-safe implementations MUST have 100% success rate
+            // Any failure indicates a race condition or concurrency bug
+            // Previous thresholds (48%, 95%) were FALSE CONFIDENCE - hiding real bugs
 
-            assertTrue(successCount.get() >= minimumSuccesses,
-                String.format("At least %d classifications should succeed (got %d out of %d)",
-                    minimumSuccesses, successCount.get(), expectedTotal));
-            assertTrue(successCount.get() > 0,
-                "Some classifications should succeed in concurrent environment");
+            assertEquals(expectedTotal, successCount.get(),
+                String.format("Thread safety requires 100%% success: expected %d, got %d (%d errors). " +
+                    "Any failure indicates a concurrency bug.",
+                    expectedTotal, successCount.get(), errorCount.get()));
+
+            assertEquals(0, errorCount.get(),
+                "Thread-safe implementation must not throw any exceptions");
         } finally {
             executor.shutdown();
         }
@@ -682,14 +692,6 @@ class SVMClassifierTest {
     // ==================== HYPERPARAMETER TUNING TESTS ====================
 
     @Test
-    @DisplayName("setHyperparameterTuning should configure tuning parameters")
-    void testSetHyperparameterTuning_ConfiguresParameters() {
-        classifier.setHyperparameterTuning(true, 10);
-        // No direct getter, but we can verify it doesn't throw
-        assertNotNull(classifier);
-    }
-
-    @Test
     @DisplayName("setHyperparameterTuning with disabled should use default config")
     void testSetHyperparameterTuning_DisabledUsesDefaults() {
         classifier.setHyperparameterTuning(false, 5);
@@ -880,9 +882,17 @@ class SVMClassifierTest {
         ClassifierEvaluationResult result = classifier.evaluate(testData);
 
         Map<String, Object> stats = result.getAdditionalStats();
-        assertNotNull(stats);
-        assertTrue(true,
-                "Should include SVM-specific parameters or handle gracefully");
+        assertNotNull(stats, "Additional stats should not be null");
+
+        // Stats must NOT be empty - removed false escape hatch that allowed empty stats to pass
+        assertFalse(stats.isEmpty(),
+                "Additional stats must not be empty - should contain SVM parameters or evaluation metrics");
+
+        // Verify at least one expected key is present (SVM params or evaluation time)
+        assertTrue(stats.containsKey("svm_complexity_c") || stats.containsKey("svm_epsilon") ||
+                   stats.containsKey("evaluationTimeMs") || stats.containsKey("kernel_type"),
+                "Stats should include SVM-specific parameters (svm_complexity_c, svm_epsilon, kernel_type) " +
+                "or evaluation time. Got keys: " + stats.keySet());
     }
 
     // ==================== PIPELINE VALIDATION TESTS ====================

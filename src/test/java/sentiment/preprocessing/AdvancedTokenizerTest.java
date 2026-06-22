@@ -56,11 +56,20 @@ class AdvancedTokenizerTest {
 
         assertNotNull(tokens);
         assertFalse(tokens.isEmpty(), "Should produce tokens from simple sentence");
-        // Verify expected tokens are present
+
+        // Verify expected multi-char tokens are present
         assertTrue(tokens.contains("This"), "Should contain 'This' with original case");
         assertTrue(tokens.contains("is"), "Should contain 'is'");
         assertTrue(tokens.contains("test"), "Should contain 'test'");
-        // Note: "a" is a single-char token that may be filtered based on meaningful chars set
+
+        // Verify "a" handling - single char "a" is NOT in MEANINGFUL_SINGLE_CHARS set
+        // so it should be filtered out (only 'i', '!', '?', '.', ':', ';' are meaningful)
+        assertFalse(tokens.contains("a"),
+                "Single char 'a' should be filtered out (not in MEANINGFUL_SINGLE_CHARS)");
+
+        // Verify token count: "This", "is", "test" = 3 tokens (without "a")
+        assertEquals(3, tokens.size(),
+                "Should have exactly 3 tokens: 'This', 'is', 'test' (without 'a')");
     }
 
     @Test

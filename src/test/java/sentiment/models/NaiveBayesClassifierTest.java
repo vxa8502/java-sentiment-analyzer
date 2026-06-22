@@ -393,13 +393,17 @@ class NaiveBayesClassifierTest {
         executor.shutdown();
 
         int expectedTotal = threadCount * classificationsPerThread;
-        int minimumSuccesses = (int) (expectedTotal * 0.48); // Expect at least 48% success rate
+        // Thread-safe implementations MUST have 100% success rate
+        // Any failure indicates a race condition or concurrency bug
+        // Previous thresholds (48%, 95%) were FALSE CONFIDENCE - hiding real bugs
 
-        assertTrue(successCount.get() >= minimumSuccesses,
-            String.format("At least %d classifications should succeed (got %d out of %d)",
-                minimumSuccesses, successCount.get(), expectedTotal));
-        assertTrue(successCount.get() > 0,
-            "Some classifications should succeed in concurrent environment");
+        assertEquals(expectedTotal, successCount.get(),
+            String.format("Thread safety requires 100%% success: expected %d, got %d (%d errors). " +
+                "Any failure indicates a concurrency bug.",
+                expectedTotal, successCount.get(), errorCount.get()));
+
+        assertEquals(0, errorCount.get(),
+            "Thread-safe implementation must not throw any exceptions");
     }
 
     // STATE MANAGEMENT TESTS
@@ -644,22 +648,7 @@ class NaiveBayesClassifierTest {
         }
     }
 
-    @Test
-    @DisplayName("Cleanup should release resources")
-    void testCleanup_ReleasesResources() throws Exception {
-        // Arrange
-        trainClassifier();
-        assertTrue(classifier.isTrained());
-
-        // Act
-        classifier.cleanup();
-
-        // Assert - After cleanup, classifier should still be in trained state
-        // (cleanup releases internal resources but doesn't untrain the model)
-        // This is expected behavior - cleanup is for resource management
-    }
-
-    // HELPER METHODS
+    // ==================== HELPER METHODS ====================
 
     /**
      * Creates mock training data for testing

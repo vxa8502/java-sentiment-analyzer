@@ -2,6 +2,7 @@ package sentiment.api;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -11,6 +12,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import sentiment.config.ApiProperties;
 import sentiment.models.SentimentClassifier;
 
 import static org.hamcrest.Matchers.*;
@@ -22,12 +24,34 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 /**
- * Web layer tests for SentimentController using @WebMvcTest.
- * <p>Tests REST API contracts without loading the full Spring context or ML models.
- * <p>Uses mocked SentimentService to keep tests fast and memory-efficient.
+ * Web layer tests for SentimentController using {@code @WebMvcTest}.
+ *
+ * <h2>Test Category: Web Layer (Unit)</h2>
+ * <p>These tests verify REST API contracts (request/response formats, validation,
+ * error handling) without loading the full Spring context or ML models.
+ *
+ * <h3>Characteristics</h3>
+ * <ul>
+ *   <li><b>Speed:</b> Fast (~1 second total)</li>
+ *   <li><b>Dependencies:</b> Mocked services, no real ML model</li>
+ *   <li><b>Scope:</b> HTTP layer only (MockMvc)</li>
+ *   <li><b>Tag:</b> {@code @Tag("web")} - run with {@code -Dgroups=web}</li>
+ * </ul>
+ *
+ * <h3>When to Use</h3>
+ * <p>Use these tests to verify:
+ * <ul>
+ *   <li>Request validation (required fields, value constraints)</li>
+ *   <li>Response format (JSON structure, field names)</li>
+ *   <li>HTTP status codes for various scenarios</li>
+ *   <li>Error response formatting</li>
+ * </ul>
+ *
+ * @see SentimentControllerIntegrationTest for end-to-end tests with real model
  */
 @WebMvcTest(SentimentController.class)
 @Import(SentimentControllerWebTest.TestConfig.class)
+@Tag("web")
 @DisplayName("SentimentController Web Layer Tests")
 public class SentimentControllerWebTest {
 
@@ -36,6 +60,11 @@ public class SentimentControllerWebTest {
         @Bean
         public String loadedModelPath() {
             return "models/test/mock-model.ser";
+        }
+
+        @Bean
+        public ApiProperties apiProperties() {
+            return new ApiProperties();
         }
     }
 
@@ -46,10 +75,13 @@ public class SentimentControllerWebTest {
     private SentimentService sentimentService;
 
     @MockitoBean
+    private FeatureImportanceService featureImportanceService;
+
+    @MockitoBean
     private SentimentClassifier classifier;
 
     @MockitoBean
-    private sentiment.api.metrics.PredictionMetrics metrics;
+    private sentiment.monitoring.PredictionMetrics metrics;
 
     @BeforeEach
     void setup() throws Exception {
@@ -71,8 +103,8 @@ public class SentimentControllerWebTest {
 
         // Mock metrics snapshot for health endpoint
         // Parameters: totalPredictions, positive, negative, uncertain, avgConfidence, lowConfRate, inferenceCount, meanMs, p95Ms, p99Ms
-        sentiment.api.metrics.PredictionMetrics.MetricsSnapshot mockSnapshot =
-            new sentiment.api.metrics.PredictionMetrics.MetricsSnapshot(
+        sentiment.monitoring.PredictionMetrics.MetricsSnapshot mockSnapshot =
+            new sentiment.monitoring.PredictionMetrics.MetricsSnapshot(
                 100L, 60.0, 30.0, 5.0, 0.85, 5.0, 100L, 50.0, 100.0, 150.0
             );
         when(metrics.getSnapshot()).thenReturn(mockSnapshot);
@@ -441,22 +473,28 @@ public class SentimentControllerWebTest {
     // ==================== FEATURE IMPORTANCE ENDPOINT TESTS ====================
 
     @Test
-    @DisplayName("Feature importance when model not trained should return 503")
+    @DisplayName("Feature importance when model not trained should return 503 with error message")
     public void testFeatureImportance_ModelNotTrained() throws Exception {
         when(classifier.isTrained()).thenReturn(false);
 
         mockMvc.perform(get("/api/v1/model/feature-importance")
                         .param("topFeatures", "10"))
-                .andExpect(status().isServiceUnavailable());
-                // Note: Response structure may vary, so just check status code
+                .andExpect(status().isServiceUnavailable())
+                // Verify error response contains meaningful error information
+                // The response uses FeatureImportanceResponse.error() which sets the 'error' field
+                .andExpect(jsonPath("$.error").exists())
+                .andExpect(jsonPath("$.error").isString())
+                .andExpect(jsonPath("$.error").value(org.hamcrest.Matchers.not(org.hamcrest.Matchers.emptyString())));
     }
 
     @Test
-    @DisplayName("Feature importance with invalid topFeatures should handle gracefully")
+    @DisplayName("Feature importance with invalid topFeatures should return 400 with error details")
     public void testFeatureImportance_InvalidTopFeatures() throws Exception {
         mockMvc.perform(get("/api/v1/model/feature-importance")
                         .param("topFeatures", "-5"))
-                .andExpect(status().is4xxClientError());
+                .andExpect(status().isBadRequest())
+                // Verify error response structure - not just status code family
+                .andExpect(jsonPath("$.error").exists());
     }
 
     // ==================== CONFIDENCE THRESHOLD VALIDATION TESTS ====================
