@@ -288,7 +288,7 @@ spring:
       fail-on-unknown-properties: false
 
 # Resilience4j Configuration
-# Rate limits are set to meet SLO throughput targets (NFR-PERF-003: 100 RPS sustained)
+# Rate limits target 100 RPS sustained throughput
 resilience4j:
   ratelimiter:
     instances:

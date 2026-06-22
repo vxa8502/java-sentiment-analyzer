@@ -3,33 +3,58 @@ package sentiment.api;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
-import sentiment.api.metrics.PredictionMetrics;
+import sentiment.monitoring.DriftStatistics;
+import sentiment.monitoring.PredictionLogRecord;
+import sentiment.monitoring.PredictionLogger;
+import sentiment.monitoring.PredictionMetrics;
 import sentiment.models.SentimentClassifier;
 
 import java.time.Duration;
+import java.util.regex.Pattern;
 
 /**
  * Service layer for sentiment classification operations.
  * Encapsulates model inference with circuit breaker protection.
  *
- * The circuit breaker is applied here (not in the controller) because Spring AOP
+ * <p>The circuit breaker is applied here (not in the controller) because Spring AOP
  * requires public methods called through the proxy to intercept annotations.
  * Internal method calls within the same class bypass the proxy entirely.
+ *
+ * <h2>Logging Strategy</h2>
+ * <ul>
+ *   <li><b>ERROR</b>: Unexpected failures requiring investigation (model crashes, infrastructure issues)</li>
+ *   <li><b>WARN</b>: Expected error conditions (invalid input, model not ready, known exceptions)</li>
+ *   <li><b>INFO</b>: Important state changes (circuit breaker state, model reload)</li>
+ *   <li><b>DEBUG</b>: Request details, confidence values, processing times</li>
+ * </ul>
  */
 @Service
 public class SentimentService {
 
     private static final Logger logger = LoggerFactory.getLogger(SentimentService.class);
 
+    // Pre-compiled patterns for log sanitization (performance fix - avoid regex compilation per call)
+    private static final Pattern NEWLINE_PATTERN = Pattern.compile("[\n\r]");
+    private static final Pattern NON_PRINTABLE_PATTERN = Pattern.compile("[^\\x20-\\x7E]");
+
     private final SentimentClassifier classifier;
     private final PredictionMetrics metrics;
+    private final ObjectProvider<PredictionLogger> predictionLoggerProvider;
+    private final ObjectProvider<DriftStatistics> driftStatisticsProvider;
 
-    public SentimentService(SentimentClassifier classifier, PredictionMetrics metrics) {
+    public SentimentService(
+            SentimentClassifier classifier,
+            PredictionMetrics metrics,
+            ObjectProvider<PredictionLogger> predictionLoggerProvider,
+            ObjectProvider<DriftStatistics> driftStatisticsProvider) {
         this.classifier = classifier;
         this.metrics = metrics;
+        this.predictionLoggerProvider = predictionLoggerProvider;
+        this.driftStatisticsProvider = driftStatisticsProvider;
     }
 
     /**
@@ -46,7 +71,8 @@ public class SentimentService {
 
         try {
             if (!classifier.isTrained()) {
-                logger.error("Attempted classification with untrained model");
+                // WARN not ERROR: This is expected during startup while model loads
+                logger.warn("Classification attempted while model not yet trained");
                 return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                         .body(SentimentResponse.error(
                             "Model initialization in progress. Please retry in 30 seconds. " +
@@ -76,6 +102,9 @@ public class SentimentService {
 
             metrics.recordPrediction(sentiment, confidence, Duration.ofMillis(processingTime));
 
+            // Log prediction for drift detection (async, non-blocking)
+            logPredictionForDrift(text, sentiment, confidence, processingTime);
+
             if (warning != null) {
                 return ResponseEntity.ok(
                     SentimentResponse.successWithWarning(sentiment, confidence, text, processingTime, warning)
@@ -86,15 +115,19 @@ public class SentimentService {
                 );
             }
 
+        } catch (sentiment.models.ClassificationException e) {
+            // Handle domain-specific classification errors with appropriate status codes
+            return handleClassificationException(e, text);
         } catch (IllegalStateException | IllegalArgumentException e) {
             logger.warn("Classification failed due to invalid input: {}", e.getMessage());
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body(SentimentResponse.error(e.getMessage(), text));
         } catch (Exception e) {
-            logger.error("Classification failed for text: {}",
+            // Unexpected errors - log full stack trace for debugging
+            logger.error("Unexpected classification error for text: {}",
                         sanitizeForLogging(text), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(SentimentResponse.error("Classification failed. Please try again.", text));
+                    .body(SentimentResponse.error("Classification failed unexpectedly. Please try again.", text));
         }
     }
 
@@ -127,15 +160,83 @@ public class SentimentService {
     }
 
     /**
+     * Handles ClassificationException and maps error types to HTTP status codes.
+     * This provides consistent error responses based on the specific failure type.
+     */
+    private ResponseEntity<SentimentResponse> handleClassificationException(
+            sentiment.models.ClassificationException e, String text) {
+
+        return switch (e.getErrorType()) {
+            case NOT_TRAINED -> {
+                logger.warn("Classification attempted on untrained model: {}", e.getMessage());
+                yield ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                        .body(SentimentResponse.error(
+                            "Model not ready. Please wait for initialization to complete.", text));
+            }
+            case INVALID_INPUT -> {
+                logger.debug("Invalid classification input: {}", e.getMessage());
+                yield ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                        .body(SentimentResponse.error(e.getMessage(), text));
+            }
+            case INFERENCE_ERROR -> {
+                logger.error("Model inference failed: {}", e.getMessage(), e);
+                yield ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                        .body(SentimentResponse.error(
+                            "Classification failed due to model error. Please try again.", text));
+            }
+            case TRAINING_ERROR -> {
+                logger.error("Training error during classification: {}", e.getMessage(), e);
+                yield ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                        .body(SentimentResponse.error(
+                            "Model is in an inconsistent state. Please contact support.", text));
+            }
+            case UNKNOWN -> {
+                logger.error("Unknown classification error: {}", e.getMessage(), e);
+                yield ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                        .body(SentimentResponse.error("Classification failed. Please try again.", text));
+            }
+        };
+    }
+
+    /**
      * Sanitizes text for logging to prevent log injection attacks.
+     * Uses pre-compiled patterns to avoid regex compilation on each call.
      */
     private String sanitizeForLogging(String text) {
         if (text == null) {
             return "null";
         }
         String truncated = text.substring(0, Math.min(50, text.length()));
-        return truncated
-                .replaceAll("[\n\r]", " ")
-                .replaceAll("[^\\x20-\\x7E]", "?");
+        String noNewlines = NEWLINE_PATTERN.matcher(truncated).replaceAll(" ");
+        return NON_PRINTABLE_PATTERN.matcher(noNewlines).replaceAll("?");
+    }
+
+    /**
+     * Logs prediction for drift detection (async, non-blocking).
+     * Safe to call even if drift detection is disabled.
+     */
+    private void logPredictionForDrift(String text, String sentiment, double confidence, long processingTimeMs) {
+        PredictionLogger predictionLogger = predictionLoggerProvider.getIfAvailable();
+        DriftStatistics driftStatistics = driftStatisticsProvider.getIfAvailable();
+
+        if (predictionLogger == null && driftStatistics == null) {
+            return; // Drift detection disabled
+        }
+
+        PredictionLogRecord record = PredictionLogRecord.create(
+                text,
+                sentiment,
+                confidence,
+                processingTimeMs,
+                classifier.getAlgorithmName()
+        );
+
+        if (predictionLogger != null) {
+            predictionLogger.logPrediction(record);
+        }
+
+        if (driftStatistics != null) {
+            driftStatistics.recordForDrift(record);
+        }
     }
 }
