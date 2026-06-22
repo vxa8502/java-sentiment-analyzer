@@ -37,6 +37,38 @@ sentiment:
   model-type: svm  # Production model: SVM (Amazon) - 88.0% cross-domain accuracy
   confidence-threshold: 0.7
 
+  # Drift detection and prediction logging configuration
+  # Monitors for distribution shifts that may indicate model degradation
+  drift:
+    # Enable/disable drift detection (default: true)
+    enabled: ${SENTIMENT_DRIFT_ENABLED:true}
+
+    # Reference window: baseline predictions collected after startup
+    reference-window-size: ${SENTIMENT_DRIFT_REFERENCE_SIZE:1000}
+
+    # Comparison window: recent predictions for drift calculation
+    comparison-window-size: ${SENTIMENT_DRIFT_COMPARISON_SIZE:500}
+
+    # PSI (Population Stability Index) thresholds for alerting
+    # PSI < 0.1: No significant drift (HEALTHY)
+    # 0.1 <= PSI < 0.25: Moderate drift (WARNING)
+    # PSI >= 0.25: Significant drift (CRITICAL)
+    warning-threshold: 0.1
+    critical-threshold: 0.25
+
+    # How often to run drift detection (ISO-8601 duration)
+    detection-interval: PT5M
+
+    # Prediction log configuration
+    log-path: "${SENTIMENT_DATA_PATH:data}/predictions"
+    log-retention: P7D
+
+    # Async logging queue size (predictions dropped if full)
+    max-queue-size: 10000
+
+    # Number of buckets for confidence histogram
+    confidence-histogram-buckets: 10
+
   # Data paths - Docker-friendly defaults (use environment variables to override)
   data-path: "${SENTIMENT_DATA_PATH:/app/data}"
   models-path: "${SENTIMENT_MODELS_PATH:/app/models}"
@@ -172,11 +204,31 @@ sentiment:
     # Maximum batch size for batch predictions
     max-batch-size: 100
 
+    # Minimum batch size to trigger parallel processing
+    # Smaller batches processed sequentially to avoid thread pool overhead
+    parallel-batch-threshold: ${SENTIMENT_API_PARALLEL_THRESHOLD:5}
+
+    # Maximum features to return from feature importance endpoint
+    max-top-features: ${SENTIMENT_API_MAX_TOP_FEATURES:1000}
+
+    # Confidence threshold below which to show low-confidence warning
+    low-confidence-threshold: ${SENTIMENT_API_LOW_CONFIDENCE:0.75}
+
     # Enable request/response logging
     enable-logging: true
 
     # Rate limiting (requests per minute)
     rate-limit: 1000
+
+    # Security: Proxy header trust configuration
+    # IMPORTANT: Only enable trust-proxy-headers when running behind a trusted reverse proxy
+    # (e.g., nginx, AWS ALB, Cloud Run). Enabling this without a proxy allows IP spoofing.
+    trust-proxy-headers: ${SENTIMENT_TRUST_PROXY_HEADERS:false}
+
+    # Comma-separated list of additional trusted proxy IP addresses/prefixes
+    # Default trusted: localhost, private networks (10.x, 172.16-31.x, 192.168.x)
+    # Example: "10.0.0.1,10.0.0.2,203.0.113.0"
+    trusted-proxies: ${SENTIMENT_TRUSTED_PROXIES:}
 
   # Data loading configuration
   data:
@@ -236,22 +288,25 @@ spring:
       fail-on-unknown-properties: false
 
 # Resilience4j Configuration
+# Rate limits are set to meet SLO throughput targets (NFR-PERF-003: 100 RPS sustained)
 resilience4j:
   ratelimiter:
     instances:
       # Rate limiter for sentiment analysis endpoints
+      # Target: 100 RPS = 600 requests per 6-second window (smoother than 6000/min)
       sentimentApi:
-        limit-for-period: 100        # 100 requests per minute (reasonable default)
-        limit-refresh-period: 1m     # Time period (1 minute)
-        timeout-duration: 0ms        # Don't wait, fail immediately if limit exceeded
+        limit-for-period: 600        # 100 RPS × 6 seconds = 600 requests
+        limit-refresh-period: 6s     # 6-second sliding window for smoother rate limiting
+        timeout-duration: 0ms        # Don't wait, fail immediately if exceeded
         register-health-indicator: true
         allow-health-indicator-to-fail: true
         event-consumer-buffer-size: 100
 
-      # Rate limiter for batch endpoints (lower limit due to higher load)
+      # Rate limiter for batch endpoints
+      # Target: 20 RPS (each batch is ~5x single request cost)
       batchApi:
-        limit-for-period: 20         # 20 batch requests per minute
-        limit-refresh-period: 1m
+        limit-for-period: 120        # 20 RPS × 6 seconds = 120 requests
+        limit-refresh-period: 6s
         timeout-duration: 0ms
         register-health-indicator: true
         allow-health-indicator-to-fail: true
@@ -311,11 +366,11 @@ resilience4j:
   ratelimiter:
     instances:
       sentimentApi:
-        limit-for-period: 100  # Higher limit for development
-        limit-refresh-period: 1m
+        limit-for-period: 1200   # 200 RPS for development (stress testing)
+        limit-refresh-period: 6s
       batchApi:
-        limit-for-period: 50
-        limit-refresh-period: 1m
+        limit-for-period: 300    # 50 RPS for development
+        limit-refresh-period: 6s
       comparisonApi:
         limit-for-period: 10
         limit-refresh-period: 5m
