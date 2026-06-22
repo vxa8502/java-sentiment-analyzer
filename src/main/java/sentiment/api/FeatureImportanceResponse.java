@@ -8,14 +8,25 @@ import java.util.List;
 
 /**
  * Response object for feature importance analysis endpoint.
+ *
+ * <h2>Error Handling Pattern</h2>
+ * <p>This response follows the standard error pattern used across the API:
+ * <ul>
+ *   <li>{@code error} field is non-null when the request failed</li>
+ *   <li>{@code note} field is for informational messages on success</li>
+ * </ul>
+ *
+ * <p>Clients should check {@code error != null} to determine if the request failed.
  */
+@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
 public record FeatureImportanceResponse(
         @JsonProperty("modelType") String modelType,
         @JsonProperty("totalFeatures") int totalFeatures,
         @JsonProperty("topFeatures") List<FeatureInfo> topFeatures,
         @JsonProperty("statistics") Statistics statistics,
         @JsonProperty("analysisTimeMs") long analysisTimeMs,
-        @JsonProperty("note") String note
+        @JsonProperty("note") String note,
+        @JsonProperty("error") String error
 ) {
 
     /**
@@ -66,29 +77,48 @@ public record FeatureImportanceResponse(
                 statistics,
                 analysisTimeMs,
                 "Feature importance shows which words/n-grams most strongly influence predictions. " +
-                "Positive weights indicate positive sentiment, negative weights indicate negative sentiment."
+                "Positive weights indicate positive sentiment, negative weights indicate negative sentiment.",
+                null  // no error
         );
     }
 
     /**
-     * Creates an empty response with the given model type and message.
+     * Creates an empty response with the given model type and informational message.
+     * Use this for non-error conditions like "no features available yet".
      */
-    public static FeatureImportanceResponse empty(String modelType, String message) {
-        return new FeatureImportanceResponse(modelType, 0, List.of(), Statistics.empty(), 0, message);
+    public static FeatureImportanceResponse empty(String modelType, String note) {
+        return new FeatureImportanceResponse(modelType, 0, List.of(), Statistics.empty(), 0, note, null);
     }
 
     /**
      * Creates an error response when feature importance cannot be computed.
+     * The error field will be populated; note will be null.
      */
-    public static FeatureImportanceResponse error(String message) {
-        return empty("unknown", message);
+    public static FeatureImportanceResponse error(String errorMessage) {
+        return new FeatureImportanceResponse("unknown", 0, List.of(), Statistics.empty(), 0, null, errorMessage);
     }
 
     /**
-     * Creates a response when feature importance analysis is unavailable.
+     * Creates an error response with timing information.
+     * Use this when an error occurs during computation to preserve timing context.
+     */
+    public static FeatureImportanceResponse error(String errorMessage, long durationMs) {
+        return new FeatureImportanceResponse("unknown", 0, List.of(), Statistics.empty(), durationMs, null, errorMessage);
+    }
+
+    /**
+     * Creates a response when feature importance analysis is unavailable (not an error).
+     * For example, when the model type doesn't support feature extraction.
      */
     public static FeatureImportanceResponse unavailable(String modelType, String reason) {
         return empty(modelType, reason);
+    }
+
+    /**
+     * Checks if this response represents an error.
+     */
+    public boolean isError() {
+        return error != null;
     }
 
     /**
@@ -105,7 +135,8 @@ public record FeatureImportanceResponse(
                 List.copyOf(topFeatures.subList(0, limit)),
                 statistics,
                 analysisTimeMs,
-                note
+                note,
+                error
         );
     }
 }

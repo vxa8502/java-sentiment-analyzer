@@ -39,7 +39,7 @@ public class RestApiExceptionHandler {
      * @return ErrorResponse object
      */
     private ErrorResponse buildErrorResponse(String error, String message, HttpStatus status) {
-        return new ErrorResponse(error, message, status.value());
+        return ErrorResponse.of(error, message, status.value());
     }
 
     /**
@@ -86,26 +86,26 @@ public class RestApiExceptionHandler {
     /**
      * Handles malformed JSON in request body.
      * Returns 400 Bad Request instead of 500 Internal Server Error.
+     *
+     * <p>Security: Does not expose internal error details (class names, package structure)
+     * to prevent information disclosure. Detailed error is logged server-side only.
      */
     @ExceptionHandler(HttpMessageNotReadableException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public ResponseEntity<ErrorResponse> handleMalformedJson(
             HttpMessageNotReadableException ex) {
 
-        String message = "Malformed JSON request";
-        Throwable cause = ex.getCause();
-        if (cause != null) {
-            String causeMessage = cause.getMessage();
-            if (causeMessage != null && causeMessage.length() < 200) {
-                message = "Invalid JSON: " + causeMessage.split("\n")[0];
-            }
-        }
-
+        // Log detailed error server-side for debugging
         logger.info("Malformed JSON request: {}", ex.getMessage());
 
+        // Return generic message to client (no internal details)
+        // This prevents information disclosure about:
+        // - Internal class names and package structure
+        // - Jackson/JSON parser implementation details
+        // - Server-side validation logic
         ErrorResponse response = buildErrorResponse(
                 "Invalid request body",
-                message,
+                "Request body could not be parsed as valid JSON. Please check your request format.",
                 HttpStatus.BAD_REQUEST
         );
         return ResponseEntity.badRequest().body(response);
@@ -171,7 +171,7 @@ public class RestApiExceptionHandler {
 
         logger.info("Validation failed: {}", errors);
 
-        ErrorResponse response = new ErrorResponse(
+        ErrorResponse response = ErrorResponse.withDetails(
                 "Validation failed",
                 errors,
                 HttpStatus.BAD_REQUEST.value()
@@ -239,6 +239,36 @@ public class RestApiExceptionHandler {
                 "Not found",
                 "The requested endpoint does not exist: " + ex.getRequestURL(),
                 HttpStatus.NOT_FOUND
+        );
+    }
+
+    /**
+     * Handles classification-specific exceptions.
+     * Maps error types to appropriate HTTP status codes.
+     */
+    @ExceptionHandler(sentiment.models.ClassificationException.class)
+    public ResponseEntity<ErrorResponse> handleClassificationException(
+            sentiment.models.ClassificationException ex) {
+
+        HttpStatus status = switch (ex.getErrorType()) {
+            case NOT_TRAINED -> HttpStatus.SERVICE_UNAVAILABLE;
+            case INVALID_INPUT -> HttpStatus.BAD_REQUEST;
+            case INFERENCE_ERROR, TRAINING_ERROR, UNKNOWN -> HttpStatus.INTERNAL_SERVER_ERROR;
+        };
+
+        String errorTitle = switch (ex.getErrorType()) {
+            case NOT_TRAINED -> "Model not ready";
+            case INVALID_INPUT -> "Invalid input";
+            case INFERENCE_ERROR -> "Classification failed";
+            case TRAINING_ERROR -> "Training failed";
+            case UNKNOWN -> "Classification error";
+        };
+
+        return logAndBuildResponse(
+                "Classification error",
+                ex,
+                errorTitle,
+                status
         );
     }
 

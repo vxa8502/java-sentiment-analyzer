@@ -6,109 +6,70 @@ import java.util.Map;
 
 /**
  * Standardized error response for all REST API endpoints.
- * <p> Provides consistent error formatting across the application with support
+ * <p>
+ * Provides consistent error formatting across the application with support
  * for simple error messages and detailed validation errors.
+ * <p>
+ * Uses record pattern with static factory methods for consistency with
+ * other response types (SentimentResponse, HealthResponse, etc.).
+ *
+ * @param error     Error type/title (e.g., "Validation failed", "Invalid input")
+ * @param message   Detailed error message (may be null)
+ * @param status    HTTP status code
+ * @param timestamp Unix timestamp in milliseconds
+ * @param details   Field-level validation errors (may be null)
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public class ErrorResponse {
-
-    private String error;
-    private String message;
-    private Integer status;
-    private Long timestamp = System.currentTimeMillis();
-    private Map<String, String> details;
+public record ErrorResponse(
+        String error,
+        String message,
+        Integer status,
+        Long timestamp,
+        Map<String, String> details
+) {
 
     /**
-     * Default constructor.
+     * Creates an error response with error title, message, and status.
+     *
+     * @param error   the error type/title
+     * @param message detailed error message
+     * @param status  the HTTP status code
+     * @return ErrorResponse instance
      */
-    public ErrorResponse() {
+    public static ErrorResponse of(String error, String message, int status) {
+        return new ErrorResponse(error, message, status, System.currentTimeMillis(), null);
     }
 
     /**
-     * Simple error constructor for backward compatibility.
+     * Creates an error response with just error title and status.
+     *
+     * @param error  the error type/title
+     * @param status the HTTP status code
+     * @return ErrorResponse instance
+     */
+    public static ErrorResponse of(String error, int status) {
+        return new ErrorResponse(error, null, status, System.currentTimeMillis(), null);
+    }
+
+    /**
+     * Creates an error response with validation details.
+     *
+     * @param error   the error type/title
+     * @param details map of field-level validation errors
+     * @param status  the HTTP status code
+     * @return ErrorResponse instance
+     */
+    public static ErrorResponse withDetails(String error, Map<String, String> details, int status) {
+        return new ErrorResponse(error, null, status, System.currentTimeMillis(), details);
+    }
+
+    /**
+     * Creates a simple error response with just the error message.
      *
      * @param error the error message
+     * @return ErrorResponse instance with 500 status
      */
-    public ErrorResponse(String error) {
-        this.error = error;
-    }
-
-    /**
-     * Constructor with error and status code.
-     *
-     * @param error the error type/title
-     * @param status the HTTP status code
-     */
-    public ErrorResponse(String error, int status) {
-        this.error = error;
-        this.status = status;
-    }
-
-    /**
-     * Full constructor with error, message, and status.
-     *
-     * @param error the error type/title
-     * @param message detailed error message
-     * @param status the HTTP status code
-     */
-    public ErrorResponse(String error, String message, int status) {
-        this.error = error;
-        this.message = message;
-        this.status = status;
-    }
-
-    /**
-     * Constructor with validation details.
-     *
-     * @param error the error type/title
-     * @param details map of field-level validation errors
-     * @param status the HTTP status code
-     */
-    public ErrorResponse(String error, Map<String, String> details, int status) {
-        this.error = error;
-        this.details = details;
-        this.status = status;
-    }
-
-    // Getters and setters
-
-    public String getError() {
-        return error;
-    }
-
-    public void setError(String error) {
-        this.error = error;
-    }
-
-    public String getMessage() {
-        return message;
-    }
-
-    public void setMessage(String message) {
-        this.message = message;
-    }
-
-    public Integer getStatus() {
-        return status;
-    }
-
-    public void setStatus(Integer status) {
-        this.status = status;
-    }
-
-    public Long getTimestamp() {
-        return timestamp;
-    }
-
-    public void setTimestamp(Long timestamp) {
-        this.timestamp = timestamp;
-    }
-
-    public Map<String, String> getDetails() {
-        return details;
-    }
-
-    public void setDetails(Map<String, String> details) {
-        this.details = details;
+    public static ErrorResponse simple(String error) {
+        return new ErrorResponse(error, null, 500, System.currentTimeMillis(), null);
     }
 }

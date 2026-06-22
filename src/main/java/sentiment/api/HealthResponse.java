@@ -14,17 +14,25 @@ public record HealthResponse(
     List<String> supportedLabels,
     Long uptimeMs,
     @JsonInclude(JsonInclude.Include.NON_NULL)
-    ProductionMetrics productionMetrics
+    ProductionMetrics productionMetrics,
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    DriftInfo drift
 ) {
     public static HealthResponse healthy(String version, Boolean modelLoaded, String modelType,
                                          List<String> supportedLabels, Long uptimeMs) {
-        return new HealthResponse("UP", version, modelLoaded, modelType, supportedLabels, uptimeMs, null);
+        return new HealthResponse("UP", version, modelLoaded, modelType, supportedLabels, uptimeMs, null, null);
     }
 
     public static HealthResponse withMetrics(String version, Boolean modelLoaded, String modelType,
                                               List<String> supportedLabels, Long uptimeMs,
                                               ProductionMetrics metrics) {
-        return new HealthResponse("UP", version, modelLoaded, modelType, supportedLabels, uptimeMs, metrics);
+        return new HealthResponse("UP", version, modelLoaded, modelType, supportedLabels, uptimeMs, metrics, null);
+    }
+
+    public static HealthResponse withMetricsAndDrift(String version, Boolean modelLoaded, String modelType,
+                                                      List<String> supportedLabels, Long uptimeMs,
+                                                      ProductionMetrics metrics, DriftInfo drift) {
+        return new HealthResponse("UP", version, modelLoaded, modelType, supportedLabels, uptimeMs, metrics, drift);
     }
 
     /**
@@ -48,5 +56,15 @@ public record HealthResponse(
         double meanMs,
         double p95Ms,
         double p99Ms
+    ) {}
+
+    /**
+     * Drift detection status summary.
+     * For detailed drift info, use GET /api/v1/drift/status
+     */
+    public record DriftInfo(
+        String status,
+        double maxPsi,
+        boolean ready
     ) {}
 }
