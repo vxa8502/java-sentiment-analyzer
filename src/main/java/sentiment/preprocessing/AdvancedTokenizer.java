@@ -43,6 +43,15 @@ public class AdvancedTokenizer {
             "\\b\\d+(?:\\.\\d+)?\\b|\\b\\d{1,3}(?:,\\d{3})*(?:\\.\\d+)?\\b"
     );
 
+    // Pre-compiled patterns to avoid regex compilation on every call (performance fix)
+    private static final Pattern WHITESPACE_PATTERN = Pattern.compile("\\s+");
+    private static final Pattern CONTAINS_WORD_CHAR_PATTERN = Pattern.compile(".*\\w.*");
+
+    // Pre-compiled patterns for token filtering (avoid String.matches() per token)
+    private static final Pattern NON_ALPHANUMERIC_PATTERN = Pattern.compile("[^a-zA-Z0-9]+");
+    private static final Pattern EXCLAMATION_QUESTION_PATTERN = Pattern.compile("[!?]+");
+    private static final Pattern PUNCTUATION_SEQUENCE_PATTERN = Pattern.compile("[.!?]+|[,;:]+");
+
     private static final Set<String> MEANINGFUL_SINGLE_CHARS = Set.of(
             "i", "!", "?", ".", ":", ";"
     );
@@ -168,11 +177,14 @@ public class AdvancedTokenizer {
             }
         }
 
-        String[] remainingTokens = text.split("\\s+");
+        // Use pre-compiled pattern instead of split("\\s+") to avoid regex compilation per call
+        String[] remainingTokens = WHITESPACE_PATTERN.split(text);
         for (String token : remainingTokens) {
-            if (!token.trim().isEmpty() && !tokens.contains(token.trim())) {
-                if (token.matches(".*\\w.*")) {
-                    tokens.add(token.trim());
+            String trimmed = token.trim();
+            if (!trimmed.isEmpty() && !tokens.contains(trimmed)) {
+                // Use pre-compiled pattern instead of matches(".*\\w.*")
+                if (CONTAINS_WORD_CHAR_PATTERN.matcher(token).matches()) {
+                    tokens.add(trimmed);
                     metrics.additionalTokensFound++;
                 }
             }
@@ -225,7 +237,8 @@ public class AdvancedTokenizer {
                 continue;
             }
 
-            if (token.matches("[^a-zA-Z0-9]+")) {
+            // Use pre-compiled pattern instead of String.matches() (performance fix)
+            if (NON_ALPHANUMERIC_PATTERN.matcher(token).matches()) {
                 if (isMeaningfulPunctuation(token)) {
                     filtered.add(token);
                     metrics.punctuationPreserved++;
@@ -246,7 +259,8 @@ public class AdvancedTokenizer {
     }
 
     private boolean isMeaningfulPunctuation(String punctuation) {
-        return punctuation.matches("[!?]+") ||
+        // Use pre-compiled pattern instead of String.matches() (performance fix)
+        return EXCLAMATION_QUESTION_PATTERN.matcher(punctuation).matches() ||
                 punctuation.equals("...") ||
                 punctuation.equals("!!") ||
                 punctuation.equals("???");
@@ -265,8 +279,10 @@ public class AdvancedTokenizer {
 
         int hyphenatedWords = countMatches(HYPHENATED_WORD_PATTERN, text);
         int numbers = countMatches(NUMBER_PATTERN, text);
-        int punctuationSequences = countMatches(Pattern.compile("[.!?]+|[,;:]+"), text);
-        int totalWords = text.split("\\s+").length;
+        // Use pre-compiled pattern instead of Pattern.compile() per call (performance fix)
+        int punctuationSequences = countMatches(PUNCTUATION_SEQUENCE_PATTERN, text);
+        // Use pre-compiled pattern instead of String.split() (performance fix)
+        int totalWords = WHITESPACE_PATTERN.split(text).length;
 
         return new TokenizationAnalysis(hyphenatedWords,
                 numbers, punctuationSequences, totalWords);

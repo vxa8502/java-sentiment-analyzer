@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Value;
 
 import java.util.*;
 import java.util.function.Predicate;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -97,6 +98,9 @@ public class IntelligentStopwordRemover {
             "rather", "somewhat", "fairly", "pretty", "much", "too", "so",
             "super", "ultra", "mega", "hyper", "exceptionally", "remarkably"
     );
+
+    // Pre-compiled pattern for punctuation check (performance fix - avoid String.matches() per token)
+    private static final Pattern EXCLAMATION_QUESTION_PATTERN = Pattern.compile("[!?]+");
 
     // Phrase patterns where stopwords should be preserved for sentiment analysis
     // Key: the stopword, Value: words that follow it to form a meaningful phrase
@@ -264,8 +268,8 @@ public class IntelligentStopwordRemover {
             return false;
         }
 
-        // Don't remove meaningful punctuation
-        if (token.matches("[!?]+")) {
+        // Don't remove meaningful punctuation (use pre-compiled pattern for performance)
+        if (EXCLAMATION_QUESTION_PATTERN.matcher(token).matches()) {
             return false;
         }
 

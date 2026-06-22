@@ -15,6 +15,7 @@ import weka.filters.unsupervised.attribute.StringToWordVector;
 import weka.filters.unsupervised.attribute.Normalize;
 
 import java.util.*;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -34,6 +35,10 @@ public class WekaInstancesConverter extends sentiment.TrainingTemplate<Instances
 
     private static final String VERSION = "1.0.0";
     private static final Logger logger = LoggerFactory.getLogger(WekaInstancesConverter.class);
+
+    // Pre-compiled patterns for sanitization (avoids regex compilation per inference)
+    private static final Pattern NON_ALNUM_UNDERSCORE_PATTERN = Pattern.compile("[^a-zA-Z0-9_\\s]+");
+    private static final Pattern MULTI_WHITESPACE_PATTERN = Pattern.compile("\\s+");
 
     // Immutable configuration
     private final int maxFeatures;
@@ -60,15 +65,29 @@ public class WekaInstancesConverter extends sentiment.TrainingTemplate<Instances
      * Removes special characters that can cause filter exceptions while preserving
      * underscores (used for negation scope tagging, e.g., NOT_bad).
      * Weka's StringToWordVector expects alphanumeric tokens.
+     *
+     * <p>Performance: Uses pre-compiled patterns to avoid regex compilation per inference.
      */
     private static String sanitizeForWeka(String preprocessed) {
-        if (preprocessed == null || preprocessed.trim().isEmpty()) {
+        if (preprocessed == null) {
             return "empty_content_placeholder";
         }
-        String sanitized = preprocessed
-                .replaceAll("[^a-zA-Z0-9_\\s]+", " ")  // Remove non-alphanumeric except underscore
-                .replaceAll("\\s+", " ")               // Normalize whitespace
-                .trim();
+        // Performance: Avoid trim() allocation for empty check - just check if all whitespace
+        boolean hasContent = false;
+        for (int i = 0; i < preprocessed.length(); i++) {
+            if (!Character.isWhitespace(preprocessed.charAt(i))) {
+                hasContent = true;
+                break;
+            }
+        }
+        if (!hasContent) {
+            return "empty_content_placeholder";
+        }
+
+        // Use pre-compiled patterns (avoids regex compilation per call)
+        String sanitized = NON_ALNUM_UNDERSCORE_PATTERN.matcher(preprocessed).replaceAll(" ");
+        sanitized = MULTI_WHITESPACE_PATTERN.matcher(sanitized).replaceAll(" ");
+        sanitized = sanitized.trim();
         return sanitized.isEmpty() ? "empty_content_placeholder" : sanitized;
     }
 
