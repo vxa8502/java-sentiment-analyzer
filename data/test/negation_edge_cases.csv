@@ -1,0 +1,103 @@
+review,sentiment
+"not good",negative
+"not bad",positive
+"not terrible",positive
+"not recommend",negative
+"not worth it",negative
+"not a fan",negative
+"not impressed",negative
+"not satisfied",negative
+"not happy",negative
+"not disappointed",positive
+"not the worst",positive
+"not horrible",positive
+"never recommend",negative
+"never buy again",negative
+"never going back",negative
+"never disappoints",positive
+"never a problem",positive
+"would not recommend",negative
+"would not buy again",negative
+"would not purchase again",negative
+"cannot recommend",negative
+"cannot complain",positive
+"can't recommend",negative
+"can't complain",positive
+"don't recommend",negative
+"don't like it",negative
+"don't buy this",negative
+"don't waste your money",negative
+"wouldn't recommend",negative
+"wouldn't buy again",negative
+"isn't worth it",negative
+"isn't good",negative
+"isn't bad",positive
+"wasn't impressed",negative
+"wasn't satisfied",negative
+"wasn't disappointed",positive
+"wasn't terrible",positive
+"haven't had any problems",positive
+"haven't been disappointed",positive
+"doesn't work",negative
+"doesn't disappoint",positive
+"didn't like it",negative
+"didn't work",negative
+"didn't meet expectations",negative
+"didn't disappoint",positive
+"not as good as expected",negative
+"not what I expected",negative
+"not up to standard",negative
+"not worth the price",negative
+"not worth the money",negative
+"nothing special",negative
+"nothing to complain about",positive
+"no complaints",positive
+"no issues",positive
+"no problems",positive
+"no regrets",positive
+"no good",negative
+"did not enjoy",negative
+"did not like",negative
+"do not buy",negative
+"do not recommend",negative
+"do not waste your time",negative
+"do not purchase",negative
+"will not buy again",negative
+"will not recommend",negative
+"will never buy again",negative
+"definitely not recommend",negative
+"absolutely not worth it",negative
+"certainly not impressed",negative
+"not at all satisfied",negative
+"not at all impressed",negative
+"not at all happy",negative
+"not exactly great",negative
+"not particularly good",negative
+"not really worth it",negative
+"nothing wrong with it",positive
+"couldn't be happier",positive
+"couldn't ask for more",positive
+"couldn't be better",positive
+"can't say enough good things",positive
+"won't disappoint",positive
+"won't let you down",positive
+"won't regret it",positive
+"never fails",positive
+"never lets me down",positive
+"not unhappy",positive
+"not dissatisfied",positive
+"not unsatisfied",positive
+"not unimpressed",positive
+"not displeased",positive
+"not a disappointment",positive
+"not a waste",positive
+"not a mistake",positive
+"lack of quality",negative
+"lacking in features",negative
+"without any issues",positive
+"without problems",positive
+"without a doubt recommend",positive
+"far from perfect",negative
+"far from good",negative
+"less than satisfactory",negative
+"less than impressed",negative
