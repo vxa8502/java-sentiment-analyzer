@@ -20,6 +20,7 @@
         <weka.version>3.9.6</weka.version>
         <commons-csv.version>1.14.1</commons-csv.version>
         <resilience4j.version>2.3.0</resilience4j.version>
+        <springdoc.version>2.7.0</springdoc.version>
     </properties>
 
     <parent>
@@ -66,6 +67,13 @@
         <dependency>
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
+
+        <!-- springdoc-openapi: OpenAPI 3 spec + Swagger UI -->
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+            <version>${springdoc.version}</version>
         </dependency>
 
         <!-- Apache Commons CSV -->
