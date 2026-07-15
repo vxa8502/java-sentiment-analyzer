@@ -26,7 +26,7 @@ public class RootController {
             "live",
             "1.0.0",
             "ML-powered sentiment analysis API with negation handling",
-            "/api/v1/health"
+            "/swagger-ui/index.html"
         ));
     }
 }
